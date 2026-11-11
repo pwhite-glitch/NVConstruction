@@ -27,6 +27,9 @@ import { isBeforeTodayCentral } from '../../lib/central-date'
 import { billingPaymentSummary } from '../../lib/billing-payment'
 import { INSPECTION_TYPES } from '../../lib/res-inspections'
 import { authFetch } from '../../lib/client-fetch'
+import { fetchJson, jsonInit } from '../../lib/fetch-json'
+import { uploadThenSend, putToSignedUrl, forgetUpload } from '../../lib/file-upload-client'
+import { AI_PARSE_MAX_BYTES, AI_PARSE_LIMIT_PRECHECK_MESSAGE } from '../../lib/ai-parse-limits'
 import DailyReportForm from '../jobdetail/DailyReportForm'
 import NewPOForm from '../jobdetail/NewPOForm'
 import EditPOForm from '../jobdetail/EditPOForm'
@@ -374,16 +377,13 @@ function ResidentialJobDetailInner() {
     setToast({ ok, text })
     setTimeout(() => setToast(t => (t && t.text === text ? null : t)), ok ? 4000 : 9000)
   }
-  // fetch → { ok, data, error } with the server's error text
+  // fetch → { ok, data, error } with the server's error text (lib/fetch-json: status and
+  // Content-Type first; a non-JSON / empty / malformed reply is an error, never {} success).
+  // data is always an object so callers can read optional fields safely.
   async function api(url, opts = {}) {
-    try {
-      const res = await fetch(url, opts)
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data.error) return { ok: false, data, error: data.error || `server returned ${res.status}` }
-      return { ok: true, data }
-    } catch (e) {
-      return { ok: false, data: {}, error: e.message || 'network error' }
-    }
+    const r = await fetchJson(fetch, url, opts)
+    const data = r.data && typeof r.data === 'object' ? r.data : {}
+    return r.ok ? { ok: true, data } : { ok: false, data, error: r.error }
   }
   const jsonOpts = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 
@@ -523,13 +523,12 @@ function ResidentialJobDetailInner() {
   // ── Purchase Orders (ported from commercial; authFetch carries the Bearer requirePM needs) ──
   async function loadPurchaseOrders() {
     try {
-      const res = await authFetch(`/api/purchase-orders?job_id=${encodeURIComponent(id)}`)
-      const data = await res.json().catch(() => ({}))
-      const failed = !res.ok || !!data.error || !Array.isArray(data.purchase_orders)
+      const r = await fetchJson(authFetch, `/api/purchase-orders?job_id=${encodeURIComponent(id)}`)
+      const failed = !r.ok || !Array.isArray(r.data?.purchase_orders)
       setPoLoadError(failed)
-      if (failed) noteLoad('Purchase orders', data.error || `server returned ${res.status}`)
+      if (failed) noteLoad('Purchase orders', r.ok ? 'unexpected response' : r.error)
       else noteLoad('Purchase orders', null)
-      setPurchaseOrders(data.purchase_orders || [])
+      setPurchaseOrders(failed ? [] : r.data.purchase_orders)
     } catch (e) {
       setPoLoadError(true)
       noteLoad('Purchase orders', e)
@@ -537,13 +536,8 @@ function ResidentialJobDetailInner() {
     }
   }
 
-  async function poResponseError(res) {
-    const j = await res.json().catch(() => ({}))
-    return j.error || res.statusText || `server returned ${res.status}`
-  }
-
   async function savePO(issueImmediately = false) {
-    if (!poForm.vendor_name) return
+    if (!poForm.vendor_name || savingPO) return
     setSavingPO(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -559,18 +553,13 @@ function ResidentialJobDetailInner() {
         created_by: session?.user?.id || null,
         items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
       }
-      let res
-      if (poFile) {
-        const fd = new FormData()
-        fd.append('file', poFile)
-        fd.append('data', JSON.stringify(payload))
-        res = await authFetch('/api/purchase-orders', { method: 'POST', body: fd })
-      } else {
-        res = await authFetch('/api/purchase-orders', jsonOpts('POST', payload))
-      }
-      if (!res.ok) { flash(false, 'PO save failed: ' + await poResponseError(res)); return }
-      const saved = await res.json().catch(() => ({}))
-      if (saved.warning) alert(saved.warning)
+      // Attachment goes straight to Storage; the API gets only { path, uploadReceipt }.
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file: poFile, target: 'po-attachment', context: { job_id: id },
+        send: attachment => fetchJson(authFetch, '/api/purchase-orders', jsonInit('POST', attachment ? { ...payload, attachment } : payload)),
+      })
+      if (!r.ok) { flash(false, (r.stage === 'upload' ? 'PO attachment upload failed: ' : 'PO save failed: ') + r.error); return }
+      if (r.data?.warning) alert(r.data.warning)
       setShowNewPO(false)
       setPOForm(EMPTY_PO_FORM)
       setPOFile(null)
@@ -585,8 +574,9 @@ function ResidentialJobDetailInner() {
   async function updatePOStatus(poId, status) {
     setUpdatingPOId(poId)
     try {
-      const res = await authFetch('/api/purchase-orders', jsonOpts('PUT', { id: poId, status }))
-      if (!res.ok) flash(false, 'PO update failed: ' + await poResponseError(res))
+      const r = await fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', { id: poId, status }))
+      if (!r.ok) flash(false, 'PO update failed: ' + r.error)
+      else if (r.data?.warning) alert(r.data.warning)
       await loadPurchaseOrders()
     } catch (e) {
       flash(false, 'PO update failed: ' + (e.message || 'network error'))
@@ -598,7 +588,7 @@ function ResidentialJobDetailInner() {
   async function savePOEdit() {
     // Confirm cash-outlook / committed-cost / draw-amount effects before any write.
     const originalPO = purchaseOrders.find(p => p.id === editingPOId)
-    if (!confirmPOEdit(originalPO, editPOForm, msg => window.confirm(msg))) return
+    if (savingPOEdit || !confirmPOEdit(originalPO, editPOForm, msg => window.confirm(msg))) return
     setSavingPOEdit(true)
     try {
       const validItems = editPOForm.items.filter(i => i.description && i.unit_price)
@@ -612,18 +602,13 @@ function ResidentialJobDetailInner() {
         payment_type: editPOForm.payment_type || 'check',
         items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
       }
-      let res
-      if (editPOFile) {
-        const fd = new FormData()
-        fd.append('file', editPOFile)
-        fd.append('data', JSON.stringify(payload))
-        res = await authFetch('/api/purchase-orders', { method: 'PUT', body: fd })
-      } else {
-        res = await authFetch('/api/purchase-orders', jsonOpts('PUT', payload))
-      }
-      if (!res.ok) { flash(false, 'PO update failed: ' + await poResponseError(res)); return }
-      const edited = await res.json().catch(() => ({}))
-      if (edited.warning) alert(edited.warning)
+      // No new file = attachment omitted, which keeps the saved one.
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file: editPOFile, target: 'po-attachment', context: { job_id: id, record_id: editingPOId },
+        send: attachment => fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', attachment ? { ...payload, attachment } : payload)),
+      })
+      if (!r.ok) { flash(false, (r.stage === 'upload' ? 'PO attachment upload failed: ' : 'PO update failed: ') + r.error); return }
+      if (r.data?.warning) alert(r.data.warning)
       setEditingPOId(null)
       setEditPOFile(null)
       await loadPurchaseOrders()
@@ -636,10 +621,9 @@ function ResidentialJobDetailInner() {
 
   async function openPOAttachment(attachmentUrl) {
     try {
-      const res = await authFetch(`/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
-      const json = await res.json().catch(() => ({}))
-      if (json.signedUrl) window.open(json.signedUrl, '_blank')
-      else alert('Could not open attachment: ' + (json.error || 'Unknown error'))
+      const r = await fetchJson(authFetch, `/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
+      if (r.ok && r.data?.signedUrl) window.open(r.data.signedUrl, '_blank')
+      else alert('Could not open attachment: ' + (r.ok ? 'no link returned' : r.error))
     } catch (e) {
       alert('Could not open attachment: ' + (e.message || 'network error'))
     }
@@ -648,8 +632,8 @@ function ResidentialJobDetailInner() {
   async function deletePO(poId) {
     if (!window.confirm('Delete this purchase order?')) return
     try {
-      const res = await authFetch('/api/purchase-orders', jsonOpts('DELETE', { id: poId }))
-      if (!res.ok) flash(false, 'PO delete failed: ' + await poResponseError(res))
+      const r = await fetchJson(authFetch, '/api/purchase-orders', jsonInit('DELETE', { id: poId }))
+      if (!r.ok) flash(false, 'PO delete failed: ' + r.error)
       await loadPurchaseOrders()
     } catch (e) {
       flash(false, 'PO delete failed: ' + (e.message || 'network error'))
@@ -1112,9 +1096,8 @@ function ResidentialJobDetailInner() {
         submitted_at: new Date().toISOString(),
       }
       const { data: { session: bSession } } = await supabase.auth.getSession()
-      const res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify(body) })
-      const result = await res.json()
-      if (result.error) { setBillingMsg('Error: ' + result.error); return }
+      const r = await fetchJson(fetch, '/api/billing-entry', jsonInit('POST', body, { headers: { 'Authorization': `Bearer ${bSession?.access_token}` } }))
+      if (!r.ok) { setBillingMsg('Error: ' + r.error); return }
       setBillingForm({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
       setShowBillingForm(false)
       await loadBillingSubmissions()
@@ -1134,9 +1117,9 @@ function ResidentialJobDetailInner() {
       if (!rejection_reason.trim()) { alert('A rejection reason is required.'); return }
     }
     const { data: { session: bSession } } = await supabase.auth.getSession()
-    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, status, ...(rejection_reason ? { rejection_reason: rejection_reason.trim() } : {}) }) })
-    const result = await res.json().catch(() => ({}))
-    if (!res.ok || result.error) { alert('Error: ' + (result.error || `HTTP ${res.status}`)); return }
+    const r = await fetchJson(fetch, '/api/billing-entry', jsonInit('PATCH', { id: billingId, status, ...(rejection_reason ? { rejection_reason: rejection_reason.trim() } : {}) }, { headers: { 'Authorization': `Bearer ${bSession?.access_token}` } }))
+    if (!r.ok) { alert('Error: ' + r.error); return }
+    const result = r.data || {}
     // Approving emails the sub and sends the lien waiver server side (billing-entry).
     if (result.emailError) alert(`Billing ${status}, but the email to the sub was not sent: ${result.emailError}`)
     if (result.waiverError) alert('Billing approved, but the lien waiver was not sent: ' + result.waiverError)
@@ -1163,9 +1146,8 @@ function ResidentialJobDetailInner() {
     if (block) { alert(block); return }
     if (!confirm('Delete this billing submission?')) return
     const { data: { session: bSession } } = await supabase.auth.getSession()
-    const res = await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId }) })
-    const result = await res.json()
-    if (result.error) { alert('Error: ' + result.error); return }
+    const r = await fetchJson(fetch, '/api/billing-entry', jsonInit('DELETE', { id: billingId }, { headers: { 'Authorization': `Bearer ${bSession?.access_token}` } }))
+    if (!r.ok) { alert('Error: ' + r.error); return }
     await loadBillingSubmissions()
   }
 
@@ -1280,7 +1262,8 @@ function ResidentialJobDetailInner() {
     if (!file) return
     setPhotoMsg('')
     if (!/^image\//.test(file.type || '')) { setPhotoMsg('Error: pick an image file.'); return }
-    if (file.size > 25 * 1024 * 1024) { setPhotoMsg('Error: file too large (max 25 MB).'); return }
+    // No portal size cap (the photo goes straight to Storage); Storage's own limits still apply
+    // and show up as the upload error below.
     setUploadingPhoto(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1338,8 +1321,8 @@ function ResidentialJobDetailInner() {
       const path = `${id}/${docCategory}/${Date.now()}-${safeFileName(file.name)}`
       const urlRes = await api('/api/job-docs', jsonOpts('POST', { action: 'upload-url', path }))
       if (!urlRes.ok || !urlRes.data.signedUrl) throw new Error(urlRes.error || 'Could not get upload URL')
-      const up = await fetch(urlRes.data.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-      if (!up.ok) throw new Error('File upload failed')
+      const up = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+      if (!up.ok) throw new Error(up.error)
       const ins = await api('/api/job-docs', jsonOpts('POST', { action: 'insert-document', job_id: id, storage_path: path, file_name: file.name, category: docCategory }))
       if (!ins.ok) throw new Error('File uploaded but the document record was not saved: ' + ins.error)
       await loadDocuments()
@@ -1390,6 +1373,7 @@ function ResidentialJobDetailInner() {
 
   async function submitDC(e) {
     e.preventDefault()
+    if (submittingDc) return
     setSubmittingDc(true)
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { alert('Session expired. Please refresh the page.'); setSubmittingDc(false); return }
@@ -1406,32 +1390,22 @@ function ResidentialJobDetailInner() {
       // New costs go through review (Pending → Approve), same as commercial
       status: 'pending',
     }
-    let res, json
-    if (dcFile) {
-      const fd = new FormData()
-      fd.append('file', dcFile)
-      fd.append('data', JSON.stringify(rowData))
-      res = await fetch('/api/direct-costs', { method: 'POST', body: fd })
-    } else {
-      res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
-    }
-    if (!res.ok) {
-      let errMsg = 'Failed to save cost. Please try again.'
-      try { const j = await res.json(); if (j.error) errMsg = 'Error: ' + j.error } catch {}
-      alert(errMsg)
-      setSubmittingDc(false)
-      return
-    }
-    json = await res.json()
-    if (!json.error) {
+    try {
+      // Receipt goes straight to Storage; the API gets only { path, uploadReceipt }.
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file: dcFile, target: 'direct-cost-receipt', context: { job_id: id },
+        send: attachment => fetchJson(authFetch, '/api/direct-costs', jsonInit('POST', attachment ? { ...rowData, attachment } : rowData)),
+      })
+      if (!r.ok) { alert((r.stage === 'upload' ? 'Receipt upload failed: ' : 'Error: ') + r.error); return }
       setDcForm({ cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '', is_credit: false })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
-    } else {
-      alert('Error: ' + json.error)
+    } catch (err) {
+      alert('Failed to save cost: ' + (err?.message || 'network error'))
+    } finally {
+      setSubmittingDc(false)
     }
-    setSubmittingDc(false)
   }
 
   // Status changes and review edits go through /api/dc-review (same as commercial).
@@ -1439,18 +1413,9 @@ function ResidentialJobDetailInner() {
     const { data: { session: rSession } } = await supabase.auth.getSession()
     const token = rSession?.access_token
     if (!token) { alert('Session expired — please reload the page.'); return { error: 'No session' } }
-    try {
-      const res = await fetch('/api/dc-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ action, id: costId, ...extraFields }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok && !json.error) json.error = `server returned ${res.status}`
-      return json
-    } catch (err) {
-      return { error: err.message || 'network error' }
-    }
+    // A failed request (non-2xx, non-JSON, bad JSON, network) always comes back as { error }.
+    const r = await fetchJson(fetch, '/api/dc-review', jsonInit('POST', { action, id: costId, ...extraFields }, { headers: { 'Authorization': `Bearer ${token}` } }))
+    return r.ok ? (r.data || {}) : { ...(r.data && typeof r.data === 'object' ? r.data : {}), error: r.error }
   }
 
   async function approveCost(costId) {
@@ -1753,8 +1718,8 @@ function ResidentialJobDetailInner() {
       const path = `${id}/owner-draws/${d.id}/${Date.now()}-${safeFileName(file.name)}`
       const urlRes = await api('/api/job-docs', jsonOpts('POST', { action: 'upload-url', path }))
       if (!urlRes.ok || !urlRes.data.signedUrl) throw new Error(urlRes.error || 'Could not get upload URL')
-      const up = await fetch(urlRes.data.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-      if (!up.ok) throw new Error('File upload failed')
+      const up = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+      if (!up.ok) throw new Error(up.error)
       const r = await api('/api/res-owner-draws', jsonOpts('PATCH', { id: d.id, action: 'attach', path, name: file.name }))
       if (!r.ok) throw new Error(r.error)
       await loadOwnerDraws()
@@ -1822,27 +1787,34 @@ function ResidentialJobDetailInner() {
   async function parseEstimate(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    // AI parsing has its own processing limit (not a portal upload limit): say so before uploading.
+    if (file.size > AI_PARSE_MAX_BYTES) { setParseMsg('Error: ' + AI_PARSE_LIMIT_PRECHECK_MESSAGE); e.target.value = ''; return }
     setParsingEstimate(true)
-    setParseMsg('Parsing estimate…')
+    setParseMsg('Uploading estimate…')
     setParsedItems([])
     setSelectedImportIds(new Set())
-    const fd = new FormData()
-    fd.append('file', file)
     try {
-      const res = await fetch('/api/parse-estimate', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok || data.error) {
-        setParseMsg('Error: ' + (data.error || 'Parse failed'))
+      // Staged straight to Storage (private, temporary); the API gets only { path, uploadReceipt }
+      // and removes the staged file once parsing finishes.
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file, target: 'parse-estimate',
+        send: attachment => { setParseMsg('Parsing estimate…'); return fetchJson(authFetch, '/api/parse-estimate', jsonInit('POST', { attachment })) },
+      })
+      if (r.stage === 'save') forgetUpload(file) // the staged file is gone after any parse attempt
+      if (!r.ok) {
+        setParseMsg('Error: ' + (r.stage === 'upload' ? 'upload failed — ' : '') + r.error)
       } else {
-        setParsedItems(data.items || [])
-        setSelectedImportIds(new Set((data.items || []).map((_, i) => i)))
-        setParseMsg(`Found ${(data.items || []).length} line items — review and import below`)
+        const items = r.data?.items || []
+        setParsedItems(items)
+        setSelectedImportIds(new Set(items.map((_, i) => i)))
+        setParseMsg(`Found ${items.length} line items — review and import below`)
       }
     } catch (err) {
       setParseMsg('Error: ' + err.message)
+    } finally {
+      setParsingEstimate(false)
+      e.target.value = ''
     }
-    setParsingEstimate(false)
-    e.target.value = ''
   }
 
   async function importSelectedItems() {

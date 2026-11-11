@@ -178,7 +178,53 @@ curl -X POST -H "Authorization: Bearer $NVB_KEY" -H "Content-Type: application/j
 
 ## POST /attachments
 
-Uploads a job document. It is stored in the same place as the job page's Documents section. Send `multipart/form-data` with the fields `file`, `job_id` and `category`. `category` is one of `plans`, `geotech`, `permits`, `specs` or `other` (the default). The maximum size is **4 MB**.
+Uploads a job document. It is stored in the same place as the job page's Documents section (`job-documents` bucket, `job_documents` table). `category` is one of `plans`, `geotech`, `permits`, `specs` or `other` (the default).
+
+There are two ways to upload.
+
+### Signed upload (recommended, any size)
+
+The file bytes go **straight to Supabase Storage**, not through the portal. There is no portal size cap. The Storage project's own limits still apply, and so do your network and client memory. The upload is a single PUT and is not resumable.
+
+**Step 1.** Ask for an upload URL. Send JSON with the file's name, MIME type and exact size in bytes:
+
+```bash
+curl -X POST -H "Authorization: Bearer $NVB_KEY" -H "Content-Type: application/json" \
+  https://portal.nv.construction/api/bot/v1/attachments \
+  -d '{"action":"upload-url","job_id":"8c2f…","category":"plans","file_name":"Plans Rev 3.pdf","content_type":"application/pdf","size":48213377}'
+```
+```json
+{ "bucket": "job-documents", "path": "8c2f…/plans/1761840000000-<uuid>-Plans_Rev_3.pdf",
+  "signedUrl": "https://…/storage/v1/object/upload/sign/job-documents/…?token=…",
+  "uploadReceipt": "v1.…", "expires_at": 1761847200000 }
+```
+
+The server builds the path. You can't choose the path or the bucket. The signed URL is created with the bot's own access (row-level security applies). The URL and the receipt are valid for 2 hours and work only for this bot key, job, category and path. Treat both as secrets and don't log them.
+
+**Step 2.** PUT the raw file bytes to `signedUrl`, with the same `Content-Type` you declared. Do **not** send the bot key on this request.
+
+```bash
+curl -X PUT -H "Content-Type: application/pdf" --data-binary @"Plans Rev 3.pdf" "$SIGNED_URL"
+```
+
+**Step 3.** Record the document. Send the path and receipt from step 1:
+
+```bash
+curl -X POST -H "Authorization: Bearer $NVB_KEY" -H "Content-Type: application/json" \
+  https://portal.nv.construction/api/bot/v1/attachments \
+  -d '{"action":"record-upload","job_id":"8c2f…","category":"plans","attachment":{"path":"8c2f…/plans/…","uploadReceipt":"v1.…"}}'
+```
+```json
+{ "ok": true, "id": "d1…", "storage_path": "8c2f…/plans/1761840000000-<uuid>-Plans_Rev_3.pdf" }
+```
+
+The server checks the receipt (bot, key, job, category, exact path and expiry), checks that you can still see the job, and confirms that the object exists in Storage with the declared size. It then inserts the row and writes one audit entry. If the receipt has expired or the object is missing, you get a JSON error with a `code` (`upload_expired`, `upload_missing`, `upload_mismatch`, `upload_invalid`). Start again from step 1.
+
+Base64 file content and file URLs are not accepted anywhere.
+
+### Legacy inline upload (small files only)
+
+Send `multipart/form-data` with the fields `file`, `job_id` and `category`. The bytes pass through the portal, so this path is limited to **4 MB** (`LEGACY_INLINE_ATTACHMENT_BYTES`). A larger file gets `413` with a JSON error that points to the signed upload. A request larger than the hosting platform's 4.5 MB request limit is rejected **before** it reaches the portal. That rejection may not be JSON, and the portal can't change it. Use the signed upload for anything that might be large.
 
 ```bash
 curl -X POST -H "Authorization: Bearer $NVB_KEY" \

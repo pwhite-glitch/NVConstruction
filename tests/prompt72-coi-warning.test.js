@@ -156,7 +156,8 @@ describe('no server block / no migration', () => {
     expect(route).not.toMatch(/coi_|coiState|coi-warning/)
   })
   test('no migrations/071_*', () => {
-    expect(fs.readdirSync(path.join(__dirname, '..', 'migrations')).filter(f => f.startsWith('071_'))).toEqual([])
+    // Prompt 78 owns the only 071 (unapplied sales-docs bucket cap removal).
+    expect(fs.readdirSync(path.join(__dirname, '..', 'migrations')).filter(f => f.startsWith('071_'))).toEqual(['071_remove_sales_docs_file_cap.sql'])
   })
 })
 
@@ -247,13 +248,18 @@ describe('L1: dashboard billing approve confirms COI', () => {
     expect(coi).toBeGreaterThan(-1)
     expect(body).toMatch(/if \(!\(await confirmBillingCoiApprove\(sub\.job_id, sub\.company_name\)\)\) return/)
     expect(coi).toBeLessThan(body.indexOf('findDuplicateBillings'))
-    expect(coi).toBeLessThan(body.indexOf('authFetch('))
+    // prompt 78: requests go through fetchJson(authFetch, …) / uploadThenSend({ fetchFn: authFetch })
+    const firstFetch = body.search(/authFetch\(|fetchJson\(|uploadThenSend\(/)
+    expect(firstFetch).toBeGreaterThan(-1)
+    expect(coi).toBeLessThan(firstFetch)
   })
   test('saveBillingEdit → approved: COI confirm before any write', () => {
     const body = fnBody(src, 'saveBillingEdit')
     const coi = body.indexOf('await confirmBillingCoiApprove(')
     expect(coi).toBeGreaterThan(-1)
     expect(body).toMatch(/editBillingForm\.status === 'approved' && savedForCoi\?\.status !== 'approved'/)
-    expect(coi).toBeLessThan(body.indexOf('authFetch('))
+    const firstFetch = body.search(/authFetch\(|fetchJson\(|uploadThenSend\(/)
+    expect(firstFetch).toBeGreaterThan(-1)
+    expect(coi).toBeLessThan(firstFetch)
   })
 })

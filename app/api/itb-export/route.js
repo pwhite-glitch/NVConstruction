@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
-import { buildZip } from '../../../lib/zip-builder'
 import { denyJob } from '../../../lib/roles'
 import { canReadBidPackage, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
+import { privateJson } from '../../../lib/file-upload-server'
+import { itbEntries, itbSlug, itbZipName, itbReadme, MANIFEST_PAGE_SIZE, MAX_SELECTED_IDS } from '../../../lib/export-manifest'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,38 +11,44 @@ const adminSupabase = createClient(
 )
 
 const ALLOWED_ROLES = new Set(['principal', 'pm', 'apm', 'admin', 'super'])
+const SIGNED_URL_SECONDS = 3600
 
+// POST /api/itb-export — ITB package MANIFEST (prompt 78). No file bytes and no ZIP here.
+// Body: { bidPackageId, selectedPlanIds: [id…] (≤ 1000), projectName?, offset? }
+// → { project_name, zip_name, total, offset, next_offset, entries: [{ name, url }], readme_text }
+// Every page re-checks the caller and the package and returns only plans of THAT package among
+// the requested ids; a missing / foreign requested id refuses the whole export. Entry names are
+// assigned here from one stable order over ALL selected plans, so pages never collide. URLs are
+// 1-hour signed links from the bid-plans bucket. The ITB HTML is generated in the browser and
+// never sent here.
 export async function POST(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
-
-  if (!ALLOWED_ROLES.has(auth.role)) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  if (!ALLOWED_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   let body
-  try {
-    body = await request.json()
-  } catch {
-    return Response.json({ error: 'Invalid request body' }, { status: 400 })
-  }
-
-  const { bidPackageId, selectedPlanIds, itbHtml, projectName } = body
-
-  if (!bidPackageId || !Array.isArray(selectedPlanIds)) {
+  try { body = await request.json() } catch { return Response.json({ error: 'Invalid request body' }, { status: 400 }) }
+  const { bidPackageId, selectedPlanIds, projectName } = body || {}
+  if ('itbHtml' in (body || {})) return Response.json({ error: 'The ITB document is added in the browser; do not send it.' }, { status: 400 })
+  if (!bidPackageId || typeof bidPackageId !== 'string' || !Array.isArray(selectedPlanIds)) {
     return Response.json({ error: 'bidPackageId and selectedPlanIds are required' }, { status: 400 })
   }
+  if (!selectedPlanIds.length) return Response.json({ error: 'Select at least one document to export.' }, { status: 400 })
+  if (selectedPlanIds.length > MAX_SELECTED_IDS || selectedPlanIds.some(id => typeof id !== 'string' || !id || id.length > 64)) {
+    return Response.json({ error: `Select up to ${MAX_SELECTED_IDS} documents.` }, { status: 400 })
+  }
+  if (projectName !== undefined && projectName !== null && (typeof projectName !== 'string' || projectName.length > 200)) {
+    return Response.json({ error: 'projectName must be a short string.' }, { status: 400 })
+  }
+  const offset = body.offset === undefined ? 0 : body.offset
+  if (!Number.isSafeInteger(offset) || offset < 0) return Response.json({ error: 'Invalid offset.' }, { status: 400 })
 
-  // Verify the bid package exists
   const { data: pkg, error: pkgErr } = await adminSupabase
     .from('bid_packages')
     .select('id, title, job_id, allowed_users')
     .eq('id', bidPackageId)
     .maybeSingle()
-
-  if (pkgErr || !pkg) {
-    return Response.json({ error: 'Bid package not found' }, { status: 404 })
-  }
+  if (pkgErr || !pkg) return Response.json({ error: 'Bid package not found' }, { status: 404 })
   if (!canReadBidPackage(auth.role, auth.userId, pkg)) return Response.json({ error: NO_BID_ACCESS_MESSAGE }, { status: 403 })
   // A package with no job is not job-scoped
   if (pkg.job_id) {
@@ -49,93 +56,41 @@ export async function POST(request) {
     if (denied) return denied
   }
 
-  // Fetch only plans that belong to this package and match the requested IDs
-  // This ensures callers cannot request files from other packages
+  // Only plans of this package among the requested ids (metadata only).
+  const wanted = [...new Set(selectedPlanIds)]
   const { data: plans, error: plansErr } = await adminSupabase
     .from('bid_plans')
-    .select('id, file_name, storage_path')
+    .select('id, file_name, storage_path, bid_package_id')
     .eq('bid_package_id', bidPackageId)
-    .in('id', selectedPlanIds.length > 0 ? selectedPlanIds : ['00000000-0000-0000-0000-000000000000'])
-
-  if (plansErr) {
-    return Response.json({ error: 'Failed to load document records' }, { status: 500 })
+    .in('id', wanted)
+  if (plansErr) return Response.json({ error: 'Failed to load document records' }, { status: 500 })
+  const mine = (plans || []).filter(p => p.bid_package_id === bidPackageId && p.storage_path)
+  const found = new Set(mine.map(p => p.id))
+  const missing = wanted.filter(id => !found.has(id))
+  if (missing.length) {
+    return Response.json({ error: `${missing.length} selected document${missing.length > 1 ? 's are' : ' is'} not in this bid package (or ${missing.length > 1 ? 'were' : 'was'} removed). Refresh and select again. Export aborted.` }, { status: 422 })
   }
 
-  // Download every selected file; track failures explicitly
-  const zipFiles = []
-  const failures = []
-  const usedNames = new Set()
-
-  for (const plan of (plans || [])) {
-    const { data: blob, error: dlErr } = await adminSupabase.storage
-      .from('bid-plans')
-      .download(plan.storage_path)
-
-    if (dlErr || !blob) {
-      failures.push(plan.file_name)
-      continue
+  const all = itbEntries(mine)
+  const page = all.slice(offset, offset + MANIFEST_PAGE_SIZE)
+  let entries = []
+  if (page.length) {
+    const { data: signed, error: signErr } = await adminSupabase.storage.from('bid-plans').createSignedUrls(page.map(e => e.storage_path), SIGNED_URL_SECONDS)
+    const failed = signErr ? page : page.filter((e, i) => !signed?.[i]?.signedUrl || signed[i].error)
+    if (failed.length) {
+      return Response.json({ error: `Could not prepare the following file${failed.length > 1 ? 's' : ''}: ${failed.map(e => e.name.replace(/^Documents\//, '')).join(', ')}. Export aborted. Verify storage and try again.` }, { status: 422 })
     }
-
-    const arrayBuf = await blob.arrayBuffer()
-    const data = Buffer.from(arrayBuf)
-
-    // Safe, unique filename: strip characters that cause problems in ZIP paths
-    let safeName = plan.file_name.replace(/[^\w\s.\-()]/g, '_')
-    if (usedNames.has(safeName)) {
-      const ext = safeName.match(/(\.[^.]+)$/) ? safeName.match(/(\.[^.]+)$/)[1] : ''
-      const base = safeName.slice(0, safeName.length - ext.length)
-      let n = 2
-      while (usedNames.has(`${base}_${n}${ext}`)) n++
-      safeName = `${base}_${n}${ext}`
-    }
-    usedNames.add(safeName)
-
-    zipFiles.push({ name: `Documents/${safeName}`, data })
+    entries = page.map((e, i) => ({ name: e.name, url: signed[i].signedUrl }))
   }
 
-  // Fail clearly if any file could not be retrieved — never produce a silent incomplete package
-  if (failures.length > 0) {
-    return Response.json({
-      error: `Could not retrieve the following file${failures.length > 1 ? 's' : ''}: ${failures.join(', ')}. Export aborted. Verify storage and try again.`,
-    }, { status: 422 })
-  }
-
-  // Prepend the ITB HTML document
-  if (itbHtml) {
-    const htmlBuf = Buffer.from(itbHtml, 'utf8')
-    zipFiles.unshift({ name: 'ITB_Invitation_to_Bid.html', data: htmlBuf })
-  }
-
-  // README with context
-  const slug = (projectName || pkg.title || 'project').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 40)
-  const readmeLines = [
-    `INVITATION TO BID`,
-    `Project: ${projectName || pkg.title}`,
-    '='.repeat(58),
-    '',
-    'Contents:',
-    '  ITB_Invitation_to_Bid.html  — Open in any browser, then File > Print > Save as PDF',
-    `  Documents/                  — ${zipFiles.filter(f => f.name.startsWith('Documents/')).length} project file(s)`,
-    '',
-    'Instructions:',
-    '  1. Open ITB_Invitation_to_Bid.html in your browser to review the invitation.',
-    '  2. Print or Save as PDF for your records.',
-    '  3. Documents/ contains original drawings and specifications.',
-    '',
-    'CONFIDENTIAL — For invited subcontractors only. Do not forward without authorization.',
-    '',
-    `Generated: ${new Date().toUTCString()}`,
-  ]
-  zipFiles.unshift({ name: 'README.txt', data: Buffer.from(readmeLines.join('\n'), 'utf8') })
-
-  const zip = buildZip(zipFiles)
-
-  return new Response(zip, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="ITB_${slug}.zip"`,
-      'Content-Length': String(zip.length),
-    },
+  const name = projectName || pkg.title
+  return privateJson({
+    project_name: name,
+    zip_name: itbZipName(itbSlug(projectName, pkg.title)),
+    total: all.length,
+    offset,
+    next_offset: offset + MANIFEST_PAGE_SIZE < all.length ? offset + MANIFEST_PAGE_SIZE : null,
+    entries,
+    readme_text: itbReadme({ projectName: name, docCount: all.length }),
   })
 }

@@ -2,9 +2,10 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import {
   isMb, canWorkMbOrder, isOffice, isUuidLike, ALL_DOC_CATEGORIES, MB_FORM_CATEGORIES,
-  MB_MAX_UPLOAD_BYTES, CLIENT_FORM_EXTS, SUPPLIER_FORM_EXTS,
 } from '../../../lib/mb-orders'
 import { actorName, isMissingSchema, SCHEMA_HINT } from '../../../lib/mb-server'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse, readObjectHead } from '../../../lib/file-upload-server'
+import { salesDocRuleError } from '../../../lib/upload-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -102,98 +103,18 @@ export async function POST(request) {
   if (!SALES_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   try {
-    const contentType = request.headers.get('content-type') || ''
+    // Files are uploaded directly to Storage (POST /api/file-upload, target sales-doc) and
+    // recorded with action 'record-upload'. Multipart is refused before anything is read.
+    const multipart = rejectMultipart(request)
+    if (multipart) return multipart
 
-    // ── File upload ───────────────────────────────────────────────────────────
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      const file = formData.get('file')
-      let meta
-      try { meta = JSON.parse(formData.get('data') || '{}') } catch { return err('Upload details could not be read.', 400) }
-      if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return err('Upload details could not be read.', 400)
-
-      if (!file || typeof file === 'string' || !meta.order_id) return Response.json({ error: 'file and order_id required' }, { status: 400 })
-      const category = meta.category || 'general'
-      if (!ALL_DOC_CATEGORIES.includes(category)) return err('Unknown document category.', 400)
-
-      const o = await loadOrder(meta.order_id)
-      if (o.error) return err(o.error, o.status)
-      const order = o.order
-      const mb = isMb(order)
-      if (MB_FORM_CATEGORIES.includes(category) && !mb) return err('Order forms are only for metal-building orders.', 400)
-      const denied = await mbDenied(auth, order)
-      if (denied) return denied
-
-      const ext = String(file.name || '').split('.').pop().toLowerCase()
-      if (mb) {
-        if (!file.size) return err('The file is empty.', 400)
-        if (file.size > MB_MAX_UPLOAD_BYTES) return err('Files must be 25 MB or smaller.', 400)
-        if (category === 'client_order_form' && !CLIENT_FORM_EXTS.has(ext)) return err('Upload the client order form as a PDF (it is what the customer signs).', 400)
-        if (category === 'supplier_order_form' && !SUPPLIER_FORM_EXTS.has(ext)) return err("The supplier's order form must be a PDF, image, Word or Excel file.", 400)
-      }
-
-      const safe  = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const path  = `${order.id}/${Date.now()}_${safe}`
-      const buffer = Buffer.from(await file.arrayBuffer())
-      if (mb && category === 'client_order_form' && !buffer.subarray(0, 1024).toString('latin1').includes('%PDF-')) {
-        return err('That file is not a real PDF. Export the client order form as a PDF and upload it again.', 400)
-      }
-
-      // Versioning for the two order forms: a new upload replaces (but never changes) the previous one.
-      let version = {}
-      if (MB_FORM_CATEGORIES.includes(category)) {
-        const { data: prev, error: prevErr } = await adminSupabase.from('sales_order_docs').select('id, version_number, created_at').eq('order_id', order.id).eq('category', category)
-        if (prevErr) return err(prevErr.message, 500)
-        const latest = [...(prev || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0]
-        if (latest) version = { version_number: Math.max(...prev.map(p => Number(p.version_number || 1))) + 1, replaces_doc_id: latest.id }
-      }
-
-      const { error: uploadErr } = await adminSupabase.storage
-        .from(BUCKET)
-        .upload(path, buffer, { contentType: file.type || 'application/octet-stream' })
-
-      if (uploadErr) return Response.json({ error: 'Upload failed: ' + uploadErr.message + '. Nothing was saved; try again.' }, { status: 500 })
-
-      const uploaderName = mb ? await actorName(adminSupabase, auth.userId) : (meta.uploaded_by_name || null)
-      const { data: doc, error: dbErr } = await adminSupabase
-        .from('sales_order_docs')
-        .insert({
-          order_id:           order.id,
-          file_name:          file.name,
-          storage_path:       path,
-          category,
-          // The supplier's order form is internal: never shared with the customer.
-          visible_to_customer: category === 'supplier_order_form' ? false : (meta.visible_to_customer === true),
-          uploaded_by:        auth.userId,
-          uploaded_by_name:   uploaderName,
-          notes:              typeof meta.notes === 'string' ? meta.notes : null,
-          file_size_bytes:    file.size || null,
-          ...version,
-        })
-        .select('id')
-        .single()
-
-      if (dbErr) {
-        // Don't leave an orphan file behind.
-        await adminSupabase.storage.from(BUCKET).remove([path])
-        const hint = isMissingSchema(dbErr) || /category/i.test(dbErr.message || '') && MB_FORM_CATEGORIES.includes(category) ? ` ${SCHEMA_HINT}` : ''
-        return Response.json({ error: `The file uploaded but could not be recorded (${dbErr.message}). Nothing was saved; try again.${hint}` }, { status: 500 })
-      }
-
-      // Log to history
-      await adminSupabase.from('sales_order_history').insert({
-        order_id:   order.id,
-        actor_id:   auth.userId,
-        actor_name: uploaderName || 'Staff',
-        action:     'doc_upload',
-        details:    { file_name: file.name, category, doc_id: doc.id },
-      })
-
-      return Response.json({ ok: true, id: doc.id, storage_path: path })
-    }
-
-    const body = await request.json()
+    let body
+    try { body = await request.json() } catch { return err('Invalid JSON body', 400) }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return err('Invalid JSON body', 400)
     const { action } = body
+
+    // ── Record a directly uploaded file ───────────────────────────────────────
+    if (action === 'record-upload') return recordUpload(auth, body)
 
     // ── Toggle customer visibility ─────────────────────────────────────────────
     if (action === 'toggle_customer_visibility') {
@@ -259,4 +180,85 @@ export async function POST(request) {
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
+}
+
+const RECORD_KEYS = new Set(['action', 'order_id', 'category', 'visible_to_customer', 'notes', 'uploaded_by_name', 'attachment'])
+
+// action 'record-upload': { order_id, category, visible_to_customer?, notes?, uploaded_by_name?,
+// attachment: { path, uploadReceipt } }. Same order / MB / category / form rules as before,
+// the client order form still has to really be a PDF (header bytes read from Storage), forms
+// are versioned, the supplier form stays internal, and history is written.
+async function recordUpload(auth, body) {
+  const extra = Object.keys(body).find(k => !RECORD_KEYS.has(k))
+  if (extra) return err(`Unexpected field "${extra}".`, 400)
+  const inline = inlineFileContentError(body)
+  if (inline) return err(inline, 400)
+  if (!body.order_id || !body.attachment) return err('attachment and order_id required', 400)
+  const category = body.category || 'general'
+  if (!ALL_DOC_CATEGORIES.includes(category)) return err('Unknown document category.', 400)
+
+  const o = await loadOrder(body.order_id)
+  if (o.error) return err(o.error, o.status)
+  const order = o.order
+  const mb = isMb(order)
+  if (MB_FORM_CATEGORIES.includes(category) && !mb) return err('Order forms are only for metal-building orders.', 400)
+  const denied = await mbDenied(auth, order)
+  if (denied) return denied
+
+  const v = await verifyAttachment(adminSupabase, body.attachment, { target: 'sales-doc', subject: auth.userId, ctx: { order: order.id, cat: category } })
+  if (!v.ok) return attachmentErrorResponse(v)
+  const rule = salesDocRuleError(order, category, v.fileName)
+  if (rule) return err(rule, 400)
+  if (mb && category === 'client_order_form') {
+    const h = await readObjectHead(adminSupabase, BUCKET, v.path)
+    if (h.error) return err(h.error + ' Try again.', 502)
+    if (!Buffer.from(h.head).toString('latin1').includes('%PDF-')) {
+      return err('That file is not a real PDF. Export the client order form as a PDF and upload it again.', 400)
+    }
+  }
+
+  // Versioning for the two order forms: a new upload replaces (but never changes) the previous one.
+  let version = {}
+  if (MB_FORM_CATEGORIES.includes(category)) {
+    const { data: prev, error: prevErr } = await adminSupabase.from('sales_order_docs').select('id, version_number, created_at').eq('order_id', order.id).eq('category', category)
+    if (prevErr) return err(prevErr.message, 500)
+    const latest = [...(prev || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0]
+    if (latest) version = { version_number: Math.max(...prev.map(p => Number(p.version_number || 1))) + 1, replaces_doc_id: latest.id }
+  }
+
+  const uploaderName = mb ? await actorName(adminSupabase, auth.userId) : (typeof body.uploaded_by_name === 'string' ? body.uploaded_by_name.slice(0, 200) : null)
+  const { data: doc, error: dbErr } = await adminSupabase
+    .from('sales_order_docs')
+    .insert({
+      order_id:           order.id,
+      file_name:          v.fileName,
+      storage_path:       v.path,
+      category,
+      // The supplier's order form is internal: never shared with the customer.
+      visible_to_customer: category === 'supplier_order_form' ? false : (body.visible_to_customer === true),
+      uploaded_by:        auth.userId,
+      uploaded_by_name:   uploaderName,
+      notes:              typeof body.notes === 'string' ? body.notes : null,
+      file_size_bytes:    v.size,
+      ...version,
+    })
+    .select('id')
+    .single()
+
+  if (dbErr) {
+    // Definitive insert failure: remove only the file this request just verified (as before).
+    await adminSupabase.storage.from(BUCKET).remove([v.path])
+    const hint = isMissingSchema(dbErr) || /category/i.test(dbErr.message || '') && MB_FORM_CATEGORIES.includes(category) ? ` ${SCHEMA_HINT}` : ''
+    return Response.json({ error: `The file uploaded but could not be recorded (${dbErr.message}). Nothing was saved; try again.${hint}` }, { status: 500 })
+  }
+
+  await adminSupabase.from('sales_order_history').insert({
+    order_id:   order.id,
+    actor_id:   auth.userId,
+    actor_name: uploaderName || 'Staff',
+    action:     'doc_upload',
+    details:    { file_name: v.fileName, category, doc_id: doc.id },
+  })
+
+  return Response.json({ ok: true, id: doc.id, storage_path: v.path })
 }

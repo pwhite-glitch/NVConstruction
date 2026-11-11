@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { fetchJson, jsonInit } from '../../lib/fetch-json'
 
 function SignPageInner() {
   const searchParams = useSearchParams()
@@ -26,13 +27,14 @@ function SignPageInner() {
     }
     async function fetchRequest() {
       try {
-        const res = await fetch(`/api/signing-requests/${token}?html=1`)
-        if (!res.ok) {
-          setError('This signing link is invalid or has expired.')
+        // Status + Content-Type first; the (streamed) JSON body is read once.
+        const r = await fetchJson(fetch, `/api/signing-requests/${encodeURIComponent(token)}?html=1`)
+        if (!r.ok) {
+          setError(r.status === 0 ? 'Failed to load signing request. Please try again.' : 'This signing link is invalid or has expired.')
           setLoading(false)
           return
         }
-        const json = await res.json()
+        const json = r.data || {}
         if (!json.data) {
           setError('Signing request not found.')
           setLoading(false)
@@ -66,16 +68,11 @@ function SignPageInner() {
         signer_ip = ipJson.ip || ''
       } catch {}
 
-      const res = await fetch(`/api/signing-requests/${token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(titleRequired
-          ? { signature_text: sigText.trim(), signer_title: sigTitle.trim(), signer_ip }
-          : { signature_text: sigText.trim(), signer_ip }),
-      })
-      const json = await res.json()
-      if (!res.ok || json.error) {
-        setError(json.error || 'Failed to submit signature. Please try again.')
+      const r = await fetchJson(fetch, `/api/signing-requests/${encodeURIComponent(token)}`, jsonInit('POST', titleRequired
+        ? { signature_text: sigText.trim(), signer_title: sigTitle.trim(), signer_ip }
+        : { signature_text: sigText.trim(), signer_ip }))
+      if (!r.ok) {
+        setError(r.error || 'Failed to submit signature. Please try again.')
         return
       }
       setSignedAt(new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' }))

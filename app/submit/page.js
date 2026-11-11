@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { notifyBidSubmitted } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { fetchJson, readJsonResponse, jsonInit } from '../../lib/fetch-json'
+import { putToSignedUrl } from '../../lib/file-upload-client'
 import { workingDaysOf, rangeLabel } from '../../lib/lookahead-dates'
 import { openStorageFile } from '../../lib/open-file'
 import { openSignedContract, openBidPlan, startSigning, printSubcontract } from '../../lib/portal-openers'
@@ -459,15 +461,10 @@ export default function Submit() {
   async function uploadDocFile(file, folder) {
     const ext = file.name.split('.').pop()
     const path = `${dirEntry.id}/${folder}-${Date.now()}.${ext}`
-    const res = await authFetch('/api/sub-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload-url', path }),
-    })
-    const { signedUrl, error } = await res.json()
-    if (error || !signedUrl) throw new Error(error || 'Could not get upload URL')
-    const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    if (!up.ok) throw new Error('Upload failed')
+    const r = await fetchJson(authFetch, '/api/sub-docs', jsonInit('POST', { action: 'upload-url', path }))
+    if (!r.ok || !r.data?.signedUrl) throw new Error(r.ok ? 'Could not get upload URL' : r.error)
+    const up = await putToSignedUrl(fetch, r.data.signedUrl, file)
+    if (!up.ok) throw new Error(up.error)
     return path
   }
 
@@ -477,21 +474,12 @@ export default function Submit() {
     try {
       const ext = file.name.split('.').pop()
       const path = `contracts/${contractId}/${Date.now()}.${ext}`
-      const urlRes = await authFetch('/api/sub-docs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upload-url', path }),
-      })
-      const { signedUrl, error: urlErr } = await urlRes.json()
-      if (urlErr || !signedUrl) throw new Error(urlErr || 'Could not get upload URL')
-      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-      if (!up.ok) throw new Error('Upload failed')
-      const patchRes = await fetch('/api/subcontracts', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: contractId, signed_contract_url: path }),
-      })
-      if (!patchRes.ok) throw new Error('Failed to save document link')
+      const urlRes = await fetchJson(authFetch, '/api/sub-docs', jsonInit('POST', { action: 'upload-url', path }))
+      if (!urlRes.ok || !urlRes.data?.signedUrl) throw new Error(urlRes.ok ? 'Could not get upload URL' : urlRes.error)
+      const up = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+      if (!up.ok) throw new Error(up.error)
+      const patchRes = await fetchJson(fetch, '/api/subcontracts', jsonInit('PUT', { id: contractId, signed_contract_url: path }))
+      if (!patchRes.ok) throw new Error('The file uploaded, but the document link was not saved: ' + patchRes.error)
       setMyContracts(prev => prev.map(c => c.id === contractId ? { ...c, signed_contract_url: path } : c))
       setContractUploadMsg(prev => ({ ...prev, [contractId]: { type: 'ok', text: 'Signed contract uploaded.' } }))
     } catch (err) {
@@ -864,13 +852,21 @@ export default function Submit() {
       signature = offscreen.toDataURL('image/png')
     }
     setSavingWaiver(true)
-    const res = await fetch('/api/lien-waiver-sign', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // What the sub was shown: the server refuses (409) if the billing changed since.
-      body: JSON.stringify({ submission_id: lienWaiverSub.id, signer_name: signerName.trim(), signature, expected_amount: lienWaiverSub.amount_billed, expected_period: lienWaiverSub.billing_period || null }),
-    })
-    const result = await res.json().catch(() => ({}))
+    let res, parsed
+    try {
+      res = await fetch('/api/lien-waiver-sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // What the sub was shown: the server refuses (409) if the billing changed since.
+        body: JSON.stringify({ submission_id: lienWaiverSub.id, signer_name: signerName.trim(), signature, expected_amount: lienWaiverSub.amount_billed, expected_period: lienWaiverSub.billing_period || null }),
+      })
+      parsed = await readJsonResponse(res)
+    } catch {
+      setWaiverMsg('Error: could not reach the server. Check your connection and try again.')
+      setSavingWaiver(false)
+      return
+    }
+    const result = parsed.ok ? (parsed.data || {}) : { ...(parsed.data && typeof parsed.data === 'object' ? parsed.data : {}), error: parsed.error }
     if (res.status === 409) {
       // Reload, and show the billing as it is now (or close if there is nothing left to sign).
       const list = await loadSubmissions()
@@ -879,7 +875,7 @@ export default function Submit() {
       else setLienWaiverSub(null)
       setWaiverMsg((result.error || 'This billing was changed. Reload and review it before signing.') + ' The billing has been reloaded — review the amount shown and sign again.')
     }
-    else if (result.error || !res.ok) { setWaiverMsg('Error: ' + (result.error || `HTTP ${res.status}`)) }
+    else if (!parsed.ok) { setWaiverMsg('Error: ' + result.error) }
     else {
       setLienWaiverSub(null)
       setSignerName('')
@@ -936,7 +932,7 @@ export default function Submit() {
     }
     const doc_url = path
     // Server checks access, billing on, and over-billing, and computes retainage from the SOV lines
-    const res = await authFetch('/api/sub-portal/billing', {
+    const parsed = await fetchJson(authFetch, '/api/sub-portal/billing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -953,8 +949,9 @@ export default function Submit() {
         sov_lines: sovForm.filter(l => l.amount_this > 0).map(l => ({ sov_line_id: l.sov_line_id, amount: l.amount_this, pct_this_period: parseFloat(l.pct_this) || 0 })),
       }),
     })
-    const result = await res.json().catch(() => ({}))
-    if (!res.ok) {
+    // Status + Content-Type first: a non-JSON / failed reply is an error, never a success.
+    const result = parsed.ok ? (parsed.data || {}) : { ...(parsed.data && typeof parsed.data === 'object' ? parsed.data : {}), error: parsed.error }
+    if (!parsed.ok) {
       setSubmitError(result.error || 'Submission failed. Please try again.')
       setLoading(false)
       return

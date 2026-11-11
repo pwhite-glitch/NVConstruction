@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { fetchJson, jsonInit } from '../../lib/fetch-json'
+import { uploadThenSend, putToSignedUrl } from '../../lib/file-upload-client'
 import { vehicleLogLabel } from '../../lib/vehicle-log-types'
 import { coiState, coiNeedsReminder, fmtCoiDate, isCoiDate } from '../../lib/coi-status'
 import LevelingMatrix, { loadLevelingEntries as fetchLevelingEntries } from '../components/bid/LevelingMatrix'
@@ -760,15 +762,8 @@ export default function Dashboard() {
 
   // Same endpoint and actions the job page uses (/api/dc-review)
   async function dcReview(action, id, extra = {}) {
-    try {
-      const res = await authFetch('/api/dc-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, id, ...extra }),
-      })
-      const json = await res.json().catch(() => ({}))
-      return res.ok && !json.error ? { ok: true } : { error: json.error || `Request failed (${res.status})` }
-    } catch (e) { return { error: e.message } }
+    const r = await fetchJson(authFetch, '/api/dc-review', jsonInit('POST', { action, id, ...extra }))
+    return r.ok ? { ok: true } : { error: r.error }
   }
 
   // Only costs that already have a line on their own job, or just got one picked, are sent.
@@ -1142,7 +1137,7 @@ export default function Dashboard() {
   }
 
   async function uploadCover(file, jobId) {
-    if (file.size > 15 * 1024 * 1024) { setCoverMsg('File too large (max 15 MB).'); return }
+    // No portal size cap: the image is compressed in the browser and goes straight to Storage.
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setCoverMsg('Unsupported type. Use JPEG, PNG, or WebP.'); return }
     setUploadingCover(true)
     setCoverMsg('')
@@ -1173,19 +1168,15 @@ export default function Dashboard() {
       const dupMatches = findDuplicateBillings(submissions)[sub.id]
       if (dupMatches?.length && !window.confirm(`This billing looks like a possible duplicate of:\n${duplicateTooltip(dupMatches, submissions)}\n\nApprove anyway?`)) return
     }
-    const res = await authFetch('/api/billing-entry', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: sub.id,
-        status,
-        reviewed_at: new Date().toISOString(),
-        ...(status === 'rejected' ? { rejection_reason: String(rejectionReason).trim() } : {}),
-        email_sub: true,
-      }),
-    })
-    const out = await res.json().catch(() => ({}))
-    if (!res.ok || out.error) { alert(`Could not mark billing ${status}: ` + (out.error || `HTTP ${res.status}`)); return }
+    const r = await fetchJson(authFetch, '/api/billing-entry', jsonInit('PATCH', {
+      id: sub.id,
+      status,
+      reviewed_at: new Date().toISOString(),
+      ...(status === 'rejected' ? { rejection_reason: String(rejectionReason).trim() } : {}),
+      email_sub: true,
+    }))
+    if (!r.ok) { alert(`Could not mark billing ${status}: ` + r.error); return }
+    const out = r.data || {}
     // Approving sends the lien waiver server side (billing-entry), so no second request here.
     if (out.emailError) alert(`Billing ${status}, but the email to the sub was not sent: ${out.emailError}`)
     if (out.waiverError) alert(`Billing approved, but the lien waiver was not sent: ${out.waiverError}`)
@@ -1309,16 +1300,14 @@ export default function Dashboard() {
     setUploadingPlanFor(bidId)
     const path = `${bidId}/${Date.now()}-${file.name}`
     // Get signed upload URL via service role
-    const urlRes = await fetch('/api/bid-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload-url', path }) })
-    const urlData = await urlRes.json()
-    if (urlData.error) { alert('Upload error: ' + urlData.error); setUploadingPlanFor(null); return }
+    const urlRes = await fetchJson(fetch, '/api/bid-plan', jsonInit('POST', { action: 'upload-url', path }))
+    if (!urlRes.ok || !urlRes.data?.signedUrl) { alert('Upload error: ' + (urlRes.ok ? 'no upload link returned' : urlRes.error)); setUploadingPlanFor(null); return }
     // Upload directly to signed URL
-    const uploadRes = await fetch(urlData.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    if (!uploadRes.ok) { alert('Upload failed — please try again'); setUploadingPlanFor(null); return }
+    const uploadRes = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+    if (!uploadRes.ok) { alert(uploadRes.error + ' Please try again.'); setUploadingPlanFor(null); return }
     // Insert record
-    const insertRes = await fetch('/api/bid-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'insert', bid_package_id: bidId, file_name: file.name, storage_path: path }) })
-    const insertData = await insertRes.json()
-    if (insertData.error) { alert('Upload error: ' + insertData.error); setUploadingPlanFor(null); return }
+    const insertRes = await fetchJson(fetch, '/api/bid-plan', jsonInit('POST', { action: 'insert', bid_package_id: bidId, file_name: file.name, storage_path: path }))
+    if (!insertRes.ok) { alert('Upload error: ' + insertRes.error); setUploadingPlanFor(null); return }
     await loadBidDetail(bidId)
     setUploadingPlanFor(null)
   }
@@ -1502,8 +1491,8 @@ export default function Dashboard() {
 
   async function setBidStatus(bidId, status) {
     const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId, status }) })
-    if (!res.ok) { const j = await res.json(); alert('Could not update bid status: ' + j.error); return }
+    const res = await fetchJson(fetch, '/api/bid-packages', jsonInit('PATCH', { id: bidId, status }, { headers: { 'Authorization': `Bearer ${session?.access_token}` } }))
+    if (!res.ok) { alert('Could not update bid status: ' + res.error); return }
     await loadBidPackages()
   }
 
@@ -1537,16 +1526,15 @@ export default function Dashboard() {
       status: editBillingForm.status,
       reviewed_at: editBillingForm.status !== 'pending' ? now : null,
     }
-    let res
-    if (editBillingFile) {
-      const formData = new FormData()
-      formData.append('file', editBillingFile)
-      formData.append('data', JSON.stringify(patchData))
-      res = await authFetch('/api/billing-entry', { method: 'PATCH', body: formData })
-    } else {
-      res = await authFetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
-    }
-    const out = await res.json().catch(() => ({}))
+    // A new file goes straight to Storage; none keeps the saved one. A failed save keeps the
+    // editor open (form + file) and shows why.
+    const r = await uploadThenSend({
+      fetchFn: authFetch, putFn: fetch, file: editBillingFile, target: 'billing-doc',
+      context: { job_id: savedForCoi?.job_id, record_id: editingBilling },
+      send: attachment => fetchJson(authFetch, '/api/billing-entry', jsonInit('PATCH', attachment ? { ...patchData, attachment } : patchData)),
+    })
+    if (!r.ok) { alert('Could not save the billing: ' + (r.stage === 'upload' ? 'file upload failed — ' : '') + r.error); return }
+    const out = r.data || {}
     if (out.waiverVoided) {
       alert('Lien waiver voided — the signed waiver no longer matches this billing. ' + (out.waiverError
         ? 'Saved, but the new lien waiver was not sent: ' + out.waiverError
@@ -1564,9 +1552,8 @@ export default function Dashboard() {
 
   async function deleteDirEntry(id) {
     if (!window.confirm('Are you sure you want to permanently delete this subcontractor? This will also revoke their portal access.')) return
-    const res = await authFetch('/api/delete-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: id }) })
-    const json = await res.json()
-    if (!res.ok) { alert('Delete error: ' + json.error); return }
+    const res = await fetchJson(authFetch, '/api/delete-sub', jsonInit('POST', { directory_id: id }))
+    if (!res.ok) { alert('Delete error: ' + res.error); return }
     setDirectory(prev => prev.filter(s => s.id !== id))
     setExpandedDir(null)
   }
@@ -2056,15 +2043,13 @@ export default function Dashboard() {
     try {
       const ext = file.name.split('.').pop()
       const path = `${dirId}/${type}-${Date.now()}.${ext}`
-      const urlRes = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload-url', path }) })
-      const { signedUrl, error: urlErr } = await urlRes.json().catch(() => ({}))
-      if (urlErr || !urlRes.ok || !signedUrl) { alert('Upload error: ' + (urlErr || `HTTP ${urlRes.status}`)); done(); return false }
-      const put = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-      if (!put.ok) { alert(`Upload failed (HTTP ${put.status}). The file was not saved.`); done(); return false }
+      const urlRes = await fetchJson(authFetch, '/api/sub-docs', jsonInit('POST', { action: 'upload-url', path }))
+      if (!urlRes.ok || !urlRes.data?.signedUrl) { alert('Upload error: ' + (urlRes.ok ? 'no upload link returned' : urlRes.error)); done(); return false }
+      const put = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+      if (!put.ok) { alert(put.error + ' The file was not saved.'); done(); return false }
       const fields = type === 'w9' ? { w9_url: path } : { coi_url: path, coi_expiration: coiExpiration }
-      const saveRes = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, ...fields }) })
-      const saved = await saveRes.json().catch(() => ({}))
-      if (!saveRes.ok || saved.error) { alert('The file uploaded but was not saved to the directory: ' + (saved.error || `HTTP ${saveRes.status}`)); done(); return false }
+      const saveRes = await fetchJson(authFetch, '/api/sub-docs', jsonInit('POST', { directory_id: dirId, ...fields }))
+      if (!saveRes.ok) { alert('The file uploaded but was not saved to the directory: ' + saveRes.error); done(); return false }
     } catch (e) {
       alert('Upload error: ' + (e?.message || 'unknown')); done(); return false
     }
@@ -3259,13 +3244,8 @@ ${planLinks.map(p => p.url
     setLoggingApmVehicle(true)
     setApmVehicleLogMsg(null)
     try {
-      const res = await fetch('/api/vehicle-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicle_id: vehicleId, logged_by: profile.id, ...apmVehicleLogForm, mileage: apmVehicleLogForm.mileage || null }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to save')
+      const r = await fetchJson(authFetch, '/api/vehicle-logs', jsonInit('POST', { vehicle_id: vehicleId, logged_by: profile.id, ...apmVehicleLogForm, mileage: apmVehicleLogForm.mileage || null }))
+      if (!r.ok) throw new Error(r.error)
       setApmVehicleLogMsg({ type: 'ok', text: 'Log entry saved.' })
       setApmVehicleLogForm(f => ({ ...f, mileage: '', notes: '', log_date: todayCentral() }))
       loadVehicleLogs(vehicleId)
@@ -3749,7 +3729,7 @@ ${planLinks.map(p => p.url
                   {uploadingCover ? 'Uploading…' : 'Choose photo'}
                   <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} disabled={uploadingCover} onChange={e => { const f = e.target.files?.[0]; if (f) uploadCover(f, coverPickerJob.id); e.target.value = '' }} />
                 </label>
-                <span style={{ marginLeft: '10px', fontSize: '11px', color: '#9ca3af' }}>JPEG, PNG or WebP · max 15 MB</span>
+                <span style={{ marginLeft: '10px', fontSize: '11px', color: '#9ca3af' }}>JPEG, PNG or WebP</span>
                 {coverMsg && <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#dc2626' }}>{coverMsg}</p>}
               </div>
               {/* Existing photos */}

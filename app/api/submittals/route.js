@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
 import { denyJob, denyJobOf, ilikeExact } from '../../../lib/roles'
 import { jobIdFromPath } from '../../../lib/storage-path'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,15 +11,33 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-async function uploadSubmittalDoc(file, jobId) {
-  const ext = file.name.split('.').pop()
-  const path = `${jobId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const { error } = await adminSupabase.storage
-    .from('submittal-docs')
-    .upload(path, buffer, { contentType: file.type })
-  if (error) throw new Error('File upload failed: ' + error.message)
-  return { path, name: file.name }
+// New files arrive as attachments: [{ path, uploadReceipt }, …] uploaded directly to Storage
+// (POST /api/file-upload, target submittal-doc). Each is verified for this job (and, on PATCH,
+// this submittal) and stored in the same { path, name } shape as before; no proof is saved.
+const MAX_ATTACHMENTS = 50
+async function verifySubmittalFiles(auth, attachments, ctx) {
+  if (attachments === undefined || attachments === null) return { files: [] }
+  if (!Array.isArray(attachments)) return { error: Response.json({ error: 'attachments must be a list.' }, { status: 400 }) }
+  if (attachments.length > MAX_ATTACHMENTS) return { error: Response.json({ error: `Attach at most ${MAX_ATTACHMENTS} files at a time.` }, { status: 400 }) }
+  const files = []
+  for (const att of attachments) {
+    const v = await verifyAttachment(adminSupabase, att, { target: 'submittal-doc', subject: auth.userId, ctx })
+    if (!v.ok) return { error: attachmentErrorResponse(v) }
+    if (files.some(f => f.path === v.path)) return { error: Response.json({ error: 'The same file was attached twice.' }, { status: 400 }) }
+    files.push({ path: v.path, name: v.fileName })
+  }
+  return { files }
+}
+
+async function readBody(request) {
+  const multipart = rejectMultipart(request)
+  if (multipart) return { error: multipart }
+  let fields
+  try { fields = await request.json() } catch { return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) } }
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  const inline = inlineFileContentError(fields)
+  if (inline) return { error: Response.json({ error: inline }, { status: 400 }) }
+  return { fields }
 }
 
 // file_url is stored as JSON array: [{path, name}, ...] or legacy string
@@ -84,28 +103,18 @@ export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let fields = {}
-    let newFiles = []
-
-    let files = []
-
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      files = formData.getAll('file')
-      fields = JSON.parse(formData.get('data') || '{}')
-    } else {
-      fields = await request.json()
-    }
+    const parsed = await readBody(request)
+    if (parsed.error) return parsed.error
+    const { attachments, ...fields } = parsed.fields
 
     const denied = await denyJob(adminSupabase, auth, fields.job_id)
     if (denied) return denied
-    for (const file of files) {
-      if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
-    }
+    if (!fields.job_id || !fields.title) return Response.json({ error: 'job_id and title required' }, { status: 400 })
+    const verified = await verifySubmittalFiles(auth, attachments, { job: fields.job_id })
+    if (verified.error) return verified.error
+    const newFiles = verified.files
 
     const { job_id, title, type, spec_section, submitted_by_sub_id, submitted_by_company, notes } = fields
-    if (!job_id || !title) return Response.json({ error: 'job_id and title required' }, { status: 400 })
 
     const file_url = newFiles.length > 0 ? JSON.stringify(newFiles) : null
 
@@ -144,34 +153,25 @@ export async function PATCH(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let fields = {}
-    let newFiles = []
-
-    let files = []
-
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      files = formData.getAll('file')
-      fields = JSON.parse(formData.get('data') || '{}')
-    } else {
-      fields = await request.json()
-    }
-
-    if (fields.id) {
-      const denied = await denyJobOf(adminSupabase, auth, 'submittals', fields.id)
-      if (denied) return denied
-    }
-    if (fields.job_id) {
-      const deniedJob = await denyJob(adminSupabase, auth, fields.job_id)
-      if (deniedJob) return deniedJob
-    }
-    for (const file of files) {
-      if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
-    }
-
-    const { id, status, notes, reviewer_id, title, spec_section, job_id, remove_file_path } = fields
+    const parsed = await readBody(request)
+    if (parsed.error) return parsed.error
+    const { attachments, ...fields } = parsed.fields
+    const { id, status, notes, reviewer_id, title, spec_section, remove_file_path } = fields
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+
+    // The stored row's job is authoritative; a different job_id in the body is refused even
+    // when the caller can see both jobs.
+    const { data: current, error: curErr } = await adminSupabase.from('submittals').select('id, job_id, file_url').eq('id', id).maybeSingle()
+    if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
+    if (!current) return Response.json({ error: 'Not found.' }, { status: 404 })
+    const denied = await denyJob(adminSupabase, auth, current.job_id)
+    if (denied) return denied
+    if (fields.job_id !== undefined && fields.job_id !== null && fields.job_id !== current.job_id) {
+      return Response.json({ error: 'That submittal is on a different job.' }, { status: 400 })
+    }
+    const verified = await verifySubmittalFiles(auth, attachments, { job: current.job_id, rec: current.id })
+    if (verified.error) return verified.error
+    const newFiles = verified.files
 
     const updates = {}
     if (status !== undefined) { updates.status = status; if (reviewer_id) { updates.reviewed_at = new Date().toISOString(); updates.reviewer_id = reviewer_id } }
@@ -181,7 +181,6 @@ export async function PATCH(request) {
 
     if (newFiles.length > 0 || remove_file_path !== undefined) {
       // Merge with existing files
-      const { data: current } = await adminSupabase.from('submittals').select('file_url').eq('id', id).single()
       let existing = parseFileUrls(current?.file_url)
       if (remove_file_path) existing = existing.filter(f => f.path !== remove_file_path)
       const merged = [...existing, ...newFiles]

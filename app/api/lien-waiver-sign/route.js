@@ -4,7 +4,7 @@ import { requireAuth, isSub } from '../../../lib/server-auth'
 import { getSubAccess } from '../../../lib/sub-access'
 import { escapeHtml } from '../../../lib/email'
 import { todayCentral } from '../../../lib/central-date'
-import { isMissingColumnError } from '../../../lib/lien-waiver-terms'
+import { isMissingColumnError, signatureDataUrlError } from '../../../lib/lien-waiver-terms'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,10 +25,13 @@ export async function POST(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
   if (!isSub(auth.role)) return Response.json({ error: 'Sub portal only' }, { status: 403 })
-  const body = await request.json()
-  const { submission_id, signer_name, signature } = body
+  let body
+  try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  const { submission_id, signer_name, signature } = body || {}
   if (!submission_id || !signer_name)
     return Response.json({ error: 'submission_id and signer_name required' }, { status: 400 })
+  const sigErr = signatureDataUrlError(signature)
+  if (sigErr) return Response.json({ error: sigErr.error }, { status: sigErr.status })
 
   const { data: target, error: readErr } = await adminSupabase.from('billing_submissions')
     .select('sub_id, job_id, status, amount_billed, billing_period, lien_waiver_signed_at').eq('id', submission_id).maybeSingle()

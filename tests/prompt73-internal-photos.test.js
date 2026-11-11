@@ -347,7 +347,8 @@ describe('5) source checks', () => {
 
   test('no 068 / 071 migration from this package', () => {
     const files = fs.readdirSync(path.join(root, 'migrations'))
-    expect(files.filter(f => /^(068|071)_/.test(f))).toEqual([])
+    // Prompt 78 later added the only 071 (sales-docs bucket cap removal, unapplied).
+    expect(files.filter(f => /^(068|071)_/.test(f))).toEqual(['071_remove_sales_docs_file_cap.sql'])
     expect(files.filter(f => /^070_/.test(f))).toEqual(['070_job_photos_internal.sql'])
   })
 

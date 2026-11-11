@@ -5,6 +5,7 @@ import { jobAccessError, budgetLineError, accessibleJobIds, dcBilledLinkError } 
 import { isJobLimited, denyJob, denyJobs, denyJobOf } from '../../../lib/roles'
 import { normalizePoId, poLinkError, isInvalidIdError } from '../../../lib/po-cash'
 import { writeWithMissingColumnRetry, poLinkDropped } from '../../../lib/missing-column-retry'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 
 // Columns from migration 022 that may be missing. Only stripped as a group when a schema
 // error doesn't name its column.
@@ -88,16 +89,20 @@ export async function GET(request) {
   }
 }
 
-// POST: insert a direct cost, optionally uploading a receipt file
-// Accepts multipart FormData: file (optional) + "data" JSON string
-// OR plain JSON body (no file)
-// If the caller is a super (field), a receipt file is required.
+// POST: insert a direct cost (JSON only), optionally with a receipt uploaded directly to Storage.
+// Body: a cost object, or an array of cost objects (CSV import).
+// A receipt is attachment: { path, uploadReceipt } from POST /api/file-upload (target
+// direct-cost-receipt) — allowed on a single cost or a one-row array only. Multipart is refused
+// (files never pass through this function), and so is a raw receipt_url.
+// If the caller is a super (field), a verified receipt is required for pending costs.
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  const multipart = rejectMultipart(request)
+  if (multipart) return multipart
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let row = {}
+    let body
+    try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
     let receipt_url = null
     let fileAttached = false
 
@@ -105,39 +110,32 @@ export async function POST(request) {
     // PM/APM: every inserted row must be on one of their jobs
     const denyRows = r => Array.isArray(r) ? denyJobs(adminSupabase, auth, r.map(x => x?.job_id)) : denyJob(adminSupabase, auth, r?.job_id)
 
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      const file = formData.get('file')
-      row = JSON.parse(formData.get('data') || '{}')
-      const denied = await denyRows(row)
-      if (denied) return denied
-
-      if (file && file.size > 0) {
-        // One receipt file belongs to one cost.
-        if (Array.isArray(row) && row.length !== 1) return Response.json({ error: 'A receipt can only be attached to a single cost.' }, { status: 400 })
-        fileAttached = true
-        const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')
-        const safeExt = isPdf ? 'pdf' : 'jpg'
-        const safeMime = isPdf ? 'application/pdf' : 'image/jpeg'
-        const path = `${(Array.isArray(row) ? row[0] : row)?.job_id}/${Date.now()}.${safeExt}`
-        const buffer = Buffer.from(await file.arrayBuffer())
-        const { error: uploadError } = await adminSupabase.storage
-          .from('receipts')
-          .upload(path, buffer, { contentType: safeMime })
-        if (uploadError) return Response.json({ error: 'Receipt upload failed: ' + uploadError.message }, { status: 500 })
-        receipt_url = path
-      }
-    } else {
-      row = await request.json()
-      const denied = await denyRows(row)
-      if (denied) return denied
-    }
-
     // Bulk insert (CSV import on the job page) sends an array of rows; a single cost sends an object.
-    const isBulk = Array.isArray(row)
-    const rows = isBulk ? row : [row]
-    if (isBulk && (!rows.length || rows.some(r => !r || typeof r !== 'object' || Array.isArray(r)))) {
-      return Response.json({ error: 'Each imported cost must be an object.' }, { status: 400 })
+    const isBulk = Array.isArray(body)
+    const rawRows = isBulk ? body : [body]
+    if (!rawRows.length || rawRows.some(r => !r || typeof r !== 'object' || Array.isArray(r))) {
+      return Response.json({ error: isBulk ? 'Each imported cost must be an object.' : 'Send a cost object.' }, { status: 400 })
+    }
+    const inline = inlineFileContentError(rawRows)
+    if (inline) return Response.json({ error: inline }, { status: 400 })
+    // Every supplied receipt path is checked: a raw receipt_url (even on an imported row) is refused.
+    if (rawRows.some(r => r.receipt_url !== undefined && r.receipt_url !== null && r.receipt_url !== '')) {
+      return Response.json({ error: 'receipt_url cannot be set directly. Attach the receipt with a direct upload.' }, { status: 400 })
+    }
+    const attachments = rawRows.map(r => r.attachment).filter(a => a !== undefined && a !== null)
+    // One receipt file belongs to one cost.
+    if (attachments.length && rawRows.length !== 1) return Response.json({ error: 'A receipt can only be attached to a single cost.' }, { status: 400 })
+    const rows = rawRows.map(({ attachment: _a, receipt_url: _r, ...r }) => r)
+    const row = isBulk ? rows : rows[0]
+
+    const denied = await denyRows(row)
+    if (denied) return denied
+
+    if (attachments.length) {
+      const v = await verifyAttachment(adminSupabase, attachments[0], { target: 'direct-cost-receipt', subject: auth.userId, ctx: { job: rows[0].job_id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      receipt_url = v.path
+      fileAttached = true
     }
 
     // Enforce receipt for field submissions (super role, status=pending)

@@ -3,8 +3,10 @@
  * - Every invoice line appears in INDEX.txt (NO RECEIPT when there is no backup).
  * - Receipt files are named line#_date_vendor_billed.ext.
  * - README is owner-facing (no confidential/internal wording) and its contents list is honest.
- * - Invoice.html is required; the client builds it without the print popup.
- * DB/auth/roles/zip are mocked; nothing live.
+ * - Invoice.html is built by the client without the print popup.
+ * Prompt 78: the route returns a small JSON MANIFEST (rows + 1-hour signed receipt links, paged);
+ * the browser builds README / Invoice.html / INDEX.txt and the ZIP (lib/export-client.js).
+ * The route never downloads receipts or builds a ZIP. DB/auth/roles are mocked; nothing live.
  */
 const fs = require('fs')
 const path = require('path')
@@ -21,26 +23,21 @@ jest.mock('../lib/server-auth', () => {
 })
 const mockDeny = { response: null }
 jest.mock('../lib/roles', () => ({ denyJob: jest.fn(async () => mockDeny.response) }))
-const mockZip = { calls: [] }
-jest.mock('../lib/zip-builder', () => ({
-  buildZip: jest.fn(files => { mockZip.calls.push(files); return Buffer.from('PK-mock') }),
-}))
 
 const { POST } = require('../app/api/owner-reimb-export/route')
 const { denyJob } = require('../lib/roles')
+const { ownerIndexText, ownerReadme } = require('../lib/export-manifest')
 
 const INV = 'inv-0001'
 const JOB = 'job-0001'
-const HTML = '<!DOCTYPE html><html><body>Reimbursement Invoice RI-2026-001</body></html>'
 
 const req = body => new Request('http://x/api/owner-reimb-export', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t' },
   body: typeof body === 'string' ? body : JSON.stringify(body),
 })
-const files = () => mockZip.calls[mockZip.calls.length - 1]
-const file = name => files().find(f => f.name === name)
-const text = name => file(name).data.toString('utf8')
+const signs = () => mockState.storageCalls.filter(c => c.op === 'createSignedUrls' || c.op === 'createSignedUrl')
+const downloads = () => mockState.storageCalls.filter(c => c.op === 'download')
 
 function seedInvoice(lines) {
   resetMockState({
@@ -54,88 +51,76 @@ function seedInvoice(lines) {
 const LINE_RECEIPT = {
   id: 'line-b', sort_order: 0, description: 'Lumber for repair', direct_cost_id: 'dc-1',
   expense_date: '2026-03-15', vendor: 'Home Depot', billed_amount: 123.45,
-  direct_costs: { id: 'dc-1', receipt_url: 'job-0001/abc123.PDF', description: 'Lumber' },
+  direct_costs: { id: 'dc-1', receipt_url: 'job-0001/abc123.PDF', description: 'Lumber', job_id: JOB },
 }
 const LINE_NONE = {
   id: 'line-a', sort_order: 1, description: 'Dumpster swap', direct_cost_id: 'dc-2',
   expense_date: '2026-03-20', vendor: 'Waste Co.', billed_amount: 400,
-  direct_costs: { id: 'dc-2', receipt_url: null, description: 'Dumpster' },
+  direct_costs: { id: 'dc-2', receipt_url: null, description: 'Dumpster', job_id: JOB },
 }
 
 beforeEach(() => {
   seedInvoice([LINE_NONE, LINE_RECEIPT]) // stored out of order; sort_order decides
-  mockState.files['receipts/job-0001/abc123.PDF'] = Buffer.from('%PDF-receipt-bytes')
   mockState.auth = { userId: 'u-pm', email: 'pm@nv.test', role: 'pm', error: null }
   mockDeny.response = null
-  mockZip.calls = []
   denyJob.mockClear()
 })
 
-describe('owner-reimb-export route', () => {
-  test('no session → 401, no ZIP', async () => {
+const manifest = async (body = { invoiceId: INV }) => {
+  const res = await POST(req(body))
+  return { res, status: res.status, body: await res.json() }
+}
+
+describe('owner-reimb-export manifest route', () => {
+  test('no session → 401, nothing signed', async () => {
     mockState.auth = null
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(401)
-    expect(mockZip.calls).toHaveLength(0)
+    expect((await manifest()).status).toBe(401)
+    expect(signs()).toHaveLength(0)
   })
 
-  test('non-PM role → 403, no ZIP', async () => {
+  test('non-PM role → 403, nothing signed', async () => {
     mockState.auth = { userId: 'u-sub', role: 'subcontractor', error: null }
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(403)
-    expect(mockZip.calls).toHaveLength(0)
+    expect((await manifest()).status).toBe(403)
+    expect(signs()).toHaveLength(0)
   })
 
-  test('denyJob response is returned, no ZIP', async () => {
+  test('denyJob response is returned, nothing signed', async () => {
     mockDeny.response = Response.json({ error: 'Not on this job' }, { status: 403 })
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(403)
-    expect((await res.json()).error).toBe('Not on this job')
+    const r = await manifest()
+    expect(r.status).toBe(403)
+    expect(r.body.error).toBe('Not on this job')
     expect(denyJob).toHaveBeenCalledWith(expect.anything(), mockState.auth, JOB)
-    expect(mockZip.calls).toHaveLength(0)
+    expect(signs()).toHaveLength(0)
   })
 
   test('missing invoiceId → 400', async () => {
-    const res = await POST(req({ invoiceHtml: HTML }))
-    expect(res.status).toBe(400)
-    expect(mockZip.calls).toHaveLength(0)
+    expect((await manifest({})).status).toBe(400)
+    expect(signs()).toHaveLength(0)
   })
 
-  test.each([
-    ['missing', {}],
-    ['blank', { invoiceHtml: '   \n ' }],
-    ['non-string', { invoiceHtml: { html: HTML } }],
-    ['null', { invoiceHtml: null }],
-  ])('%s invoiceHtml → 400, no ZIP', async (_, extra) => {
-    const res = await POST(req({ invoiceId: INV, ...extra }))
-    expect(res.status).toBe(400)
-    expect((await res.json()).error).toMatch(/invoiceHtml required/)
-    expect(mockZip.calls).toHaveLength(0)
+  test('invoiceHtml is no longer accepted: generated HTML never crosses the API', async () => {
+    const r = await manifest({ invoiceId: INV, invoiceHtml: '<html>x</html>' })
+    expect(r.status).toBe(400)
+    expect(signs()).toHaveLength(0)
   })
 
   test('unknown invoice → 404', async () => {
-    const res = await POST(req({ invoiceId: 'nope', invoiceHtml: HTML }))
-    expect(res.status).toBe(404)
-    expect(mockZip.calls).toHaveLength(0)
+    expect((await manifest({ invoiceId: 'nope' })).status).toBe(404)
   })
 
-  test('happy path: every line indexed, NO RECEIPT line kept, owner-facing README', async () => {
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(200)
-    expect(res.headers.get('Content-Type')).toBe('application/zip')
-    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="Reimb_RI_2026_001.zip"')
+  test('happy path: every line listed, NO RECEIPT line kept, signed link only for the receipt; no download / ZIP on the server', async () => {
+    const { res, status, body } = await manifest()
+    expect(status).toBe(200)
+    expect(res.headers.get('Content-Type')).toMatch(/application\/json/)
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(body).toMatchObject({ invoice_number: 'RI-2026-001', zip_name: 'Reimb_RI_2026_001.zip', total: 2, receipt_count: 1, offset: 0, next_offset: null })
+    expect(downloads()).toHaveLength(0)
+    expect(body.rows.map(r => r.receipt)).toEqual(['Receipts/01_2026-03-15_Home_Depot_123.45.pdf', 'NO RECEIPT'])
+    expect(body.rows[0].url).toBe('https://signed/receipts/job-0001/abc123.PDF')
+    expect(body.rows[1]).not.toHaveProperty('url')
+    expect(JSON.stringify(body)).not.toContain('receiptPath')
 
-    const names = files().map(f => f.name)
-    expect(names).toEqual(expect.arrayContaining(['README.txt', 'Invoice.html', 'INDEX.txt']))
-    expect(text('Invoice.html')).toBe(HTML)
-
-    const receipts = names.filter(n => n.startsWith('Receipts/'))
-    expect(receipts).toEqual(['Receipts/01_2026-03-15_Home_Depot_123.45.pdf'])
-    expect(receipts[0]).not.toContain('$')
-    expect(file(receipts[0]).data.toString('utf8')).toBe('%PDF-receipt-bytes')
-
-    const index = text('INDEX.txt')
-    const rows = index.split('\n')
+    const rows = ownerIndexText(body.invoice_number, body.rows).split('\n')
     const row1 = rows.find(l => /^01\s/.test(l))
     const row2 = rows.find(l => /^02\s/.test(l))
     expect(row1).toContain('2026-03-15')
@@ -147,12 +132,11 @@ describe('owner-reimb-export route', () => {
     expect(row2).toContain('400.00')
     expect(row2).toContain('NO RECEIPT')
 
-    const readme = text('README.txt')
+    const readme = ownerReadme({ invoiceNumber: body.invoice_number, receiptCount: body.receipt_count })
     expect(readme).not.toMatch(/confidential|internal document|do not distribute/i)
     expect(readme).toContain('Invoice.html')
     expect(readme).toContain('INDEX.txt')
     expect(readme).toMatch(/Receipts\/\s+—\s+1 receipt file/)
-    expect(readme).not.toMatch(/2 receipt file/)
   })
 
   test('line with no direct cost at all and missing date/vendor still listed', async () => {
@@ -160,40 +144,51 @@ describe('owner-reimb-export route', () => {
       { id: 'l1', sort_order: 0, description: 'Misc', direct_cost_id: null, expense_date: null, vendor: null, billed_amount: 10, direct_costs: null },
       { ...LINE_RECEIPT, id: 'l2', sort_order: 1, expense_date: null, vendor: '  ' },
     ])
-    mockState.files['receipts/job-0001/abc123.PDF'] = Buffer.from('x')
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(200)
-    expect(files().map(f => f.name)).toContain('Receipts/02_nodate_novendor_123.45.pdf')
-    expect(text('INDEX.txt').split('\n').find(l => /^01\s/.test(l))).toContain('NO RECEIPT')
+    const { body } = await manifest()
+    expect(body.rows.map(r => r.receipt)).toEqual(['NO RECEIPT', 'Receipts/02_nodate_novendor_123.45.pdf'])
   })
 
-  test('equal sort_order falls back to id order; same receipt on two lines gets distinct names', async () => {
+  test('equal sort_order falls back to id order; same receipt on two lines gets distinct names and its own link', async () => {
     seedInvoice([
       { ...LINE_RECEIPT, id: 'l2', sort_order: 0, billed_amount: 2 },
       { ...LINE_RECEIPT, id: 'l1', sort_order: 0, billed_amount: 1 },
     ])
-    mockState.files['receipts/job-0001/abc123.PDF'] = Buffer.from('x')
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(200)
-    const receipts = files().map(f => f.name).filter(n => n.startsWith('Receipts/'))
-    expect(receipts).toEqual(['Receipts/01_2026-03-15_Home_Depot_1.00.pdf', 'Receipts/02_2026-03-15_Home_Depot_2.00.pdf'])
+    const { body } = await manifest()
+    expect(body.rows.map(r => r.receipt)).toEqual(['Receipts/01_2026-03-15_Home_Depot_1.00.pdf', 'Receipts/02_2026-03-15_Home_Depot_2.00.pdf'])
+    expect(body.rows.every(r => r.url === 'https://signed/receipts/job-0001/abc123.PDF')).toBe(true)
   })
 
-  test('linked receipt that fails to download → 422, no ZIP', async () => {
-    delete mockState.files['receipts/job-0001/abc123.PDF']
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(422)
-    expect((await res.json()).error).toMatch(/Export aborted/)
-    expect(mockZip.calls).toHaveLength(0)
+  test('linked receipt that cannot be signed → 422 (never NO RECEIPT), no manifest', async () => {
+    mockState.signedUrlResults = { receipts: () => ({ signedUrl: null, error: 'Object not found' }) }
+    const r = await manifest()
+    expect(r.status).toBe(422)
+    expect(r.body.error).toMatch(/Export aborted/)
+    expect(r.body.rows).toBeUndefined()
   })
 
-  test('successful ZIP always contains Invoice.html when invoiceHtml was sent', async () => {
-    seedInvoice([LINE_NONE])
-    const res = await POST(req({ invoiceId: INV, invoiceHtml: HTML }))
-    expect(res.status).toBe(200)
-    expect(text('Invoice.html')).toBe(HTML)
-    expect(files().filter(f => f.name.startsWith('Receipts/'))).toHaveLength(0)
-    expect(text('README.txt')).toMatch(/0 receipt file/)
+  test('a line whose direct cost is on another job (or not the stored id) → 422, nothing signed', async () => {
+    seedInvoice([{ ...LINE_RECEIPT, direct_costs: { ...LINE_RECEIPT.direct_costs, job_id: 'job-other' } }])
+    expect((await manifest()).status).toBe(422)
+    seedInvoice([{ ...LINE_RECEIPT, direct_cost_id: 'dc-9' }])
+    expect((await manifest()).status).toBe(422)
+    expect(signs()).toHaveLength(0)
+  })
+
+  test('large invoices page at 100 rows, numbered across the whole invoice; each page re-authorizes', async () => {
+    seedInvoice(Array.from({ length: 150 }, (_, i) => ({ ...LINE_RECEIPT, id: `l${String(i).padStart(3, '0')}`, sort_order: i })))
+    const p1 = await manifest()
+    expect(p1.body.rows).toHaveLength(100)
+    expect(p1.body.next_offset).toBe(100)
+    expect(p1.body.rows[0].receipt).toMatch(/^Receipts\/001_/)
+    mockDeny.response = Response.json({ error: 'Not on this job' }, { status: 403 })
+    expect((await manifest({ invoiceId: INV, offset: 100 })).status).toBe(403)
+    mockDeny.response = null
+    const p2 = await manifest({ invoiceId: INV, offset: 100 })
+    expect(p2.body.rows).toHaveLength(50)
+    expect(p2.body.next_offset).toBeNull()
+    expect(p2.body.rows[0].num).toBe('101')
+    expect(p2.body.rows[49].num).toBe('150')
+    expect((await manifest({ invoiceId: INV, offset: -1 })).status).toBe(400)
   })
 })
 
@@ -233,9 +228,12 @@ describe('jobdetail reimb export (page source)', () => {
     expect(b).toContain('NO RECEIPT')
     expect(b).toContain('directCosts')
     expect(b).toMatch(/if \(!ok\) return/)
-    expect(b.indexOf('window.confirm')).toBeLessThan(b.indexOf("fetch('/api/owner-reimb-export'"))
+    // prompt 78: manifest + browser ZIP (lib/export-client exportOwnerReimbZip); Invoice.html stays local
+    expect(b.indexOf('window.confirm')).toBeLessThan(b.indexOf('exportOwnerReimbZip('))
     expect(b).toContain('invoiceHtml: invHtml')
     expect(b).toContain('setReimbErr')
+    expect(b).not.toContain('res.blob()')
+    expect(b).toContain('finally')
   })
 
   test('export buttons still call the two functions', () => {

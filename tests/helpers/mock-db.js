@@ -13,7 +13,13 @@
 //   mockState.pauseWrite = async (table, op, payload) => {} → awaited before a write runs, so a
 //       test can pause one request mid-flight and run another request to completion
 
-const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, pauseWrite: null, triggers: {}, calls: [], files: {}, failUpload: {}, failWrite: {}, strictUpload: false, defaults: {}, unique: {} }
+//   mockState.fileMeta = { 'bucket/path': { size, contentType } } → what storage .info() reports
+//       (prompt 78; lets a test declare a large object without allocating it). info() falls back
+//       to mockState.files; an object in neither fails closed (not found).
+//   mockState.failInfo = { bucket: 'message' } → .info() errors for that bucket
+//   mockState.storageCalls = [{ bucket, op, path }] → signing / info / download calls (kept apart
+//       from mockState.calls so older assertions on calls are unchanged)
+const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, pauseWrite: null, triggers: {}, calls: [], files: {}, failUpload: {}, failWrite: {}, strictUpload: false, defaults: {}, unique: {}, fileMeta: {}, failInfo: {}, storageCalls: [] }
 
 const get = (r, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r)
 
@@ -188,17 +194,28 @@ const client = {
       return { data: { path: p }, error: null }
     },
     download: async p => {
+      mockState.storageCalls?.push({ bucket, op: 'download', path: p })
       const buf = mockState.files[`${bucket}/${p}`]
       if (!buf) return { data: null, error: { message: 'Object not found' } }
       return { data: { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }, error: null }
     },
-    createSignedUrl: async p => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),
+    createSignedUrl: async p => { mockState.storageCalls?.push({ bucket, op: 'createSignedUrl', path: p }); return { data: { signedUrl: `https://signed/${p}` }, error: null } },
     // mockState.failSignedUrls = { bucket: 'message' } → batch signing fails
     // mockState.signedUrlResults = { bucket: path => ({ signedUrl: null, error: '…' }) | null } → per-object result override
-    createSignedUrls: async paths => (mockState.failSignedUrls?.[bucket]
+    createSignedUrls: async paths => (mockState.storageCalls?.push({ bucket, op: 'createSignedUrls', path: paths }), mockState.failSignedUrls?.[bucket]
       ? { data: null, error: { message: mockState.failSignedUrls[bucket] } }
       : { data: paths.map(p => ({ path: p, signedUrl: `https://signed/${bucket}/${p}`, error: null, ...(mockState.signedUrlResults?.[bucket]?.(p) || {}) })), error: null }),
-    createSignedUploadUrl: async p => ({ data: { signedUrl: `https://upload/${p}` }, error: null }),
+    createSignedUploadUrl: async (p, opts) => { mockState.storageCalls?.push({ bucket, op: 'createSignedUploadUrl', path: p, opts }); return { data: { signedUrl: `https://upload/${p}`, token: 'tok', path: p }, error: null } },
+    info: async p => {
+      mockState.storageCalls?.push({ bucket, op: 'info', path: p })
+      if (mockState.failInfo?.[bucket]) return { data: null, error: { message: mockState.failInfo[bucket] } }
+      const key = `${bucket}/${p}`
+      const meta = mockState.fileMeta?.[key]
+      if (meta) return { data: { name: p, size: meta.size, contentType: meta.contentType }, error: null }
+      const buf = mockState.files[key]
+      if (!buf) return { data: null, error: { message: 'Object not found' } }
+      return { data: { name: p, size: buf.length, contentType: null }, error: null }
+    },
     remove: async paths => { for (const p of paths) delete mockState.files[`${bucket}/${p}`]; mockState.calls.push({ table: `storage:${bucket}`, op: 'remove', payload: paths }); return { data: paths, error: null } },
   }) },
   auth: { admin: {
@@ -251,5 +268,8 @@ module.exports = {
     mockState.unique = {}
     mockState.failSignedUrls = {}
     mockState.signedUrlResults = {}
+    mockState.fileMeta = {}
+    mockState.failInfo = {}
+    mockState.storageCalls = []
   },
 }

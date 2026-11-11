@@ -332,8 +332,10 @@ describe('pages', () => {
     expect(body).toMatch(/window\.confirm\(`This looks like a duplicate of Invoice #\$\{d\.invoice_number\} from /)
     expect(body).toMatch(/Save anyway\?`\)/)
     expect(body).toMatch(/postBilling\(\{ \.\.\.rowData, confirm_duplicate: true \}\)/)
-    // same request shape (FormData or JSON) on the resend
-    expect(body).toMatch(/formData\.append\('data', JSON\.stringify\(data\)\)/)
+    // prompt 78: same request (JSON + the same direct-upload attachment, reused from the cache) on the resend
+    expect(body).toMatch(/const postBilling = data => uploadThenSend\(/)
+    expect(body).toMatch(/attachment \? \{ \.\.\.data, attachment \} : data/)
+    expect(body).not.toMatch(/new FormData/)
   })
 
   test('jobdetail Billing tab and approveBilling use findDuplicateBillings', () => {
@@ -360,6 +362,7 @@ describe('pages', () => {
   test('submit page shows the server error (409) in submitError', () => {
     const src = read('app/submit/page.js')
     const body = fnBody(src, 'async function handleSubmit(', 'clearBillingDraft()')
-    expect(body).toMatch(/if \(!res\.ok\) \{\s*setSubmitError\(result\.error/)
+    // prompt 78: the response goes through lib/fetch-json (parsed.ok is false for any non-2xx / non-JSON reply)
+    expect(body).toMatch(/if \(!parsed\.ok\) \{\s*setSubmitError\(result\.error/)
   })
 })

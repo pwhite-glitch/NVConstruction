@@ -6,6 +6,7 @@ import { canSign, signatureMatchesName } from '../../../../lib/signing'
 import { getSiteUrl } from '../../../../lib/site-url'
 import { mbRequestByToken, loadPinnedPdf, completeMbSigning, preflightWorkflow, getPaymentInstructions } from '../../../../lib/mb-server'
 import { isMb } from '../../../../lib/mb-orders'
+import { streamedJsonResponse } from '../../../../lib/stream-response'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -47,7 +48,11 @@ export async function GET(request, { params }) {
   }
   // Subcontract: show the signer which company they sign for ("Signing on behalf of").
   const company_name = await subcontractCompany(data.subcontract_id)
-  return Response.json({ data: company_name ? { ...data, company_name } : data })
+  const out = { data: company_name ? { ...data, company_name } : data }
+  // ?html=1 carries the whole document: stream it (same JSON shape, no Content-Length) so a
+  // large generated contract is not capped as a buffered response.
+  if (includeHtml) return streamedJsonResponse(out)
+  return Response.json(out)
 }
 
 // The subcontract's company (vendor_name). Best effort: null when unknown or the read fails.

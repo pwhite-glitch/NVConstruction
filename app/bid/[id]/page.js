@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { authFetch } from '../../../lib/client-fetch'
+import { exportItbZip } from '../../../lib/export-client'
 import { canEditBidPackage, isBidManager, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
 import { jobHref } from '../../../lib/job-links'
 import LevelingMatrix, { loadLevelingEntries } from '../../components/bid/LevelingMatrix'
@@ -854,6 +855,7 @@ function ItbPrepScreen({ pkg, plans, scopeItems, profile, onClose }) {
   const [selectedPlanIds, setSelectedPlanIds] = useState(() => new Set(plans.map(p => p.id)))
   const [exporting, setExporting] = useState(false)
   const [exportErr, setExportErr] = useState('')
+  const [exportProgress, setExportProgress] = useState('')
 
   const f = (key, val) => setForm(p => ({ ...p, [key]: val }))
   const selectedScopes = scopeItems.filter(i => selectedScopeIds.has(i.id))
@@ -887,26 +889,17 @@ function ItbPrepScreen({ pkg, plans, scopeItems, profile, onClose }) {
     setExporting(true); setExportErr('')
     try {
       const logo = await getLogo()
+      // The ITB HTML is built here and added to the ZIP in the browser; it is never sent to the
+      // API. The API returns a manifest of signed links for the selected plans (re-checked on
+      // every page); files are fetched straight from Storage and any failure aborts the export.
       const itbHtml = buildItbHtml(form, selectedScopes, selectedPlans, logo)
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/itb-export', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bidPackageId: pkg.id, selectedPlanIds: [...selectedPlanIds], itbHtml, projectName: form.projectName }),
+      await exportItbZip({
+        fetchFn: authFetch, storageFetch: fetch,
+        bidPackageId: pkg.id, selectedPlanIds: [...selectedPlanIds], projectName: form.projectName || undefined, itbHtml,
+        filename: `ITB_${(form.projectName || 'bid').replace(/[^a-zA-Z0-9]+/g, '_')}.zip`,
+        onProgress: ({ done, total }) => setExportProgress(`Downloading files… ${done} of ${total}`),
       })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error(j.error || `Export failed (${res.status})`)
-      }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a   = document.createElement('a')
-      a.href     = url
-      a.download = `ITB_${(form.projectName || 'bid').replace(/[^a-zA-Z0-9]+/g, '_')}.zip`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch (e) { setExportErr(e.message) }
-    setExporting(false)
+    } catch (e) { setExportErr(e.message) } finally { setExporting(false); setExportProgress('') }
   }
 
   const iSec = { padding: '10px 10px 10px 0', border: 'none', background: '#f9fafb', borderRadius: '6px', width: '100%', fontSize: '14px', color: '#111827', outline: 'none', boxSizing: 'border-box' }
@@ -923,6 +916,7 @@ function ItbPrepScreen({ pkg, plans, scopeItems, profile, onClose }) {
           </h1>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+          {exportProgress && !exportErr && <span style={{ fontSize: '12px', color: '#6b7280', maxWidth: '300px' }}>{exportProgress}</span>}
           {exportErr && <span style={{ fontSize: '12px', color: '#dc2626', maxWidth: '300px' }}>{exportErr}</span>}
           <button style={s.btnSec} onClick={exportPDF}>Export PDF</button>
           <button style={s.btnPri} onClick={exportZip} disabled={exporting}>

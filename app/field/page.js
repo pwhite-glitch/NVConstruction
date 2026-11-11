@@ -11,6 +11,8 @@ import { openFile } from '../../lib/open-file'
 import { resolveTakenAt, insertWithGpsFallback, photoDateCentral } from '../../lib/photo-taken-at'
 import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
+import { fetchJson, jsonInit, readJsonResponse } from '../../lib/fetch-json'
+import { uploadThenSend } from '../../lib/file-upload-client'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
 import { rainFlagged, coldFlagged } from '../../lib/lookahead-weather'
@@ -62,6 +64,8 @@ const IC = {
 
 // Same job_type rule as the job pages / APIs.
 const isResidentialJob = j => String(j?.job_type ?? '').trim().toLowerCase() === 'residential'
+// Receipt image → JPEG conversion, memoized per chosen File (see receiptUploadFile).
+const convertedReceipts = new WeakMap()
 
 const s = {
   page: { minHeight: '100vh', background: '#f4f6f8' },
@@ -614,6 +618,12 @@ export default function Field() {
     if (!url) alert('Could not open document' + (errMsg ? ': ' + errMsg : '. Please try again.'))
   }
 
+  // Converted once per chosen file, so a retry reuses the same File (and its finished upload).
+  function receiptUploadFile(file) {
+    if (!convertedReceipts.has(file)) convertedReceipts.set(file, toJpegFile(file))
+    return convertedReceipts.get(file)
+  }
+
   function toJpegFile(file) {
     if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) return Promise.resolve(file)
     return new Promise(resolve => {
@@ -634,7 +644,7 @@ export default function Field() {
       }
       img.onerror = () => {
         URL.revokeObjectURL(url)
-        // canvas failed — pass file through; server will force-label it image/jpeg
+        // canvas failed — pass the original file through with its own type and name
         resolve(file)
       }
       img.src = url
@@ -651,8 +661,6 @@ export default function Field() {
     setSubmittingDc(true)
     setDcError('')
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
       const rowData = {
         job_id: selectedJobId, submitted_by: user.id,
         cost_date: dcForm.cost_date, description: dcForm.description,
@@ -663,15 +671,14 @@ export default function Field() {
         assigned_to: profile?.full_name || null,
         status: 'pending',
       }
-      const uploadFile = await toJpegFile(dcFile)
-      const fd = new FormData()
-      fd.append('file', uploadFile)
-      fd.append('data', JSON.stringify(rowData))
-      const headers = token ? { Authorization: `Bearer ${token}` } : {}
-      const res = await fetch('/api/direct-costs', { method: 'POST', headers, body: fd })
-      const json = await res.json()
-      if (json.error) {
-        setDcError('Failed to save cost: ' + json.error)
+      // Receipt goes straight to Storage; the API gets only { path, uploadReceipt }.
+      const uploadFile = await receiptUploadFile(dcFile)
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file: uploadFile, target: 'direct-cost-receipt', context: { job_id: selectedJobId },
+        send: attachment => fetchJson(authFetch, '/api/direct-costs', jsonInit('POST', { ...rowData, attachment })),
+      })
+      if (!r.ok) {
+        setDcError((r.stage === 'upload' ? 'Receipt upload failed: ' : 'Failed to save cost: ') + r.error)
         return
       }
       setDcSuccess(true)
@@ -692,26 +699,13 @@ export default function Field() {
     setResubmitting(true)
     setResubmitErr('')
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
-      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
-
-      let res
-      if (resubmitFile) {
-        const uploadFile = await toJpegFile(resubmitFile)
-        const fd = new FormData()
-        fd.append('file', uploadFile)
-        fd.append('data', JSON.stringify({ action: 'resubmit', id: costId, ...resubmitForm }))
-        res = await fetch('/api/dc-review', { method: 'POST', headers: authHeaders, body: fd })
-      } else {
-        res = await fetch('/api/dc-review', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders },
-          body: JSON.stringify({ action: 'resubmit', id: costId, ...resubmitForm }),
-        })
-      }
-      const json = await res.json()
-      if (json.error) { setResubmitErr(json.error); return }
+      // A new receipt goes straight to Storage (for THIS cost); none keeps the current one.
+      const uploadFile = resubmitFile ? await receiptUploadFile(resubmitFile) : null
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file: uploadFile, target: 'dc-resubmit-receipt', context: { record_id: costId },
+        send: attachment => fetchJson(authFetch, '/api/dc-review', jsonInit('POST', { action: 'resubmit', id: costId, ...resubmitForm, ...(attachment ? { attachment } : {}) })),
+      })
+      if (!r.ok) { setResubmitErr((r.stage === 'upload' ? 'Receipt upload failed: ' : '') + r.error); return }
       setResubmitCostId(null)
       setResubmitFile(null)
       setResubmitForm({})
@@ -725,10 +719,9 @@ export default function Field() {
 
   async function openReceiptUrl(path) {
     const win = window.open('', '_blank')
-    const res = await fetch(`/api/direct-costs?receipt_path=${encodeURIComponent(path)}`)
-    const json = await res.json()
-    if (json.url) { win.location.href = json.url }
-    else { win.close(); alert('Could not open receipt: ' + (json.error || 'unknown error')) }
+    const r = await fetchJson(authFetch, `/api/direct-costs?receipt_path=${encodeURIComponent(path)}`)
+    if (r.ok && r.data?.url) { win.location.href = r.data.url }
+    else { win?.close(); alert('Could not open receipt: ' + (r.ok ? 'no link returned' : r.error)) }
   }
 
   async function loadAssignedVehicles(userId) {
@@ -1034,13 +1027,14 @@ export default function Field() {
   }
 
   async function loadVehicleLogsForVehicle(vehicleId) {
-    const res = await fetch(`/api/vehicle-logs?vehicle_id=${vehicleId}`)
-    const json = await res.json()
-    setVehicleLogs(prev => ({ ...prev, [vehicleId]: json.data || [] }))
+    const r = await fetchJson(authFetch, `/api/vehicle-logs?vehicle_id=${vehicleId}`)
+    if (!r.ok) { setVehicleLogError('Could not load logs: ' + r.error); return }
+    setVehicleLogs(prev => ({ ...prev, [vehicleId]: r.data?.data || [] }))
   }
 
   async function submitVehicleLog(e, vehicleId) {
     e.preventDefault()
+    if (submittingVehicleLog) return
     setSubmittingVehicleLog(true)
     setVehicleLogError('')
     const rowData = {
@@ -1053,24 +1047,24 @@ export default function Field() {
       fuel_gallons: vehicleLogForm.fuel_gallons ? parseFloat(vehicleLogForm.fuel_gallons) : null,
       fuel_cost: vehicleLogForm.fuel_cost ? parseFloat(vehicleLogForm.fuel_cost) : null,
     }
-    let res, json
-    if (vehicleLogFile) {
-      const fd = new FormData()
-      fd.append('file', vehicleLogFile)
-      fd.append('data', JSON.stringify(rowData))
-      res = await fetch('/api/vehicle-logs', { method: 'POST', body: fd })
-    } else {
-      res = await fetch('/api/vehicle-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    try {
+      // Photo goes straight to Storage; the API gets only { path, uploadReceipt }.
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file: vehicleLogFile, target: 'vehicle-photo', context: { vehicle_id: vehicleId },
+        send: attachment => fetchJson(authFetch, '/api/vehicle-logs', jsonInit('POST', attachment ? { ...rowData, attachment } : rowData)),
+      })
+      if (!r.ok) { setVehicleLogError((r.stage === 'upload' ? 'Photo upload failed: ' : '') + r.error); return }
+      setVehicleLogs(prev => ({ ...prev, [vehicleId]: [r.data.data, ...(prev[vehicleId] || [])] }))
+      setVehicleLogForm({ log_type: 'Weekly Miles', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
+      setVehicleLogFile(null)
+      setShowVehicleLogForm(null)
+      setVehicleLogMsg('Log saved.')
+      setTimeout(() => setVehicleLogMsg(''), 3000)
+    } catch (err) {
+      setVehicleLogError('Network error. Please try again.')
+    } finally {
+      setSubmittingVehicleLog(false)
     }
-    json = await res.json()
-    if (json.error) { setVehicleLogError(json.error); setSubmittingVehicleLog(false); return }
-    setVehicleLogs(prev => ({ ...prev, [vehicleId]: [json.data, ...(prev[vehicleId] || [])] }))
-    setVehicleLogForm({ log_type: 'Weekly Miles', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
-    setVehicleLogFile(null)
-    setShowVehicleLogForm(null)
-    setVehicleLogMsg('Log saved.')
-    setTimeout(() => setVehicleLogMsg(''), 3000)
-    setSubmittingVehicleLog(false)
   }
 
   function openVehiclePhoto(path) {
@@ -2672,14 +2666,25 @@ export default function Field() {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ name: purchaseToolForm.name, brand: purchaseToolForm.brand || null, category: purchaseToolForm.category, purchase_date: purchaseToolForm.purchase_date, purchase_cost: purchaseToolForm.purchase_cost ? parseFloat(purchaseToolForm.purchase_cost) : null, condition: 'good', assigned_to: userId, status: 'checked_out', notes: purchaseToolForm.notes || null })
                               })
-                              if (!toolRes.ok) { setPurchaseToolMsg('Failed to log tool purchase. Please try again.'); setPurchasingTool(false); return }
-                              // Log as job expense if cost entered and job selected
+                              const toolOut = await readJsonResponse(toolRes)
+                              if (!toolOut.ok) { setPurchaseToolMsg('Failed to log tool purchase: ' + toolOut.error); setPurchasingTool(false); return }
+                              // Log as job expense if cost entered and job selected (a second, separate save).
                               if (purchaseToolForm.purchase_cost && selectedJobId) {
-                                const fd = new FormData()
-                                fd.append('data', JSON.stringify({ job_id: selectedJobId, cost_date: purchaseToolForm.purchase_date, description: `Tool purchase: ${purchaseToolForm.name}${purchaseToolForm.brand ? ' (' + purchaseToolForm.brand + ')' : ''}`, category: 'Tools', amount: parseFloat(purchaseToolForm.purchase_cost), status: 'approved' }))
-                                if (purchaseToolFile) fd.append('file', purchaseToolFile)
-                                const costRes = await fetch('/api/direct-costs', { method: 'POST', body: fd })
-                                if (!costRes.ok) { setPurchaseToolMsg('Failed to log tool purchase. Please try again.'); setPurchasingTool(false); return }
+                                const costRow = { job_id: selectedJobId, cost_date: purchaseToolForm.purchase_date, description: `Tool purchase: ${purchaseToolForm.name}${purchaseToolForm.brand ? ' (' + purchaseToolForm.brand + ')' : ''}`, category: 'Tools', amount: parseFloat(purchaseToolForm.purchase_cost), status: 'approved' }
+                                const costRes = await uploadThenSend({
+                                  fetchFn: authFetch, putFn: fetch, file: purchaseToolFile || null, target: 'direct-cost-receipt', context: { job_id: selectedJobId },
+                                  send: attachment => fetchJson(authFetch, '/api/direct-costs', jsonInit('POST', attachment ? { ...costRow, attachment } : costRow)),
+                                })
+                                if (!costRes.ok) {
+                                  // The tool IS saved; only the job cost failed. Say exactly that (retrying the form would add the tool twice).
+                                  if (userId) loadMyTools(userId)
+                                  setPurchaseToolForm({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: localToday(), notes: '' })
+                                  setPurchaseToolFile(null)
+                                  setShowPurchaseToolForm(false)
+                                  setPurchaseToolMsg(`${purchaseToolForm.name} was logged, but its cost was NOT posted to the job (${costRes.stage === 'upload' ? 'receipt upload failed: ' : ''}${costRes.error}). Add the cost on the job manually.`)
+                                  setPurchasingTool(false)
+                                  return
+                                }
                               }
                               if (userId) loadMyTools(userId)
                               setPurchaseToolMsg(`${purchaseToolForm.name} logged.${purchaseToolForm.purchase_cost && selectedJobId ? ' Cost posted to job.' : ''}`)

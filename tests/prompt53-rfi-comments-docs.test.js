@@ -223,7 +223,8 @@ describe('item 7 — owner page + staff thread wiring', () => {
 
 describe('item 14 — lib/job-doc-client', () => {
   const file = { name: 'Plan Set (A).pdf', type: 'application/pdf' }
-  const resp = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body })
+  // Real Responses with a JSON Content-Type (prompt 78: lib/fetch-json reads status + type first).
+  const resp = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
   it('upload: upload-url → PUT → insert-document, path under the job, record from server', async () => {
     const calls = []
@@ -279,7 +280,8 @@ describe('item 14 — lib/job-doc-client', () => {
     const fetchFn = jest.fn(async () => resp(200, { signedUrl: 'https://u' }))
     const out = await uploadJobDocument({ fetchFn, putFn: async () => { throw new Error('offline') }, jobId: J1, category: 'plans', file })
     expect(out).toMatchObject({ uploaded: false })
-    expect(out.error).toMatch(/^Upload error: offline/)
+    // prompt 78: a rejected storage PUT gives a concise network message (shared putToSignedUrl).
+    expect(out.error).toMatch(/^Upload error: Upload failed: Could not reach the server/)
   })
 
   it('network exception → error, never success', async () => {

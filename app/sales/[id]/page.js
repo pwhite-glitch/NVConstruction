@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { openFile } from '../../../lib/open-file'
+import { fetchJson, jsonInit } from '../../../lib/fetch-json'
+import { uploadThenSend } from '../../../lib/file-upload-client'
 import MbWorkflowPanel from './MbWorkflowPanel'
 
 // ─── Stage config ─────────────────────────────────────────────────────────────
@@ -484,18 +486,21 @@ export default function SalesOrderDetailPage() {
 
   async function uploadDoc() {
     if (!uploadFile) { setModalErr('Select a file first'); return }
+    if (uploading) return
     if (order?.division === 'metal_buildings') {
-      if (uploadFile.size > 25 * 1024 * 1024) { setModalErr('Files must be 25 MB or smaller.'); return }
       if (uploadMeta.category === 'client_order_form' && !/\.pdf$/i.test(uploadFile.name || '')) { setModalErr('Upload the client order form as a PDF.'); return }
     }
     setUploading(true); setModalErr('')
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const fd = new FormData()
-      fd.append('file', uploadFile)
-      fd.append('data', JSON.stringify({ order_id: id, category: uploadMeta.category, visible_to_customer: uploadMeta.visible_to_customer, uploaded_by_name: profile?.full_name }))
-      const res = await fetch('/api/sales-order-docs', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` }, body: fd })
-      if (!res.ok) { const j = await res.json().catch(() => ({})); setModalErr(j.error || `Upload failed (${res.status})`); return }
+      const withAuth = (url, init = {}) => fetch(url, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${session.access_token}` } })
+      // The file goes straight to Storage; the API records { path, uploadReceipt } (no size cap
+      // of ours; the storage bucket's own limits still apply and are reported).
+      const r = await uploadThenSend({
+        fetchFn: withAuth, putFn: fetch, file: uploadFile, target: 'sales-doc', context: { order_id: id, category: uploadMeta.category },
+        send: attachment => fetchJson(withAuth, '/api/sales-order-docs', jsonInit('POST', { action: 'record-upload', order_id: id, category: uploadMeta.category, visible_to_customer: uploadMeta.visible_to_customer, uploaded_by_name: profile?.full_name, attachment })),
+      })
+      if (!r.ok) { setModalErr((r.stage === 'upload' ? 'Upload failed: ' : '') + r.error); return }
       setShowUploadModal(false)
       setUploadFile(null)
       loadOrder()
@@ -510,20 +515,20 @@ export default function SalesOrderDetailPage() {
   function downloadDoc(doc) {
     openFile(async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/sales-order-docs?doc_id=${encodeURIComponent(doc.id)}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
-      const j = await res.json().catch(() => ({}))
-      if (!res.ok || !j.url) { alert('Could not open the file: ' + (j.error || res.status)); return null }
-      return j.url
+      const r = await fetchJson(fetch, `/api/sales-order-docs?doc_id=${encodeURIComponent(doc.id)}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
+      if (!r.ok || !r.data?.url) { alert('Could not open the file: ' + (r.ok ? 'no link returned' : r.error)); return null }
+      return r.data.url
     })
   }
 
   async function toggleDocVisibility(doc) {
     const headers = await authHeader()
-    await fetch('/api/sales-order-docs', {
+    const r = await fetchJson(fetch, '/api/sales-order-docs', {
       method: 'POST',
       headers,
       body: JSON.stringify({ action: 'toggle_customer_visibility', id: doc.id, visible_to_customer: !doc.visible_to_customer }),
     })
+    if (!r.ok) alert('Could not change sharing: ' + r.error)
     loadOrder()
   }
 
@@ -1375,8 +1380,8 @@ export default function SalesOrderDetailPage() {
               <select style={s.sel} value={uploadMeta.category} onChange={e => setUploadMeta(m => ({ ...m, category: e.target.value }))}>
                 {(order.division === 'metal_buildings' ? MB_DOC_CATEGORIES : DOC_CATEGORIES).map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
               </select>
-              {uploadMeta.category === 'client_order_form' && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>PDF only, up to 25 MB. The customer signs exactly this file.</div>}
-              {uploadMeta.category === 'supplier_order_form' && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Internal only: never shown to the customer. PDF, image, Word or Excel, up to 25 MB.</div>}
+              {uploadMeta.category === 'client_order_form' && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>PDF only. The customer signs exactly this file.</div>}
+              {uploadMeta.category === 'supplier_order_form' && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Internal only: never shown to the customer. PDF, image, Word or Excel.</div>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.25rem' }}>
               <input type="checkbox" id="vis2" disabled={uploadMeta.category === 'supplier_order_form'} checked={uploadMeta.visible_to_customer && uploadMeta.category !== 'supplier_order_form'} onChange={e => setUploadMeta(m => ({ ...m, visible_to_customer: e.target.checked }))} />

@@ -31,12 +31,27 @@ const get = async qs => out(await sales.GET(getReq(`http://x/api/sales-orders?${
 const order = (id = ID.O1) => mockState.db.sales_orders.find(o => o.id === id)
 const writes = table => mockState.calls.filter(c => c.table === table && c.op !== 'select')
 
-function upload({ orderId = ID.O1, category = 'general', name = 'f.pdf', bytes = Buffer.from('%PDF-1.4 x'), type = 'application/pdf', meta = {} } = {}) {
-  const fd = new FormData()
-  fd.append('file', new File([bytes], name, { type }))
-  fd.append('data', JSON.stringify({ order_id: orderId, category, ...meta }))
-  return docsRoute.POST(new Request('http://x/api/sales-order-docs', { method: 'POST', body: fd })).then(out)
+// Prompt 78: files go browser → Storage directly; the route records { path, uploadReceipt }.
+// This helper does what the browser would: mint the receipt for the signed-in user, "PUT" the
+// bytes into mock storage, then POST action 'record-upload'. The client-order-form header check
+// reads the first bytes back through a signed URL + Range fetch, served from mock storage.
+const { mintUpload } = require('./helpers/upload-receipt')
+async function upload({ orderId = ID.O1, category = 'general', name = 'f.pdf', bytes = Buffer.from('%PDF-1.4 x'), type = 'application/pdf', meta = {}, store = true } = {}) {
+  const up = await mintUpload({ target: 'sales-doc', subject: mockState.auth?.userId || 'anon', ctx: { order: orderId, cat: category }, name, contentType: type, size: bytes.length || 1 })
+  if (store) mockState.files[`sales-docs/${up.path}`] = bytes
+  return docsRoute.POST(jsonReq('http://x/api/sales-order-docs', 'POST', { action: 'record-upload', order_id: orderId, category, ...meta, attachment: up.attachment })).then(out)
 }
+const realFetch = global.fetch
+beforeAll(() => {
+  global.fetch = async (url, opts = {}) => {
+    const path = decodeURIComponent(String(url).replace(/^https:\/\/signed\//, ''))
+    const buf = mockState.files[`sales-docs/${path}`]
+    if (!buf) return new Response('missing', { status: 404 })
+    const m = /bytes=0-(\d+)/.exec(opts.headers?.Range || '')
+    return m ? new Response(buf.subarray(0, Number(m[1]) + 1), { status: 206 }) : new Response(buf, { status: 200 })
+  }
+})
+afterAll(() => { global.fetch = realFetch })
 
 beforeEach(() => seed())
 
@@ -119,18 +134,33 @@ describe('supplier + two order forms', () => {
     expect(d2).toMatchObject({ version_number: 2, replaces_doc_id: c1.body.id })
     expect(mockState.db.sales_order_docs.find(d => d.id === c1.body.id)).toBeTruthy() // old version kept
   })
-  test('size limit, upload failure, metadata failure give clear errors and leave nothing behind', async () => {
-    expect((await upload({ category: 'supplier_order_form', bytes: Buffer.alloc(25 * 1024 * 1024 + 1, 1) })).body.error).toMatch(/25 MB/)
-    mockState.failUpload['sales-docs'] = 'bucket offline'
-    const u = await upload({ category: 'supplier_order_form' })
-    expect(u.status).toBe(500)
-    expect(u.body.error).toMatch(/Upload failed: bucket offline/)
-    mockState.failUpload = {}
+  test('no portal size cap; missing upload, metadata failure give clear errors and leave nothing behind', async () => {
+    // Prompt 78: the old 25 MB cap is gone. A 30 MiB object (declared, not allocated) records.
+    const big = await mintUpload({ target: 'sales-doc', subject: ID.REP1, ctx: { order: ID.O1, cat: 'supplier_order_form' }, name: 'big.pdf', size: 30 * 1024 * 1024, store: mockState })
+    const b = await out(await docsRoute.POST(jsonReq('http://x', 'POST', { action: 'record-upload', order_id: ID.O1, category: 'supplier_order_form', attachment: big.attachment })))
+    expect(b.status).toBe(200)
+    expect(mockState.db.sales_order_docs.find(d => d.id === b.body.id).file_size_bytes).toBe(30 * 1024 * 1024)
+    mockState.fileMeta = {}
+    mockState.db.sales_order_docs = mockState.db.sales_order_docs.filter(d => d.id !== b.body.id)
+    // The upload never reached storage → refused, nothing recorded.
+    const before = (mockState.db.sales_order_docs || []).length
+    const u = await upload({ category: 'supplier_order_form', store: false })
+    expect(u.status).toBe(422)
+    expect(u.body.code).toBe('upload_missing')
+    expect((mockState.db.sales_order_docs || []).length).toBe(before)
     mockState.failWrite.sales_order_docs = { insert: 'insert blocked' }
     const m = await upload({ category: 'supplier_order_form' })
     expect(m.status).toBe(500)
     expect(m.body.error).toMatch(/could not be recorded \(insert blocked\)/)
-    expect(Object.keys(mockState.files)).toHaveLength(0) // orphan removed
+    expect(Object.keys(mockState.files)).toHaveLength(0) // the just-verified orphan removed
+  })
+  test('multipart upload is refused (413) before the body is read', async () => {
+    const fd = new FormData()
+    fd.append('file', new File(['%PDF-1.4'], 'f.pdf', { type: 'application/pdf' }))
+    fd.append('data', JSON.stringify({ order_id: ID.O1, category: 'general' }))
+    const r = await out(await docsRoute.POST(new Request('http://x/api/sales-order-docs', { method: 'POST', body: fd })))
+    expect(r.status).toBe(413)
+    expect(mockState.calls.filter(c => c.table === 'sales_order_docs')).toHaveLength(0)
   })
   test('other rep, roofing rep, client owner and unauthenticated cannot upload to an MB order (no storage write)', async () => {
     for (const who of ['REP3', 'ROOF', 'CLIENT', null]) {
@@ -139,6 +169,8 @@ describe('supplier + two order forms', () => {
       expect([401, 403]).toContain(r.status)
     }
     expect(mockState.calls.filter(c => c.op === 'upload')).toHaveLength(0)
+    expect(mockState.calls.filter(c => c.table === 'sales_order_docs' && c.op === 'insert')).toHaveLength(0)
+    expect(mockState.storageCalls.filter(c => c.op === 'info')).toHaveLength(0) // refused before the receipt is even checked
   })
   test('download resolves the real doc and gates MB access; arbitrary paths refused', async () => {
     await addForms()

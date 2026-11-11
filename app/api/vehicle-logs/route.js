@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -26,30 +27,37 @@ export async function GET(request) {
   }
 }
 
+// POST: JSON log row. A photo is attachment: { path, uploadReceipt }, uploaded directly to
+// Storage (POST /api/file-upload, target vehicle-photo) for this vehicle; photo_url stays the raw
+// path. Only the log columns below are written (no proof / file keys). Multipart is refused.
+const LOG_FIELDS = ['vehicle_id', 'logged_by', 'log_type', 'log_date', 'mileage', 'notes', 'fuel_gallons', 'fuel_cost']
+
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  const multipart = rejectMultipart(request)
+  if (multipart) return multipart
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let row = {}
+    let body
+    try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+    const inline = inlineFileContentError(body)
+    if (inline) return Response.json({ error: inline }, { status: 400 })
+    if (body.photo_url !== undefined && body.photo_url !== null && body.photo_url !== '') {
+      return Response.json({ error: 'photo_url cannot be set directly. Attach the photo with a direct upload.' }, { status: 400 })
+    }
+    const row = {}
+    for (const k of LOG_FIELDS) if (body[k] !== undefined) row[k] = body[k]
     let photo_url = null
 
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      const file = formData.get('file')
-      row = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        const ext = file.name.split('.').pop()
-        const path = `${row.vehicle_id}/${Date.now()}.${ext}`
-        const buffer = Buffer.from(await file.arrayBuffer())
-        const { error: uploadError } = await adminSupabase.storage
-          .from('vehicle-photos')
-          .upload(path, buffer, { contentType: file.type })
-        if (uploadError) return Response.json({ error: 'Photo upload failed: ' + uploadError.message }, { status: 500 })
-        photo_url = path
-      }
-    } else {
-      row = await request.json()
+    if (body.attachment !== undefined && body.attachment !== null) {
+      // The vehicle must be real; the receipt binds the photo to it.
+      const { data: vehicle, error: vErr } = await adminSupabase.from('vehicles').select('id').eq('id', row.vehicle_id || '').maybeSingle()
+      if (vErr) return Response.json({ error: vErr.message }, { status: 500 })
+      if (!vehicle) return Response.json({ error: 'Vehicle not found.' }, { status: 404 })
+      const v = await verifyAttachment(adminSupabase, body.attachment, { target: 'vehicle-photo', subject: auth.userId, ctx: { vehicle: vehicle.id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      photo_url = v.path
     }
 
     const { data, error } = await adminSupabase

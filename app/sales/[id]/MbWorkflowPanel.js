@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { openFile } from '../../../lib/open-file'
 import { formatCents } from '../../../lib/mb-commission'
+import { fetchJson } from '../../../lib/fetch-json'
 
 const box = { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }
 const sec = { margin: '0 0 0.875rem', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '0.8px', textTransform: 'uppercase' }
@@ -81,10 +82,9 @@ export default function MbWorkflowPanel({ order, mb, docs, authHeader, reload, o
     setErr('')
     openFile(async () => {
       const headers = await authHeader()
-      const res = await fetch(`/api/sales-order-docs?doc_id=${encodeURIComponent(docId)}`, { headers })
-      const j = await res.json().catch(() => ({}))
-      if (!res.ok || !j.url) { setErr(j.error || 'Could not open the file.'); return null }
-      return j.url
+      const r = await fetchJson(fetch, `/api/sales-order-docs?doc_id=${encodeURIComponent(docId)}`, { headers })
+      if (!r.ok || !r.data?.url) { setErr(r.ok ? 'Could not open the file.' : r.error); return null }
+      return r.data.url
     })
   }
 

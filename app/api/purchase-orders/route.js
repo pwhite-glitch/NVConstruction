@@ -4,6 +4,7 @@ import { isMissingPaymentTypeColumn, PAYMENT_TYPE_NOT_SAVED_WARNING } from '../.
 import { todayCentral } from '../../../lib/central-date'
 import { denyUnlessOnJob, seesAllJobs } from '../../../lib/roles'
 import { logChange } from '../../../lib/change-log'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -45,15 +46,18 @@ async function denyForeignRefs(jobId, { budget_item_id, draw_request_id }) {
   return null
 }
 
-async function uploadPOAttachment(file, jobId) {
-  const ext = file.name.split('.').pop()
-  const path = `${jobId}/${Date.now()}.${ext}`
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const { error } = await adminSupabase.storage
-    .from('purchase-order-docs')
-    .upload(path, buffer, { contentType: file.type })
-  if (error) throw new Error('File upload failed: ' + error.message)
-  return path
+// A new attachment is attachment: { path, uploadReceipt }, uploaded directly to Storage
+// (POST /api/file-upload, target po-attachment) for this job (and, on PUT, this PO).
+// Multipart is refused. attachment_url stays the raw storage path.
+async function readPOBody(request) {
+  const multipart = rejectMultipart(request)
+  if (multipart) return { error: multipart }
+  let body
+  try { body = await request.json() } catch { return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) } }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  const inline = inlineFileContentError(body)
+  if (inline) return { error: Response.json({ error: inline }, { status: 400 }) }
+  return { body }
 }
 
 export async function GET(request) {
@@ -112,20 +116,12 @@ export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let body = {}
+    const parsed = await readPOBody(request)
+    if (parsed.error) return parsed.error
+    const body = parsed.body
     let attachment_url = null
-    let file = null
 
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      file = formData.get('file')
-      body = JSON.parse(formData.get('data') || '{}')
-    } else {
-      body = await request.json()
-    }
-
-    const { job_id, vendor_name, description, budget_item_id, notes, payment_type, status = 'draft', items = [], created_by } = body
+    const { job_id, vendor_name, description, budget_item_id, notes, payment_type, status = 'draft', items = [], created_by, attachment } = body
 
     if (!job_id || !vendor_name) return Response.json({ error: 'job_id and vendor_name required' }, { status: 400 })
     const denied = await denyUnlessOnJob(adminSupabase, auth, job_id)
@@ -135,8 +131,10 @@ export async function POST(request) {
     if (!jobRow) return Response.json({ error: 'Job not found.' }, { status: 404 })
     const refDenied = await denyForeignRefs(job_id, { budget_item_id })
     if (refDenied) return refDenied
-    if (file && file.size > 0) {
-      attachment_url = await uploadPOAttachment(file, job_id)
+    if (attachment !== undefined && attachment !== null) {
+      const v = await verifyAttachment(adminSupabase, attachment, { target: 'po-attachment', subject: auth.userId, ctx: { job: job_id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      attachment_url = v.path
     }
 
     const { count, error: cntErr } = await adminSupabase.from('purchase_orders').select('id', { count: 'exact', head: true }).eq('job_id', job_id)
@@ -189,20 +187,12 @@ export async function PUT(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let body = {}
+    const parsed = await readPOBody(request)
+    if (parsed.error) return parsed.error
     let newAttachmentUrl = undefined
-    let file = null
 
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      file = formData.get('file')
-      body = JSON.parse(formData.get('data') || '{}')
-    } else {
-      body = await request.json()
-    }
-
-    const { id, items, ...fields } = body
+    // attachment omitted / null keeps the saved attachment.
+    const { id, items, attachment, ...fields } = parsed.body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const { po, denied } = await loadPOForCaller(auth, id)
     if (denied) return denied
@@ -225,7 +215,7 @@ export async function PUT(request) {
 
     // Gate on the STORED status, never the client's. A closed PO accepts a status-only
     // change; any other column, line items (even []) or a new attachment is refused.
-    const wantsUpload = !!(file && file.size > 0)
+    const wantsUpload = attachment !== undefined && attachment !== null
     if (po.status === 'closed' && (items !== undefined || wantsUpload || Object.keys(updates).some(k => !CLOSED_EDITABLE.has(k)))) {
       return Response.json({ error: 'This purchase order is closed and cannot be edited.' }, { status: 409 })
     }
@@ -245,7 +235,11 @@ export async function PUT(request) {
     }
 
     if (wantsUpload) {
-      newAttachmentUrl = await uploadPOAttachment(file, po.job_id)
+      // Verified for THIS PO on its stored job. The closed gate above used the status read in
+      // this request, so a PO closed while the file was uploading stays locked.
+      const v = await verifyAttachment(adminSupabase, attachment, { target: 'po-attachment', subject: auth.userId, ctx: { job: po.job_id, rec: po.id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      newAttachmentUrl = v.path
     }
     if (newAttachmentUrl !== undefined) updates.attachment_url = newAttachmentUrl
 
@@ -271,16 +265,23 @@ export async function PUT(request) {
 
     let warning = null
     if (Object.keys(updates).length > 0) {
-      let { error: upErr } = await adminSupabase.from('purchase_orders').update(updates).eq('id', id).eq('job_id', po.job_id)
+      // With a new attachment the write also requires the PO to still not be closed (a close that
+      // lands while this request runs refuses the attachment instead of slipping it in).
+      const write = u => {
+        const q = adminSupabase.from('purchase_orders').update(u).eq('id', id).eq('job_id', po.job_id)
+        return wantsUpload ? q.neq('status', 'closed').select('id') : q
+      }
+      let { data: upRows, error: upErr } = await write(updates)
       if ('payment_type' in updates && isMissingPaymentTypeColumn(upErr)) {
         const { payment_type: _pt, ...updatesWithout } = updates
         upErr = null
         if (Object.keys(updatesWithout).length > 0) {
-          ({ error: upErr } = await adminSupabase.from('purchase_orders').update(updatesWithout).eq('id', id).eq('job_id', po.job_id))
+          ({ data: upRows, error: upErr } = await write(updatesWithout))
         }
         if (!upErr) warning = PAYMENT_TYPE_NOT_SAVED_WARNING
       }
       if (upErr) return Response.json({ error: upErr.message }, { status: 500 })
+      if (wantsUpload && !upRows?.length) return Response.json({ error: 'This purchase order is closed and cannot be edited.' }, { status: 409 })
     }
 
     // change_log (server-only). Only real changes; logChange never throws.

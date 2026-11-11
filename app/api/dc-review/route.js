@@ -5,6 +5,8 @@ import { DC_APPROVER_ROLES as APPROVER_ROLES } from '../../../lib/direct-cost-qu
 import { jobAccessError, budgetLineError, dcBilledLinkError } from '../../../lib/dc-guards'
 import { normalizePoId, poLinkError, isInvalidIdError } from '../../../lib/po-cash'
 import { writeWithMissingColumnRetry, poLinkDropped } from '../../../lib/missing-column-retry'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
+import { dcResubmitJobDenied } from '../../../lib/upload-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -71,7 +73,8 @@ const ALREADY_HANDLED = status =>
 // POST /api/dc-review
 // Handles all status transitions for direct cost entries.
 // Body (JSON): { action, id, ...fields }
-// Body (multipart, resubmit only): data field = JSON above, file field = new receipt
+// resubmit may carry attachment: { path, uploadReceipt } (a replacement receipt uploaded directly
+// to Storage via POST /api/file-upload, target dc-resubmit-receipt). Multipart is refused.
 //
 // Actions:
 //   approve   — PM/admin: approve a pending cost
@@ -82,25 +85,23 @@ const ALREADY_HANDLED = status =>
 export async function POST(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
+  const multipart = rejectMultipart(request)
+  if (multipart) return multipart
 
-  const contentType = request.headers.get('content-type') || ''
   let body = {}
-  let newFile = null
-
-  if (contentType.includes('multipart/form-data')) {
-    const fd = await request.formData()
-    try { body = JSON.parse(fd.get('data') || '{}') } catch {
-      return Response.json({ error: 'Invalid data field — expected JSON' }, { status: 400 })
-    }
-    newFile = fd.get('file') || null
-  } else {
-    try { body = await request.json() } catch {
-      return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
-    }
+  try { body = await request.json() } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
 
-  const { action, id, ...fields } = body
+  const { action, id, attachment, ...fields } = body
   if (!action || !id) return Response.json({ error: 'action and id are required' }, { status: 400 })
+  // Only a resubmit can replace the receipt; no other action gains an upload.
+  if (attachment !== undefined && attachment !== null && action !== 'resubmit') {
+    return Response.json({ error: 'Only a resubmit can attach a new receipt.' }, { status: 400 })
+  }
+  const inline = inlineFileContentError(fields)
+  if (inline) return Response.json({ error: inline }, { status: 400 })
 
   const { data: cost, error: fetchErr } = await adminSupabase
     .from('direct_costs')
@@ -334,18 +335,14 @@ export async function POST(request) {
       updates.amount = parsed
     }
 
-    // New receipt upload (optional)
-    if (newFile && newFile.size > 0) {
-      const isPdf = newFile.type === 'application/pdf' || newFile.name?.toLowerCase().endsWith('.pdf')
-      const safeExt = isPdf ? 'pdf' : 'jpg'
-      const safeMime = isPdf ? 'application/pdf' : 'image/jpeg'
-      const path = `${cost.job_id}/${Date.now()}_r.${safeExt}`
-      const buffer = Buffer.from(await newFile.arrayBuffer())
-      const { error: uploadErr } = await adminSupabase.storage
-        .from('receipts')
-        .upload(path, buffer, { contentType: safeMime })
-      if (uploadErr) return Response.json({ error: 'Receipt upload failed: ' + uploadErr.message }, { status: 500 })
-      updates.receipt_url = path
+    // Replacement receipt (optional; none keeps the existing one): uploaded directly, for THIS
+    // cost on its stored job, by this submitter, who must still be on that job.
+    if (attachment !== undefined && attachment !== null) {
+      const jobDenied = await dcResubmitJobDenied(adminSupabase, auth, cost.job_id)
+      if (jobDenied) return jobDenied
+      const v = await verifyAttachment(adminSupabase, attachment, { target: 'dc-resubmit-receipt', subject: auth.userId, ctx: { job: cost.job_id, rec: cost.id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      updates.receipt_url = v.path
     }
 
     const { rows, error } = await dcUpdateIfUnchanged(updates, cost)

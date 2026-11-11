@@ -1,31 +1,62 @@
+import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
+import { AI_PARSE_MAX_BYTES, AI_PARSE_TYPES, AI_PARSE_LIMIT_MESSAGE, AI_PARSE_TYPE_MESSAGE } from '../../../lib/ai-parse-limits'
 
-const MAX_FILE_SIZE_MB = 20
-const ALLOWED_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
+const adminSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+const BUCKET = 'estimate-docs' // private; temporary objects under parse/<user id>/
 
+// POST { attachment: { path, uploadReceipt } } — the estimate was uploaded directly to Storage
+// (POST /api/file-upload, target parse-estimate → estimate-docs/parse/<user>/<uuid>_<name>).
+// The 20 MB check is the AI step's PROCESSING limit, not an upload limit. The verified
+// temporary object is removed once parsing finishes (success or error).
 export async function POST(req) {
   // Require PM role — AI parsing incurs token costs, must not be publicly accessible
   const auth = await requirePM(req)
   if (auth.error) return auth.error
+  const multipart = rejectMultipart(req)
+  if (multipart) return multipart
 
+  let body
+  try { body = await req.json() } catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !body.attachment) return Response.json({ error: 'No file provided' }, { status: 400 })
+  const inline = inlineFileContentError(body)
+  if (inline) return Response.json({ error: inline }, { status: 400 })
+
+  const v = await verifyAttachment(adminSupabase, body.attachment, { target: 'parse-estimate', subject: auth.userId, ctx: { user: auth.userId } })
+  if (!v.ok) return attachmentErrorResponse(v)
   try {
-    const formData = await req.formData()
-    const file = formData.get('file')
-    if (!file) return Response.json({ error: 'No file provided' }, { status: 400 })
+    return await parseVerified(v)
+  } finally {
+    // Only this request's verified temporary object; never a client-chosen path.
+    try { await adminSupabase.storage.from(BUCKET).remove([v.path]) } catch { /* abandoned temp object */ }
+  }
+}
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return Response.json({ error: 'Only PDF and image files are supported' }, { status: 400 })
+async function parseVerified(v) {
+  try {
+    if (!AI_PARSE_TYPES.includes(v.contentType)) {
+      return Response.json({ error: AI_PARSE_TYPE_MESSAGE }, { status: 400 })
     }
-    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-      return Response.json({ error: `File too large — max ${MAX_FILE_SIZE_MB} MB` }, { status: 400 })
+    if (v.size > AI_PARSE_MAX_BYTES) {
+      return Response.json({ error: AI_PARSE_LIMIT_MESSAGE, code: 'ai_parse_limit' }, { status: 413 })
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) return Response.json({ error: 'AI parsing is not configured on this server' }, { status: 503 })
 
-    const arrayBuffer = await file.arrayBuffer()
+    // Server → Storage read (not a Vercel request body). Base64 below is the outbound AI request.
+    const { data: blob, error: dlErr } = await adminSupabase.storage.from(BUCKET).download(v.path)
+    if (dlErr || !blob) return Response.json({ error: 'Could not read the uploaded estimate. Try again.' }, { status: 502 })
+    const arrayBuffer = await blob.arrayBuffer()
+    if (arrayBuffer.byteLength > AI_PARSE_MAX_BYTES) {
+      return Response.json({ error: AI_PARSE_LIMIT_MESSAGE, code: 'ai_parse_limit' }, { status: 413 })
+    }
     const base64 = Buffer.from(arrayBuffer).toString('base64')
-    const mediaType = file.type
+    const mediaType = v.contentType
 
     const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

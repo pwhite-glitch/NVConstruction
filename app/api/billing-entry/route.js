@@ -12,6 +12,8 @@ import { escapeHtml, emailWrap } from '../../../lib/email'
 import { siteUrl } from '../../../lib/site-url'
 import { findDuplicateInvoice as findDuplicateInvoiceIn, normalizeInvoiceNumber } from '../../../lib/billing-duplicates'
 import { without062, mentions062, isMissingColumnError, waiverTermChanges, voidReason } from '../../../lib/lien-waiver-terms'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
+import { subBillingGuard } from '../../../lib/upload-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -139,16 +141,22 @@ async function firstReviewFallback(id, drawId, status, update) {
 // What the decision email / notification describe: the row as saved, not the pre-edit read.
 const SAVED_COLS = 'id, status, sub_id, sub_email, job_id, amount_billed, company_name, draw_request_id'
 
-async function uploadBillingDoc(file, jobId) {
-  const ext = file.name.split('.').pop()
-  const path = `${jobId}/${Date.now()}.${ext}`
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const { error } = await adminSupabase.storage
-    .from('billing-docs')
-    .upload(path, buffer, { contentType: file.type })
-  if (error) throw new Error('File upload failed: ' + error.message)
-  return path
+// A new invoice/backup file is attachment: { path, uploadReceipt }, uploaded directly to Storage
+// (POST /api/file-upload, target billing-doc) for this job (and, on PATCH, this billing). It is
+// taken out of the body before pickFields; a raw doc_url from the client is refused (PATCH
+// may resend the saved one unchanged). Multipart is refused.
+async function readBillingBody(request) {
+  const multipart = rejectMultipart(request)
+  if (multipart) return { error: multipart }
+  let body
+  try { body = await request.json() } catch { return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) } }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  const inline = inlineFileContentError(body)
+  if (inline) return { error: Response.json({ error: inline }, { status: 400 }) }
+  return { body }
 }
+const RAW_DOC_URL_ERROR = 'doc_url cannot be set directly. Attach the file with a direct upload.'
+const hasValue = v => v !== undefined && v !== null && v !== ''
 
 // Possible duplicate (prompt 67B #2): another non-rejected billing on the job, from the same
 // sub company (the sub_id's company people, or a matching company name), with the same
@@ -170,18 +178,11 @@ export async function POST(request) {
   if (auth.error) return auth.error
 
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let raw = {}
+    const parsed = await readBillingBody(request)
+    if (parsed.error) return parsed.error
+    const { attachment, doc_url: rawDocUrl, ...raw } = parsed.body
+    if (hasValue(rawDocUrl)) return Response.json({ error: RAW_DOC_URL_ERROR }, { status: 400 })
     let doc_url = null
-    let file = null
-
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      file = formData.get('file')
-      raw = JSON.parse(formData.get('data') || '{}')
-    } else {
-      raw = await request.json()
-    }
 
     // Derive sub_id from session — never trust it from the request body
     let row
@@ -218,7 +219,17 @@ export async function POST(request) {
       }
     }
 
-    if (file && file.size > 0) doc_url = await uploadBillingDoc(file, raw.job_id)
+    // Checked after the duplicate 409, so a confirm resend reuses the same uploaded file.
+    if (hasValue(attachment)) {
+      if (isSub(auth.role)) {
+        // A sub may only attach on a job they can bill (as /api/sub-portal/billing).
+        const g = await subBillingGuard(adminSupabase, auth, { jobId: row.job_id })
+        if (g.error) return g.error
+      }
+      const v = await verifyAttachment(adminSupabase, attachment, { target: 'billing-doc', subject: auth.userId, ctx: { job: isPM(auth.role) ? raw.job_id : row.job_id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      doc_url = v.path
+    }
 
     // Validate sub_id auth account still exists
     if (row.sub_id) {
@@ -247,31 +258,16 @@ export async function PATCH(request) {
   if (auth.error) return auth.error
 
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let id = null
-    let rawFields = {}
-    let file = null
-    // Only set when a new file is uploaded, so saving without one keeps the existing attachment
+    const parsed = await readBillingBody(request)
+    if (parsed.error) return parsed.error
+    // Only set when a new file is attached, so saving without one keeps the existing attachment
     let doc_url = undefined
-
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      file = formData.get('file')
-      const parsed = JSON.parse(formData.get('data') || '{}')
-      id = parsed.id
-      const { id: _id, ...rest } = parsed
-      rawFields = rest
-    } else {
-      const body = await request.json()
-      id = body.id
-      const { id: _id, ...rest } = body
-      rawFields = rest
-    }
+    const { id, attachment, doc_url: rawDocUrl, ...rawFields } = parsed.body
 
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
     // Waiver columns from migration 062 are read only when present (has062).
-    const CURRENT_COLS = 'status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id, retainage_pct, retainage_held, nv_reimbursement, billing_period, paid_at, payment_amount, invoice_number, lien_waiver_signed_at, lien_waiver_signer_name, lien_waiver_signature, lien_waiver_sent_at'
+    const CURRENT_COLS = 'status, sub_id, sub_email, job_id, doc_url, amount_billed, company_name, ready_to_pay, draw_request_id, retainage_pct, retainage_held, nv_reimbursement, billing_period, paid_at, payment_amount, invoice_number, lien_waiver_signed_at, lien_waiver_signer_name, lien_waiver_signature, lien_waiver_sent_at'
     const readCurrent = cols => adminSupabase.from('billing_submissions').select(cols).eq('id', id).maybeSingle()
     let has062 = true
     let { data: current, error: curErr } = await readCurrent(CURRENT_COLS + ', lien_waiver_amount, lien_waiver_through, lien_waiver_history')
@@ -282,6 +278,8 @@ export async function PATCH(request) {
 
     if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
     if (!current) return Response.json({ error: 'Not found' }, { status: 404 })
+    // The saved path may be resent unchanged; any other raw doc_url is refused.
+    if (hasValue(rawDocUrl) && rawDocUrl !== current.doc_url) return Response.json({ error: RAW_DOC_URL_ERROR }, { status: 400 })
     const emailSub = rawFields.email_sub === true
     const paymentRequested = ['record_payment_amount', 'payment_amount', 'paid_at'].some(k => k in rawFields)
     let paymentPlan = null
@@ -427,7 +425,16 @@ export async function PATCH(request) {
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    if (file && file.size > 0) doc_url = await uploadBillingDoc(file, current.job_id)
+    if (hasValue(attachment)) {
+      if (isSub(auth.role)) {
+        // Their own pending billing (checked above) on a job they still see.
+        const g = await subBillingGuard(adminSupabase, auth, { billing: current })
+        if (g.error) return g.error
+      }
+      const v = await verifyAttachment(adminSupabase, attachment, { target: 'billing-doc', subject: auth.userId, ctx: { job: current.job_id, rec: id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      doc_url = v.path
+    }
     const update = doc_url !== undefined ? { ...fields, doc_url } : fields
     if (!Object.keys(update).length) return Response.json({ error: 'Nothing to update' }, { status: 400 })
     // Status changes only apply to the status we read (no double approve / reject).

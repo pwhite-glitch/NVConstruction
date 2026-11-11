@@ -48,6 +48,10 @@ import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/ce
 import { getSiteUrl } from '../../lib/site-url'
 import RfiCommentThread from '../components/RfiCommentThread'
 import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib/job-doc-client'
+import { readJsonResponse, fetchJson, jsonInit, rawResponseError } from '../../lib/fetch-json'
+import { uploadThenSend, putToSignedUrl } from '../../lib/file-upload-client'
+import { exportOwnerReimbZip } from '../../lib/export-client'
+import { createSubmittal, addSubmittalFiles, runSubmittalSave } from '../../lib/submittal-client'
 import { isPrincipal, atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { canWriteJobDetails } from '../../lib/job-details'
 import { closeoutStatus, closeoutList, CLOSEOUT_SOURCE_LABELS } from '../../lib/closeout'
@@ -304,6 +308,9 @@ function JobDetailInner() {
   const [showCreateBilling, setShowCreateBilling] = useState(false)
   const [createBillingForm, setCreateBillingForm] = useState(emptyCreateBilling)
   const [creatingBilling, setCreatingBilling] = useState(false)
+  const creatingBillingRef = useRef(false)
+  const [savingBilling, setSavingBilling] = useState(false)
+  const savingBillingRef = useRef(false)
   const [createBillingError, setCreateBillingError] = useState('')
   const [createBillingFile, setCreateBillingFile] = useState(null)
   const [editingBilling, setEditingBilling] = useState(null)
@@ -353,6 +360,7 @@ function JobDetailInner() {
   const [showPaymentFormId, setShowPaymentFormId] = useState(null)
   const [reimbMsg, setReimbMsg] = useState('')
   const [reimbErr, setReimbErr] = useState('')
+  const [exportingReimbId, setExportingReimbId] = useState(null) // owner ZIP being built in the browser
 
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
@@ -564,6 +572,8 @@ function JobDetailInner() {
   const [showAddSubmittal, setShowAddSubmittal] = useState(false)
   const [submittalForm, setSubmittalForm] = useState({ title: '', type: 'shop_drawing', spec_section: '', submitted_by_sub_id: '', submitted_by_company: '', notes: '' })
   const [savingSubmittal, setSavingSubmittal] = useState(false)
+  const [submittalErr, setSubmittalErr] = useState('') // add form: shown until the next try
+  const [submittalListErr, setSubmittalListErr] = useState('') // list actions (status, notes, files, delete)
   const [expandedSubmittalId, setExpandedSubmittalId] = useState(null)
   const [submittalReviewNote, setSubmittalReviewNote] = useState({})
   const [submittalFile, setSubmittalFile] = useState(null)
@@ -1186,10 +1196,9 @@ function JobDetailInner() {
   // GC attachments are signed server-side (job-access checked; path must match the entry)
   function openGCDoc(entry) {
     return openFile(async () => {
-      const res = await authFetch(`/api/general-conditions?doc_id=${encodeURIComponent(entry.id)}&path=${encodeURIComponent(entry.doc_url)}`)
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.url) { alert('Could not open attachment: ' + (json.error || res.status)); return null }
-      return json.url
+      const r = await fetchJson(authFetch, `/api/general-conditions?doc_id=${encodeURIComponent(entry.id)}&path=${encodeURIComponent(entry.doc_url)}`)
+      if (!r.ok || !r.data?.url) { alert('Could not open attachment: ' + (r.ok ? 'no link returned' : r.error)); return null }
+      return r.data.url
     })
   }
 
@@ -1199,10 +1208,9 @@ function JobDetailInner() {
 
   async function loadDirectCosts() {
     try {
-      const res = await fetch(`/api/direct-costs?job_id=${id}`)
-      const json = await res.json()
-      if (json.error) { console.error('loadDirectCosts error:', json.error); return }
-      const costs = json.data || []
+      const r = await fetchJson(authFetch, `/api/direct-costs?job_id=${id}`)
+      if (!r.ok) { console.error('loadDirectCosts error:', r.error); return }
+      const costs = r.data?.data || []
       const userIds = [...new Set(costs.map(c => c.submitted_by).filter(Boolean))]
       if (userIds.length > 0) {
         const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds)
@@ -1230,9 +1238,9 @@ function JobDetailInner() {
   }
 
   async function loadGeneralConditions() {
-    const res = await fetch(`/api/general-conditions?job_id=${id}`)
-    const json = await res.json()
-    setGeneralConditions(json.entries || [])
+    const r = await fetchJson(authFetch, `/api/general-conditions?job_id=${id}`)
+    if (!r.ok) { console.error('loadGeneralConditions:', r.error); return }
+    setGeneralConditions(r.data?.entries || [])
   }
 
   function openDcReceiptUrl(path) {
@@ -1253,11 +1261,18 @@ function JobDetailInner() {
     return openHtml(() => fetchStoredContractHtml(c.id, 'generated'))
   }
 
+  // The API returns a short-lived signed link to the exact stored file; the HTML is read
+  // straight from Storage (plain fetch, no portal token), after checking the HTTP status.
   async function fetchStoredContractHtml(contractId, kind) {
-    const res = await authFetch(`/api/subcontract-contract?subcontract_id=${contractId}&kind=${kind}`)
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok || !json.html) { setErrMsg('Could not open contract: ' + (json.error || res.status)); setTimeout(() => setErrMsg(''), 5000); return null }
-    return json.html
+    const fail = msg => { setErrMsg('Could not open contract: ' + msg); setTimeout(() => setErrMsg(''), 5000); return null }
+    const r = await fetchJson(authFetch, `/api/subcontract-contract?subcontract_id=${contractId}&kind=${kind}`)
+    if (!r.ok || !r.data?.url) return fail(r.ok ? 'no link returned' : r.error)
+    let file
+    try { file = await fetch(r.data.url, { cache: 'no-store' }) } catch { return fail('could not reach storage') }
+    const err = await rawResponseError(file, 'Loading the contract')
+    if (err) return fail(err)
+    const html = await file.text().catch(() => '')
+    return html || fail('the stored contract is empty')
   }
 
   // Show the stored copy on the row right away (also covers the time before migration 031 is applied)
@@ -1269,10 +1284,9 @@ function JobDetailInner() {
   async function openSubmittalDocUrl(path) {
     let errText = ''
     const url = await openFile(async () => {
-      const res = await authFetch(`/api/submittals?file_path=${encodeURIComponent(path)}`)
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok || !d.url) errText = d.error || `HTTP ${res.status}`
-      return d.url
+      const r = await fetchJson(authFetch, `/api/submittals?file_path=${encodeURIComponent(path)}`)
+      if (!r.ok || !r.data?.url) errText = r.ok ? 'no link returned' : r.error
+      return r.data?.url
     })
     if (!url) alert('Could not open file: ' + (errText || 'no link returned'))
   }
@@ -1285,6 +1299,7 @@ function JobDetailInner() {
 
   async function submitDirectCostPM(e) {
     e.preventDefault()
+    if (submittingDc) return
     setSubmittingDc(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1303,17 +1318,13 @@ function JobDetailInner() {
         // Optional PO this cost pays down (migration 067; the server retries without it before 067).
         ...(dcForm.purchase_order_id ? { purchase_order_id: dcForm.purchase_order_id } : {}),
       }
-      let res, json
-      if (dcFile) {
-        const formData = new FormData()
-        formData.append('file', dcFile)
-        formData.append('data', JSON.stringify(rowData))
-        res = await fetch('/api/direct-costs', { method: 'POST', body: formData })
-      } else {
-        res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
-      }
-      json = await res.json()
-      if (json.error) { setDcSaveErr('Save failed: ' + json.error); setSubmittingDc(false); return }
+      // Receipt goes straight to Storage; the API gets only { path, uploadReceipt }.
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, file: dcFile, target: 'direct-cost-receipt', context: { job_id: id },
+        send: attachment => fetchJson(authFetch, '/api/direct-costs', jsonInit('POST', attachment ? { ...rowData, attachment } : rowData)),
+      })
+      if (!r.ok) { setDcSaveErr((r.stage === 'upload' ? 'Receipt upload failed: ' : 'Save failed: ') + r.error); return }
+      const json = r.data
       setDcSaveErr('')
       setDcForm({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false, purchase_order_id: '' })
       setDcFile(null)
@@ -1323,8 +1334,9 @@ function JobDetailInner() {
       if (json.po_link_saved === false) alert(PO_LINK_NOT_SAVED)
     } catch (err) {
       setDcSaveErr('Error submitting cost: ' + err.message)
+    } finally {
+      setSubmittingDc(false)
     }
-    setSubmittingDc(false)
   }
 
   function parseCsvDirect(text) {
@@ -1363,16 +1375,22 @@ function JobDetailInner() {
     const valid = csvRows.filter(r => r.errors.length === 0)
     if (!valid.length) return
     setImportingCsv(true)
+    try {
     const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid.map(r => ({
+    const res = await fetchJson(authFetch, '/api/direct-costs', jsonInit('POST', valid.map(r => ({
       job_id: id, submitted_by: session.user.id,
       cost_date: r.cost_date, description: r.description,
       category: r.category, amount: r.amount,
       notes: r.notes || null, budget_item_id: null, status: 'approved',
-    }))) })
-    if (!res.ok) { alert('Import failed. Please try again.'); setImportingCsv(false); return }
-    setShowCsvImport(false); setCsvRows([]); setImportingCsv(false)
+    }))))
+    if (!res.ok) { alert('Import failed: ' + res.error); return }
+    setShowCsvImport(false); setCsvRows([])
     await loadDirectCosts()
+    } catch (e) {
+      alert('Import failed: ' + (e?.message || 'unexpected error'))
+    } finally {
+      setImportingCsv(false)
+    }
   }
 
   function downloadDcTemplate() {
@@ -1410,19 +1428,9 @@ function JobDetailInner() {
   async function callDcReview(action, costId, extraFields = {}) {
     const token = await getDcToken()
     if (!token) { alert('Session expired — please reload the page.'); return { error: 'No session' } }
-    // A failed request (non-2xx, bad JSON, network) always comes back as { error }.
-    try {
-      const res = await fetch('/api/dc-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ action, id: costId, ...extraFields }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok && !json.error) json.error = `server returned ${res.status}`
-      return json
-    } catch (e) {
-      return { error: e.message || 'network error' }
-    }
+    // A failed request (non-2xx, non-JSON, bad JSON, network) always comes back as { error }.
+    const r = await fetchJson(fetch, '/api/dc-review', jsonInit('POST', { action, id: costId, ...extraFields }, { headers: { 'Authorization': `Bearer ${token}` } }))
+    return r.ok ? (r.data || {}) : { ...(r.data && typeof r.data === 'object' ? r.data : {}), error: r.error }
   }
 
   async function approveCost(costId) {
@@ -1442,13 +1450,11 @@ function JobDetailInner() {
     setApprovingAll(true)
     const token = await getDcToken()
     if (!token) { alert('Session expired — please reload.'); setApprovingAll(false); return }
-    await Promise.all(toApprove.map(c =>
-      fetch('/api/dc-review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ action: 'approve', id: c.id }),
-      })
+    const results = await Promise.all(toApprove.map(c =>
+      fetchJson(fetch, '/api/dc-review', jsonInit('POST', { action: 'approve', id: c.id }, { headers: { 'Authorization': `Bearer ${token}` } }))
     ))
+    const failed = results.filter(r => !r.ok)
+    if (failed.length) alert(`${failed.length} of ${results.length} cost${results.length !== 1 ? 's' : ''} could not be approved: ${failed[0].error}`)
     await loadDirectCosts()
     setApprovingAll(false)
   }
@@ -2985,11 +2991,10 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
   async function loadPurchaseOrders() {
     // A failed load leaves the list empty; poLoadError lets Cash Flow say so instead of a silent $0.
     try {
-      const res = await authFetch(`/api/purchase-orders?job_id=${id}`)
-      const data = await res.json().catch(() => ({}))
-      const failed = !res.ok || !!data.error || !Array.isArray(data.purchase_orders)
+      const r = await fetchJson(authFetch, `/api/purchase-orders?job_id=${id}`)
+      const failed = !r.ok || !Array.isArray(r.data?.purchase_orders)
       setPoLoadError(failed)
-      setPurchaseOrders(data.purchase_orders || [])
+      setPurchaseOrders(failed ? [] : r.data.purchase_orders)
     } catch {
       setPoLoadError(true)
       setPurchaseOrders([])
@@ -2997,8 +3002,9 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
   }
 
   async function savePO(issueImmediately = false) {
-    if (!poForm.vendor_name) return
+    if (!poForm.vendor_name || savingPO) return
     setSavingPO(true)
+    try {
     const { data: { session } } = await supabase.auth.getSession()
     const validItems = poForm.items.filter(i => i.description && i.unit_price)
     const payload = {
@@ -3012,36 +3018,35 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       created_by: session.user.id,
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
     }
-    let res
-    if (poFile) {
-      const fd = new FormData()
-      fd.append('file', poFile)
-      fd.append('data', JSON.stringify(payload))
-      res = await authFetch('/api/purchase-orders', { method: 'POST', body: fd })
-    } else {
-      res = await authFetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    }
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}))
-      setErrMsg('PO save failed: ' + (j.error || res.statusText))
+    // Attachment goes straight to Storage; the API gets only { path, uploadReceipt }.
+    const r = await uploadThenSend({
+      fetchFn: authFetch, putFn: fetch, file: poFile, target: 'po-attachment', context: { job_id: id },
+      send: attachment => fetchJson(authFetch, '/api/purchase-orders', jsonInit('POST', attachment ? { ...payload, attachment } : payload)),
+    })
+    if (!r.ok) {
+      setErrMsg((r.stage === 'upload' ? 'PO attachment upload failed: ' : 'PO save failed: ') + r.error)
       setTimeout(() => setErrMsg(''), 6000)
-      setSavingPO(false)
       return
     }
-    const saved = await res.json().catch(() => ({}))
-    if (saved.warning) alert(saved.warning)
+    if (r.data?.warning) alert(r.data.warning)
     setShowNewPO(false)
     setPOForm({ vendor_name: '', description: '', budget_item_id: '', notes: '', payment_type: 'check', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
     setPOFile(null)
     await loadPurchaseOrders()
     await loadBudgetItems()
-    setSavingPO(false)
+    } catch (e) {
+      setErrMsg('PO save failed: ' + (e?.message || 'unexpected error'))
+      setTimeout(() => setErrMsg(''), 6000)
+    } finally {
+      setSavingPO(false)
+    }
   }
 
   async function updatePOStatus(poId, status) {
     setUpdatingPOId(poId)
-    const res = await authFetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId, status }) })
-    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('PO update failed: ' + (j.error || res.statusText)); setTimeout(() => setErrMsg(''), 6000) }
+    const r = await fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', { id: poId, status }))
+    if (!r.ok) { setErrMsg('PO update failed: ' + r.error); setTimeout(() => setErrMsg(''), 6000) }
+    else if (r.data?.warning) alert(r.data.warning)
     await loadPurchaseOrders()
     await loadBudgetItems()
     setUpdatingPOId(null)
@@ -3050,8 +3055,9 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
   async function savePOEdit() {
     // Confirm cash-outlook / committed-cost / draw-amount effects before any write.
     const originalPO = purchaseOrders.find(p => p.id === editingPOId)
-    if (!confirmPOEdit(originalPO, editPOForm, msg => window.confirm(msg))) return
+    if (savingPOEdit || !confirmPOEdit(originalPO, editPOForm, msg => window.confirm(msg))) return
     setSavingPOEdit(true)
+    try {
     const validItems = editPOForm.items.filter(i => i.description && i.unit_price)
     const payload = {
       id: editingPOId,
@@ -3063,42 +3069,39 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       payment_type: editPOForm.payment_type || 'check',
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
     }
-    let editRes
-    if (editPOFile) {
-      const fd = new FormData()
-      fd.append('file', editPOFile)
-      fd.append('data', JSON.stringify(payload))
-      editRes = await authFetch('/api/purchase-orders', { method: 'PUT', body: fd })
-    } else {
-      editRes = await authFetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    }
-    if (!editRes.ok) {
-      const j = await editRes.json().catch(() => ({}))
-      setErrMsg('PO update failed: ' + (j.error || editRes.statusText))
+    // No new file = attachment omitted, which keeps the saved one.
+    const r = await uploadThenSend({
+      fetchFn: authFetch, putFn: fetch, file: editPOFile, target: 'po-attachment', context: { job_id: id, record_id: editingPOId },
+      send: attachment => fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', attachment ? { ...payload, attachment } : payload)),
+    })
+    if (!r.ok) {
+      setErrMsg((r.stage === 'upload' ? 'PO attachment upload failed: ' : 'PO update failed: ') + r.error)
       setTimeout(() => setErrMsg(''), 6000)
-      setSavingPOEdit(false)
       return
     }
-    const edited = await editRes.json().catch(() => ({}))
-    if (edited.warning) alert(edited.warning)
+    if (r.data?.warning) alert(r.data.warning)
     setEditingPOId(null)
     setEditPOFile(null)
     await loadPurchaseOrders()
     await loadBudgetItems()
-    setSavingPOEdit(false)
+    } catch (e) {
+      setErrMsg('PO update failed: ' + (e?.message || 'unexpected error'))
+      setTimeout(() => setErrMsg(''), 6000)
+    } finally {
+      setSavingPOEdit(false)
+    }
   }
 
   async function openPOAttachment(attachmentUrl) {
-    const res = await authFetch(`/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
-    const json = await res.json()
-    if (json.signedUrl) window.open(json.signedUrl, '_blank')
-    else alert('Could not open attachment: ' + (json.error || 'Unknown error'))
+    const r = await fetchJson(authFetch, `/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
+    if (r.ok && r.data?.signedUrl) window.open(r.data.signedUrl, '_blank')
+    else alert('Could not open attachment: ' + (r.ok ? 'no link returned' : r.error))
   }
 
   async function deletePO(poId) {
     if (!window.confirm('Delete this purchase order?')) return
-    const res = await authFetch('/api/purchase-orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId }) })
-    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('PO delete failed: ' + (j.error || res.statusText)); setTimeout(() => setErrMsg(''), 6000) }
+    const r = await fetchJson(authFetch, '/api/purchase-orders', jsonInit('DELETE', { id: poId }))
+    if (!r.ok) { setErrMsg('PO delete failed: ' + r.error); setTimeout(() => setErrMsg(''), 6000) }
     await loadPurchaseOrders()
     await loadBudgetItems()
   }
@@ -3542,10 +3545,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   // ── Schedule ────────────────────────────────────────────────
   // All Schedule tab file work goes through /api/schedule-files (job-checked, service role).
   async function scheduleFilesApi(body) {
-    const res = await authFetch('/api/schedule-files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const out = await res.json().catch(() => ({}))
-    if (!res.ok || out.error) throw new Error(out.error || `HTTP ${res.status}`)
-    return out
+    const r = await fetchJson(authFetch, '/api/schedule-files', jsonInit('POST', body))
+    if (!r.ok) throw new Error(r.error)
+    return r.data || {}
   }
 
   async function scheduleFileUrl(storagePath) {
@@ -3553,10 +3555,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function loadScheduleFiles() {
-    const res = await authFetch(`/api/schedule-files?job_id=${encodeURIComponent(id)}`)
-    const out = await res.json().catch(() => ({}))
-    if (!res.ok) { setErrMsg('Could not load schedule files: ' + (out.error || `HTTP ${res.status}`)); setTimeout(() => setErrMsg(''), 8000); return }
-    setScheduleFiles(out.files || [])
+    const r = await fetchJson(authFetch, `/api/schedule-files?job_id=${encodeURIComponent(id)}`)
+    if (!r.ok) { setErrMsg('Could not load schedule files: ' + r.error); setTimeout(() => setErrMsg(''), 8000); return }
+    setScheduleFiles(r.data?.files || [])
   }
 
   async function uploadScheduleFile(file, meta = {}) {
@@ -3564,8 +3565,8 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     try {
       const path = `${id}/${Date.now()}-${safeFileName(file.name).slice(-100)}`
       const { signedUrl } = await scheduleFilesApi({ action: 'upload-url', path })
-      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-      if (!up.ok) throw new Error(`Upload failed (HTTP ${up.status})`)
+      const up = await putToSignedUrl(fetch, signedUrl, file)
+      if (!up.ok) throw new Error(up.error)
       await scheduleFilesApi({ action: 'record', job_id: id, storage_path: path, file_name: file.name, revision: meta.revision || null, notes: meta.notes || null })
       if (file.name.toLowerCase().endsWith('.xml')) {
         const text = await file.text()
@@ -3652,15 +3653,10 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setUploadingDrawing(true)
     try {
       const path = `${id}/${Date.now()}-${safeFileName(file.name)}`
-      const res = await authFetch('/api/drawings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upload-url', path }),
-      })
-      const { signedUrl, error: urlErr } = await res.json().catch(() => ({}))
-      if (urlErr || !signedUrl) { alert('Upload error: ' + (urlErr || 'Could not get upload URL')); return }
-      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-      if (!up.ok) { alert('Upload failed'); return }
+      const urlRes = await fetchJson(authFetch, '/api/drawings', jsonInit('POST', { action: 'upload-url', path }))
+      if (!urlRes.ok || !urlRes.data?.signedUrl) { alert('Upload error: ' + (urlRes.ok ? 'Could not get upload URL' : urlRes.error)); return }
+      const up = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+      if (!up.ok) { alert(up.error); return }
       // Row insert + "mark older revisions superseded" happen server side, with errors returned.
       const recRes = await authFetch('/api/drawings', {
         method: 'POST',
@@ -3677,9 +3673,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
           notes: drawingUploadForm.notes || null,
         }),
       })
-      const rec = await recRes.json().catch(() => ({}))
-      if (!recRes.ok || rec.error) {
-        alert('Drawing upload problem: ' + (rec.error || `HTTP ${recRes.status}`))
+      const rec = await readJsonResponse(recRes)
+      if (!rec.ok) {
+        alert('Drawing upload problem: ' + rec.error)
         await loadDrawings()
         return
       }
@@ -3863,9 +3859,17 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function loadSubmittals() {
-    const res = await fetch(`/api/submittals?job_id=${id}`)
-    const { submittals: data } = await res.json()
-    setSubmittals(data || [])
+    const r = await fetchJson(authFetch, `/api/submittals?job_id=${id}`)
+    if (!r.ok) { setSubmittalListErr('Could not load submittals: ' + r.error); return }
+    setSubmittals(r.data?.submittals || [])
+  }
+
+  // PATCH / DELETE on a submittal: returns true only when the server confirmed it.
+  async function submittalRequest(url, init, what) {
+    const r = await fetchJson(authFetch, url, init)
+    if (!r.ok) { setSubmittalListErr(`${what} failed: ${r.error}`); return false }
+    setSubmittalListErr('')
+    return true
   }
 
   async function loadPrelimNotices() {
@@ -3960,32 +3964,41 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     await loadRetainageReleases()
   }
 
+  // Files go straight to Storage; the form only resets / closes after the server confirms.
   async function addSubmittal() {
     if (!submittalForm.title.trim()) return
-    setSavingSubmittal(true)
     const payload = { ...submittalForm, job_id: id, submitted_by_sub_id: submittalForm.submitted_by_sub_id || null }
-    if (submittalFile && submittalFile.length > 0) {
-      const fd = new FormData()
-      for (const f of submittalFile) fd.append('file', f)
-      fd.append('data', JSON.stringify(payload))
-      await fetch('/api/submittals', { method: 'POST', body: fd })
-    } else {
-      await fetch('/api/submittals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    await runSubmittalSave({
+      busy: savingSubmittal,
+      setBusy: setSavingSubmittal,
+      setError: setSubmittalErr,
+      save: () => createSubmittal({ fetchFn: authFetch, putFn: fetch, jobId: id, files: submittalFile, payload }),
+      onSaved: () => {
+        setSubmittalForm({ title: '', type: 'shop_drawing', spec_section: '', submitted_by_sub_id: '', submitted_by_company: '', notes: '' })
+        setSubmittalFile(null)
+        setShowAddSubmittal(false)
+      },
+      reload: loadSubmittals,
+    })
+  }
+
+  async function addFilesToSubmittal(sub) {
+    if (uploadingSubmittalDoc) return
+    setUploadingSubmittalDoc(sub.id)
+    try {
+      const r = await addSubmittalFiles({ fetchFn: authFetch, putFn: fetch, jobId: sub.job_id, submittalId: sub.id, files: submittalDocFile[sub.id] })
+      if (!r.ok) { setSubmittalListErr((r.stage === 'upload' ? 'File upload failed: ' : 'Files not added: ') + r.error); return }
+      setSubmittalListErr('')
+      setSubmittalDocFile(prev => { const n = { ...prev }; delete n[sub.id]; return n })
+      await loadSubmittals()
+    } finally {
+      setUploadingSubmittalDoc(null)
     }
-    setSubmittalForm({ title: '', type: 'shop_drawing', spec_section: '', submitted_by_sub_id: '', submitted_by_company: '', notes: '' })
-    setSubmittalFile(null)
-    setShowAddSubmittal(false)
-    setSavingSubmittal(false)
-    await loadSubmittals()
   }
 
   async function reviewSubmittal(submittalId, status) {
     const { data: { session } } = await supabase.auth.getSession()
-    await fetch('/api/submittals', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: submittalId, status, reviewer_id: session.user.id, notes: submittalReviewNote[submittalId] || undefined }),
-    })
+    await submittalRequest('/api/submittals', jsonInit('PATCH', { id: submittalId, status, reviewer_id: session.user.id, notes: submittalReviewNote[submittalId] || undefined }), 'Status update')
     await loadSubmittals()
   }
 
@@ -4597,11 +4610,16 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const contractId = contractGenForm.contract_id
     if (contractId) {
       const opened = !!win
-      authFetch('/api/subcontract-contract', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subcontract_id: contractId, html }) })
-        .then(r => r.json())
-        .then(json => {
-          if (json.error) throw new Error(json.error)
-          markContractGenerated(contractId, json.data)
+      // The HTML goes straight to Storage; the API only records the verified path.
+      uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, target: 'generated-contract',
+        file: new File([html], 'contract.html', { type: 'text/html' }),
+        context: { job_id: id, record_id: contractId },
+        send: attachment => fetchJson(authFetch, '/api/subcontract-contract', jsonInit('POST', { subcontract_id: contractId, attachment })),
+      })
+        .then(r => {
+          if (!r.ok) throw new Error(r.error)
+          markContractGenerated(contractId, r.data?.data)
           if (opened) setContractGenMsg('Contract opened in a new window. A copy was saved ("Last generated contract" on the row).')
         })
         .catch(e => {
@@ -4649,23 +4667,23 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setSendingSign(true)
     setSignMsg('')
     try {
-      const { data: { session } } = await supabase.auth.getSession()
       const html = buildSubcontractHtml(contractGenForm)
-      const res = await authFetch('/api/signing-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // The document is staged in Storage (direct upload); the API gets only its path + receipt.
+      const r = await uploadThenSend({
+        fetchFn: authFetch, putFn: fetch, target: 'signing-html',
+        file: new File([html], 'signing.html', { type: 'text/html' }),
+        context: { job_id: id, ...(contractGenForm.contract_id ? { record_id: contractGenForm.contract_id } : {}) },
+        send: attachment => fetchJson(authFetch, '/api/signing-requests', jsonInit('POST', {
           job_id: id,
           subcontract_id: contractGenForm.contract_id || null,
           signer_email: signerEmail.trim().toLowerCase(),
           signer_name: signerName.trim(),
-          document_html: html,
+          document_attachment: attachment,
           document_title: `Subcontract — ${contractGenForm.sub_name} — Job #${contractGenForm.job_number}`,
-          created_by: session?.user?.id,
-        }),
+        })),
       })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || json.error) { setSignMsg('Error: ' + (json.error || `HTTP ${res.status}`)); await loadSigningRequests(); return }
+      if (!r.ok) { setSignMsg('Error: ' + (r.stage === 'upload' ? 'could not stage the document: ' : '') + r.error); await loadSigningRequests(); return }
+      const json = r.data || {}
       markContractGenerated(contractGenForm.contract_id, json.saved_contract)
       setSignMsg('Sent! The subcontractor will receive an email link to sign.' + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
       setShowSignPanel(false)
@@ -5505,8 +5523,12 @@ ${attachmentHtml}
   // ── Billing (PM-managed) ─────────────────────────────────────
   async function createBilling() {
     if (!createBillingForm.amount_billed || !createBillingForm.company_name) return
-    if (createBillingForm.auto_approve && !(await confirmBillingCoi({ company_name: createBillingForm.company_name, sub_id: createBillingForm.sub_id }, 'approve'))) return
+    // In-flight guard set BEFORE the COI confirm, so a double-click can't open two confirms or save twice.
+    if (creatingBilling || creatingBillingRef.current) return
+    creatingBillingRef.current = true
     setCreatingBilling(true)
+    try {
+    if (createBillingForm.auto_approve && !(await confirmBillingCoi({ company_name: createBillingForm.company_name, sub_id: createBillingForm.sub_id }, 'approve'))) return
     const now = new Date().toISOString()
     const status = createBillingForm.auto_approve ? 'approved' : 'pending'
     const amtBilled = parseFloat(createBillingForm.amount_billed) || 0
@@ -5532,31 +5554,25 @@ ${attachmentHtml}
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,
     }
-    const postBilling = async data => {
-      if (createBillingFile) {
-        const formData = new FormData()
-        formData.append('file', createBillingFile)
-        formData.append('data', JSON.stringify(data))
-        return authFetch('/api/billing-entry', { method: 'POST', body: formData })
-      }
-      return authFetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-    }
+    // The file goes straight to Storage once; the confirm_duplicate resend reuses that upload.
+    const postBilling = data => uploadThenSend({
+      fetchFn: authFetch, putFn: fetch, file: createBillingFile, target: 'billing-doc', context: { job_id: id },
+      send: attachment => fetchJson(authFetch, '/api/billing-entry', jsonInit('POST', attachment ? { ...data, attachment } : data)),
+    })
     let res = await postBilling(rowData)
-    let result = await res.json().catch(() => ({}))
+    let result = res.data || {}
     // Same invoice # already on this job for this company: ask, then resend with confirm_duplicate.
     if (res.status === 409 && result.needs_confirm) {
       const d = result.duplicate || {}
       const ok = window.confirm(`This looks like a duplicate of Invoice #${d.invoice_number} from ${duplicateDate(d.submitted_at)} (${d.status}, $${duplicateMoney(d.amount_billed)}). Save anyway?`)
       if (!ok) {
         setCreateBillingError(`Not saved — Invoice #${d.invoice_number} is already entered for this company. Change the invoice number or confirm to save anyway.`)
-        setCreatingBilling(false)
         return
       }
       res = await postBilling({ ...rowData, confirm_duplicate: true })
-      result = await res.json().catch(() => ({}))
+      result = res.data || {}
     }
-    if (!res.ok && !result.error) result.error = `HTTP ${res.status}`
-    if (result.error) { setCreateBillingError(result.error) }
+    if (!res.ok) { setCreateBillingError((res.stage === 'upload' ? 'File upload failed: ' : '') + res.error) }
     else {
       setCreateBillingError('')
       setShowCreateBilling(false)
@@ -5564,10 +5580,21 @@ ${attachmentHtml}
       setCreateBillingFile(null)
       await loadBillingForJob()
     }
-    setCreatingBilling(false)
+    } catch (e) {
+      setCreateBillingError('Not saved: ' + (e?.message || 'unexpected error'))
+    } finally {
+      creatingBillingRef.current = false
+      setCreatingBilling(false)
+    }
   }
 
   async function updateBillingEntry() {
+    // In-flight guard: a second click while saving (incl. a long direct upload) does nothing —
+    // no second upload, no second PATCH, no repeated waiver void/resend.
+    if (savingBilling || savingBillingRef.current) return
+    savingBillingRef.current = true
+    setSavingBilling(true)
+    try {
     // Rejected keeps the billing (status rejected + reason); Delete is a separate action.
     // On an OPEN draw the first review (pending → approved / rejected) is allowed; rejecting
     // also takes it off the draw (server side).
@@ -5622,17 +5649,23 @@ ${attachmentHtml}
       const signedAmt = Number(signedWaiverTerms(savedRow).amount || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
       if (!window.confirm(`This billing has a signed lien waiver for ${signedAmt}. Changing it voids that signature; a new waiver is sent to the sub now if the billing stays approved, or when it is approved again. Continue?`)) return
     }
-    let res
-    if (editBillingFile) {
-      const formData = new FormData()
-      formData.append('file', editBillingFile)
-      formData.append('data', JSON.stringify(patchData))
-      res = await authFetch('/api/billing-entry', { method: 'PATCH', body: formData })
-    } else {
-      res = await authFetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
+    // A new file goes straight to Storage; none = attachment omitted (keeps the saved file).
+    const patchBilling = data => uploadThenSend({
+      fetchFn: authFetch, putFn: fetch, file: editBillingFile, target: 'billing-doc', context: { job_id: id, record_id: editingBilling },
+      send: attachment => fetchJson(authFetch, '/api/billing-entry', jsonInit('PATCH', attachment ? { ...data, attachment } : data)),
+    })
+    let res = await patchBilling(patchData)
+    // Invoice # changed to one already on this job for this company: ask, then resend (same upload).
+    if (res.status === 409 && res.data?.needs_confirm) {
+      const d = res.data.duplicate || {}
+      if (!window.confirm(`This looks like a duplicate of Invoice #${d.invoice_number} from ${duplicateDate(d.submitted_at)} (${d.status}, $${duplicateMoney(d.amount_billed)}). Save anyway?`)) {
+        alert(`Not saved — Invoice #${d.invoice_number} is already entered for this company.`)
+        return
+      }
+      res = await patchBilling({ ...patchData, confirm_duplicate: true })
     }
-    const result = await res.json().catch(() => ({}))
-    if (!res.ok || result.error) { alert('Save error: ' + (result.error || `HTTP ${res.status}`)); return }
+    if (!res.ok) { alert('Save error: ' + (res.stage === 'upload' ? 'file upload failed: ' : '') + res.error); return }
+    const result = res.data || {}
     if (result.waiverVoided) {
       alert('Lien waiver voided — the signed waiver no longer matches this billing. ' + (result.waiverError
         ? 'Saved, but the new lien waiver was not sent: ' + result.waiverError
@@ -5643,6 +5676,12 @@ ${attachmentHtml}
     setEditingBilling(null)
     setEditBillingFile(null)
     await loadBillingForJob()
+    } catch (e) {
+      alert('Save error: ' + (e?.message || 'unexpected error'))
+    } finally {
+      savingBillingRef.current = false
+      setSavingBilling(false)
+    }
   }
 
   function billingToEditForm(b) {
@@ -5679,9 +5718,8 @@ ${attachmentHtml}
 
   async function deleteBillingEntry(billingId) {
     if (!window.confirm('Delete this billing submission? This cannot be undone. (To send it back to the sub, set Status to Rejected instead.)')) return
-    const res = await authFetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
-    const out = await res.json().catch(() => ({}))
-    if (!res.ok || out.error) alert('Could not delete: ' + (out.error || `HTTP ${res.status}`))
+    const r = await fetchJson(authFetch, '/api/billing-entry', jsonInit('DELETE', { id: billingId }))
+    if (!r.ok) alert('Could not delete: ' + r.error)
     await loadBillingForJob()
   }
 
@@ -5689,13 +5727,8 @@ ${attachmentHtml}
     // Only approved billings go on a draw (the server refuses others with 422 too).
     const b = billingSubmissions.find(x => x.id === billingId)
     if (drawRequestId && b && b.status !== 'approved') { alert('Only an approved billing can be put on a draw request. Approve it first.'); return }
-    const res = await authFetch('/api/billing-entry', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: billingId, draw_request_id: drawRequestId || null }),
-    })
-    const out = await res.json().catch(() => ({}))
-    if (!res.ok || out.error) alert('Could not change the draw: ' + (out.error || `HTTP ${res.status}`))
+    const r = await fetchJson(authFetch, '/api/billing-entry', jsonInit('PATCH', { id: billingId, draw_request_id: drawRequestId || null }))
+    if (!r.ok) alert('Could not change the draw: ' + r.error)
     await loadBillingForJob()
   }
 
@@ -5709,13 +5742,8 @@ ${attachmentHtml}
   async function toggleReadyToPay(billingId, current) {
     if (!current && !(await confirmBillingCoi(billingSubmissions.find(x => x.id === billingId), 'ready'))) return
     setTogglingReadyToPay(billingId)
-    const res = await authFetch('/api/billing-entry', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: billingId, ready_to_pay: !current }),
-    })
-    const out = await res.json().catch(() => ({}))
-    if (!res.ok || out.error) alert('Could not change ready to pay: ' + (out.error || `HTTP ${res.status}`))
+    const r = await fetchJson(authFetch, '/api/billing-entry', jsonInit('PATCH', { id: billingId, ready_to_pay: !current }))
+    if (!r.ok) alert('Could not change ready to pay: ' + r.error)
     setTogglingReadyToPay(null)
     await loadBillingForJob()
   }
@@ -5725,13 +5753,8 @@ ${attachmentHtml}
     const dupMatches = findDuplicateBillings(billingSubmissions)[billingId]
     if (dupMatches?.length && !window.confirm(`This billing looks like a possible duplicate of:\n${duplicateTooltip(dupMatches, billingSubmissions)}\n\nApprove anyway?`)) return
     setApprovingBillingId(billingId)
-    const res = await authFetch('/api/billing-entry', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: billingId, status: 'approved', reviewed_at: new Date().toISOString() }),
-    })
-    const out = await res.json().catch(() => ({}))
-    if (!res.ok || out.error) alert('Could not approve: ' + (out.error || `HTTP ${res.status}`))
+    const r = await fetchJson(authFetch, '/api/billing-entry', jsonInit('PATCH', { id: billingId, status: 'approved', reviewed_at: new Date().toISOString() }))
+    if (!r.ok) alert('Could not approve: ' + r.error)
     setApprovingBillingId(null)
     await loadBillingForJob()
   }
@@ -10641,7 +10664,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <label htmlFor={`nvReimb-${b.id}`} style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>NV Reimbursement (direct cost / credit card)</label>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          <button style={s.btnSmallOrange} onClick={updateBillingEntry}>Save changes</button>
+                          <button style={{ ...s.btnSmallOrange, opacity: savingBilling ? 0.6 : 1 }} disabled={savingBilling} onClick={updateBillingEntry}>{savingBilling ? 'Saving…' : 'Save changes'}</button>
                           <button style={s.btnSmall} onClick={() => { setEditingBilling(null); setEditBillingFile(null) }}>Cancel</button>
                         </div>
                         {billingSovData[b.id] && billingSovData[b.id].length > 0 && (
@@ -13335,9 +13358,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setSubmittalFile(e.target.files.length > 0 ? Array.from(e.target.files) : null)} />
                     {submittalFile && submittalFile.length > 0 && <p style={{ fontSize: '11px', color: '#16a34a', margin: '4px 0 0' }}>{submittalFile.length} file{submittalFile.length > 1 ? 's' : ''} selected: {submittalFile.map(f => f.name).join(', ')}</p>}
                   </div>
+                  {submittalErr && <p style={{ color: '#dc2626', fontSize: '13px', margin: '0 0 8px' }}>{submittalErr}</p>}
                   <button style={{ ...s.btn, opacity: savingSubmittal || !submittalForm.title ? 0.6 : 1 }} disabled={savingSubmittal || !submittalForm.title} onClick={addSubmittal}>{savingSubmittal ? 'Saving...' : 'Add Submittal'}</button>
                 </div>
               )}
+              {submittalListErr && <p style={{ color: '#dc2626', fontSize: '13px', margin: '0 0 10px' }}>{submittalListErr}</p>}
 
               {submittals.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No submittals yet.</p> : submittals.map(sub => {
                 const isExp = expandedSubmittalId === sub.id
@@ -13375,8 +13400,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               onChange={e => setApprovalNoteEdit(prev => ({ ...prev, [sub.id]: e.target.value }))}
                               onBlur={async e => {
                                 const val = e.target.value
-                                await fetch('/api/submittals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sub.id, notes: val }) })
-                                setSubmittals(prev => prev.map(s => s.id === sub.id ? { ...s, notes: val } : s))
+                                if (await submittalRequest('/api/submittals', jsonInit('PATCH', { id: sub.id, notes: val }), 'Saving the note')) {
+                                  setSubmittals(prev => prev.map(s => s.id === sub.id ? { ...s, notes: val } : s))
+                                }
                               }}
                             />
                           </div>
@@ -13391,7 +13417,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <button
                                 style={{ ...s.btnSmallRed, fontSize: '11px', padding: '3px 8px' }}
                                 onClick={async () => {
-                                  await fetch('/api/submittals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sub.id, remove_file_path: f.path }) })
+                                  await submittalRequest('/api/submittals', jsonInit('PATCH', { id: sub.id, remove_file_path: f.path }), 'Removing the file')
                                   await loadSubmittals()
                                 }}
                               >Remove</button>
@@ -13409,16 +13435,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <button
                                 style={{ ...s.btnSmallOrange, opacity: uploadingSubmittalDoc === sub.id ? 0.6 : 1, whiteSpace: 'nowrap' }}
                                 disabled={uploadingSubmittalDoc === sub.id}
-                                onClick={async () => {
-                                  setUploadingSubmittalDoc(sub.id)
-                                  const fd = new FormData()
-                                  for (const f of submittalDocFile[sub.id]) fd.append('file', f)
-                                  fd.append('data', JSON.stringify({ id: sub.id, job_id: sub.job_id }))
-                                  await fetch('/api/submittals', { method: 'PATCH', body: fd })
-                                  setSubmittalDocFile(prev => { const n = { ...prev }; delete n[sub.id]; return n })
-                                  setUploadingSubmittalDoc(null)
-                                  await loadSubmittals()
-                                }}
+                                onClick={() => addFilesToSubmittal(sub)}
                               >{uploadingSubmittalDoc === sub.id ? 'Uploading...' : `Upload ${submittalDocFile[sub.id].length} file${submittalDocFile[sub.id].length > 1 ? 's' : ''}`}</button>
                             )}
                           </div>
@@ -13434,7 +13451,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               {st.replace('_', ' ')}
                             </button>
                           ))}
-                          <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/submittals?id=${sub.id}`, { method: 'DELETE' }); await loadSubmittals() }}>Delete</button>
+                          <button style={s.btnSmallRed} onClick={async () => { await submittalRequest(`/api/submittals?id=${encodeURIComponent(sub.id)}`, { method: 'DELETE' }, 'Delete'); await loadSubmittals() }}>Delete</button>
                         </div>
                       </div>
                     )}
@@ -14666,21 +14683,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           style={{ ...s.btn, opacity: (savingGC || !gcForm.description.trim() || !gcForm.amount) ? 0.4 : 1 }}
                           disabled={savingGC || !gcForm.description.trim() || !gcForm.amount}
                           onClick={async () => {
+                            if (savingGC) return
                             setSavingGC(true)
-                            let res
-                            if (gcFile) {
-                              const fd = new FormData()
-                              fd.append('file', gcFile)
-                              fd.append('data', JSON.stringify({ job_id: id, ...gcForm }))
-                              res = await fetch('/api/general-conditions', { method: 'POST', body: fd })
-                            } else {
-                              res = await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
+                            try {
+                              // Attachment goes straight to Storage; fields stay filled if anything fails.
+                              const r = await uploadThenSend({
+                                fetchFn: authFetch, putFn: fetch, file: gcFile, target: 'gc-doc', context: { job_id: id },
+                                send: attachment => fetchJson(authFetch, '/api/general-conditions', jsonInit('POST', { job_id: id, ...gcForm, ...(attachment ? { attachment } : {}) })),
+                              })
+                              if (!r.ok) { alert((r.stage === 'upload' ? 'Attachment upload failed: ' : 'Failed to save: ') + r.error); return }
+                              setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
+                              setGcFile(null)
+                              await loadGeneralConditions()
+                            } finally {
+                              setSavingGC(false)
                             }
-                            if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to save: ' + (e.error || res.status)); setSavingGC(false); return; }
-                            setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
-                            setGcFile(null)
-                            await loadGeneralConditions()
-                            setSavingGC(false)
                           }}
                         >{savingGC ? 'Saving...' : 'Add entry'}</button>
                       </div>
@@ -14745,33 +14762,33 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       {e.doc_url && !gcEditFile && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '3px' }}>Current attachment on file — upload a new file to replace it</div>}
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                                      <button style={s.btn} onClick={async () => {
+                                      <button style={s.btn} disabled={savingGC} onClick={async () => {
+                                        if (savingGC) return
                                         setSavingGC(true)
+                                        try {
                                         // The draw link is never sent in the edit; tagging goes through the draw route below.
                                         const { draw_request_id: pickedDraw, ...editFields } = gcEditForm
                                         if (e.draw_request_id) {
                                           // Tagged: send only fields that may change (locked ones stay as stored).
                                           for (const k of ['amount', 'description', 'budget_item_id', 'entry_date']) delete editFields[k]
                                         }
-                                        let res
-                                        if (gcEditFile) {
-                                          const fd = new FormData()
-                                          fd.append('file', gcEditFile)
-                                          fd.append('data', JSON.stringify({ id: e.id, ...editFields }))
-                                          res = await fetch('/api/general-conditions', { method: 'PUT', body: fd })
-                                        } else {
-                                          res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...editFields }) })
-                                        }
-                                        if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to save: ' + (e.error || res.status)); setSavingGC(false); return; }
+                                        // New file = direct upload for THIS entry; none keeps the saved attachment.
+                                        const r = await uploadThenSend({
+                                          fetchFn: authFetch, putFn: fetch, file: gcEditFile, target: 'gc-doc', context: { job_id: id, record_id: e.id },
+                                          send: attachment => fetchJson(authFetch, '/api/general-conditions', jsonInit('PUT', { id: e.id, ...editFields, ...(attachment ? { attachment } : {}) })),
+                                        })
+                                        if (!r.ok) { alert((r.stage === 'upload' ? 'Attachment upload failed: ' : 'Failed to save: ') + r.error); return }
                                         if (!e.draw_request_id && pickedDraw) {
                                           const err = await gcDrawPatch(pickedDraw, { add_gc_ids: [e.id] })
-                                          if (err) { alert('Saved, but it was not added to the draw: ' + err); await loadGeneralConditions(); setSavingGC(false); return }
+                                          if (err) { alert('Saved, but it was not added to the draw: ' + err); await loadGeneralConditions(); return }
                                         }
                                         setEditingGCId(null)
                                         setGcEditForm({})
                                         setGcEditFile(null)
                                         await loadGeneralConditions()
-                                        setSavingGC(false)
+                                        } finally {
+                                          setSavingGC(false)
+                                        }
                                       }}>{savingGC ? 'Saving...' : 'Save'}</button>
                                       <button style={s.btnGray} onClick={() => { setEditingGCId(null); setGcEditForm({}); setGcEditFile(null) }}>Cancel</button>
                                     </div>
@@ -14800,8 +14817,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       }}>Edit</button>
                                       <button style={{ ...s.btnSmallRed, ...(e.draw_request_id ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={!!e.draw_request_id} title={e.draw_request_id ? 'On a draw request — take it off the draw before deleting' : undefined} onClick={async () => {
                                         if (!window.confirm('Delete this entry?')) return
-                                        const res = await fetch('/api/general-conditions', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id }) })
-                                        if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to delete: ' + (e.error || res.status)); return; }
+                                        const r = await fetchJson(authFetch, '/api/general-conditions', jsonInit('DELETE', { id: e.id }))
+                                        if (!r.ok) { alert('Failed to delete: ' + r.error); return }
                                         await loadGeneralConditions()
                                       }}>Delete</button>
                                     </div>
@@ -15447,21 +15464,26 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
               const ok = window.confirm(`${missingReceipts} line${missingReceipts === 1 ? ' has' : 's have'} no receipt attached. The ZIP index will list ${missingReceipts === 1 ? 'it' : 'them'} as NO RECEIPT. Export anyway?`)
               if (!ok) return
             }
+            if (exportingReimbId) return
+            // Invoice.html is built here and never sent to the server. The API returns a small
+            // manifest (rows + signed receipt links); receipts are fetched straight from Storage
+            // and the ZIP is built in the browser. Any failed receipt aborts the whole export.
             const invHtml = buildReimbInvoiceHtml(inv)
-            const { data: { session } } = await supabase.auth.getSession()
-            const token = session?.access_token
-            const res = await fetch('/api/owner-reimb-export', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ invoiceId: inv.id, invoiceHtml: invHtml }),
-            })
-            if (!res.ok) { const j = await res.json(); setReimbErr(j.error || 'Export failed'); return }
-            const blob = await res.blob()
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url; a.download = `Reimb_${inv.invoice_number.replace(/[^a-zA-Z0-9]+/g, '_')}.zip`
-            document.body.appendChild(a); a.click(); document.body.removeChild(a)
-            URL.revokeObjectURL(url)
+            setExportingReimbId(inv.id)
+            setReimbErr('')
+            setReimbMsg('Building the ZIP…')
+            try {
+              await exportOwnerReimbZip({
+                fetchFn: authFetch, storageFetch: fetch, invoiceId: inv.id, invoiceHtml: invHtml,
+                onProgress: ({ done, total }) => setReimbMsg(`Building the ZIP… ${done} of ${total} receipt${total === 1 ? '' : 's'}`),
+              })
+              setReimbMsg('')
+            } catch (e) {
+              setReimbMsg('')
+              setReimbErr('Export failed: ' + (e?.message || 'unexpected error'))
+            } finally {
+              setExportingReimbId(null)
+            }
           }
 
           return (
@@ -15656,7 +15678,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                               </button>
                             )}
                             <button style={s.btnSmall} onClick={() => generateReimbPDF(inv)}>Export PDF</button>
-                            <button style={s.btnSmall} onClick={() => exportReimbZip(inv)}>Export ZIP + Receipts</button>
+                            <button style={{ ...s.btnSmall, opacity: exportingReimbId ? 0.6 : 1 }} disabled={!!exportingReimbId} onClick={() => exportReimbZip(inv)}>Export ZIP + Receipts</button>
                             {inv.status !== 'voided' && inv.status !== 'paid' && (
                               <button style={s.btnSmallRed} onClick={() => voidInvoice(inv.id)}>Void</button>
                             )}

@@ -2,7 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
-import { isUuid, saveGeneratedContract } from '../../../lib/generated-contract'
+import { isUuid, saveGeneratedContract, CONTRACT_BUCKET } from '../../../lib/generated-contract'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { escapeHtml } from '../../../lib/email'
 import { isSubcontractSigned } from '../../../lib/signing'
@@ -16,15 +17,33 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 const logoSrc = () => `${getSiteUrl()}/logo.png`
 
+// Small inline document_html is still accepted for compatibility, bounded well below the
+// platform request cap. The job page stages the HTML with a direct upload instead
+// (POST /api/file-upload, target signing-html → documents/signing-drafts/<job>/<user>/<uuid>.html)
+// and sends document_attachment: { path, uploadReceipt }; only that exact, verified object is read.
+const MAX_INLINE_SIGNING_HTML = 512 * 1024
+const SIGNING_ROW_COLS = 'id, token, job_id, subcontract_id, signer_email, signer_name, document_title, status, created_at'
+
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  const multipart = rejectMultipart(request)
+  if (multipart) return multipart
 
-  const { job_id, subcontract_id, signer_email, signer_name, document_html, document_title } = await request.json()
+  let body
+  try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  const { job_id, subcontract_id, signer_email, signer_name, document_html: inlineHtml, document_title, document_attachment } = body || {}
+  const inline = inlineFileContentError(body || {}, { except: ['document_html'] })
+  if (inline) return Response.json({ error: inline }, { status: 400 })
   // signer_name is the person who will sign (not the company); never filled in for them.
   const signerName = typeof signer_name === 'string' ? signer_name.trim() : ''
-  if (!job_id || !signer_email || !document_html || !signerName) {
+  const hasAttachment = document_attachment !== undefined && document_attachment !== null
+  if (!job_id || !signer_email || !(inlineHtml || hasAttachment) || !signerName) {
     return Response.json({ error: 'job_id, signer_email, signer_name, and document_html are required' }, { status: 400 })
+  }
+  if (inlineHtml && hasAttachment) return Response.json({ error: 'Send document_html or document_attachment, not both.' }, { status: 400 })
+  if (inlineHtml && (typeof inlineHtml !== 'string' || inlineHtml.length > MAX_INLINE_SIGNING_HTML)) {
+    return Response.json({ error: 'This document is too large to send inline. Upload it with document_attachment.', code: 'direct_upload_required' }, { status: 413 })
   }
   const denied = await denyJob(adminSupabase, auth, job_id) ||
     (subcontract_id ? await denyJobOf(adminSupabase, auth, 'subcontracts', subcontract_id) : null)
@@ -35,6 +54,16 @@ export async function POST(request) {
     if (!sc) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     if (sc.job_id !== job_id) return Response.json({ error: 'That subcontract is on a different job.' }, { status: 400 })
     if (isSubcontractSigned(sc)) return Response.json({ error: 'This subcontract is already signed.' }, { status: 409 })
+  }
+
+  let document_html = inlineHtml
+  if (hasAttachment) {
+    const v = await verifyAttachment(adminSupabase, document_attachment, { target: 'signing-html', subject: auth.userId, ctx: { job: job_id, rec: subcontract_id || null, user: auth.userId } })
+    if (!v.ok) return attachmentErrorResponse(v)
+    const { data: file, error: dlErr } = await adminSupabase.storage.from(CONTRACT_BUCKET).download(v.path)
+    if (dlErr || !file) return Response.json({ error: 'Could not read the staged document. Try again.' }, { status: 502 })
+    document_html = new TextDecoder().decode(await file.arrayBuffer())
+    if (!document_html) return Response.json({ error: 'The staged document is empty.' }, { status: 400 })
   }
 
   const { data: row, error: insertErr } = await adminSupabase
@@ -48,10 +77,13 @@ export async function POST(request) {
       document_title: document_title || null,
       created_by: auth.userId,  // always from verified session
     })
-    .select()
+    // Small metadata only: the document itself is not echoed back.
+    .select(SIGNING_ROW_COLS)
     .single()
 
   if (insertErr) return Response.json({ error: insertErr.message }, { status: 500 })
+  // Echo only the small metadata columns (never the document body).
+  const rowMeta = Object.fromEntries(SIGNING_ROW_COLS.split(', ').map(k => [k, row[k] ?? null]))
 
   // Keep a copy of exactly what was sent. A failure here must not block sending.
   let saved_contract = null
@@ -133,11 +165,11 @@ export async function POST(request) {
   if (subcontract_id) {
     const { data: old, error: voidErr } = await adminSupabase.from('signing_requests')
       .update({ status: 'voided' }).eq('subcontract_id', subcontract_id).eq('status', 'pending').neq('id', row.id).select('id')
-    if (voidErr) return Response.json({ data: row, saved_contract, warning: 'Sent, but older signing links could not be cancelled: ' + voidErr.message })
+    if (voidErr) return Response.json({ data: rowMeta, saved_contract, warning: 'Sent, but older signing links could not be cancelled: ' + voidErr.message })
     voided = old?.length || 0
   }
 
-  return Response.json({ data: row, saved_contract, voided })
+  return Response.json({ data: rowMeta, saved_contract, voided })
 }
 
 // PATCH { id, action: 'void' } — cancel a pending signing request (the link stops working).

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { mbRequestByToken, loadPinnedPdf, downloadBytes } from '../../../../../lib/mb-server'
+import { streamedBytesResponse } from '../../../../../lib/stream-response'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -31,14 +32,14 @@ export async function GET(request, { params }) {
     bytes = pin.bytes
   }
   const name = String(mb.document_file_name || 'order-form.pdf').replace(/[^\w.\- ]+/g, '_')
-  return new Response(bytes, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${name}"`,
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'private, no-store',
-      'Referrer-Policy': 'no-referrer',
-    },
+  // Streamed in bounded chunks (no Content-Length) so a large checked PDF is not capped as a
+  // buffered response. The bytes are exactly the ones checked above (pinned SHA-256 or the
+  // signed copy); nothing is re-read from Storage after the check.
+  return streamedBytesResponse(bytes, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `inline; filename="${name}"`,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, no-store',
+    'Referrer-Policy': 'no-referrer',
   })
 }

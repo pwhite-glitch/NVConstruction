@@ -77,14 +77,23 @@ describe('PUT on a closed PO', () => {
     expect(logs()).toEqual([])
   })
 
-  test('new attachment upload → 409, nothing uploaded', async () => {
+  test('new attachment (direct-upload receipt) → 409, nothing written', async () => {
+    // Prompt 78: a validated replacement attachment still counts as an upload for the closed gate.
+    const { mintUpload } = require('./helpers/upload-receipt')
+    const up = await mintUpload({ target: 'po-attachment', subject: 'u-principal', ctx: { job: J1, rec: 'pC' }, name: 'q.pdf', store: mockState })
+    const r = await po.PUT(req('PUT', { id: 'pC', attachment: up.attachment }))
+    expect(r.status).toBe(409)
+    expect(writes()).toEqual([])
+    expect(row('pC').attachment_url).toBe(`${J1}/a.pdf`)
+  })
+
+  test('multipart PUT is refused (413) before anything is read', async () => {
     const fd = new FormData()
     fd.append('file', new File(['%PDF'], 'q.pdf', { type: 'application/pdf' }))
     fd.append('data', JSON.stringify({ id: 'pC' }))
     const r = await po.PUT(new Request('http://x/api/purchase-orders', { method: 'PUT', body: fd }))
-    expect(r.status).toBe(409)
+    expect(r.status).toBe(413)
     expect(writes()).toEqual([])
-    expect(row('pC').attachment_url).toBe(`${J1}/a.pdf`)
   })
 
   test('the gate uses the STORED status, not body.status', async () => {
@@ -262,7 +271,7 @@ describe('source wiring', () => {
     expect(res).toContain("import PaymentTypeSelector from '../jobdetail/PaymentTypeSelector'")
     expect(res).toContain("import { authFetch } from '../../lib/client-fetch'")
     expect(res).toMatch(/async function savePOEdit\(\)[\s\S]{0,300}confirmPOEdit\(/)
-    expect(res).toMatch(/authFetch\(`\/api\/purchase-orders\?job_id=/)
+    expect(res).toMatch(/(authFetch\(|fetchJson\(authFetch, )`\/api\/purchase-orders\?job_id=/)
     for (const k of ['btnSmall:', 'btnSmallOrange:', 'btnSmallGreen:', 'btnSmallRed:']) expect(res).toContain(k)
     // received: Close PO + Edit behind the warning; closed: locked message only
     const recv = res.slice(res.indexOf("{po.status === 'received' && <>"), res.indexOf("{po.status === 'closed' &&"))
@@ -280,7 +289,10 @@ describe('source wiring', () => {
     expect(com).toContain('{CLOSED_LOCKED_MESSAGE}')
     const save = com.slice(com.indexOf('async function savePOEdit()'), com.indexOf('async function openPOAttachment'))
     expect(save.indexOf('confirmPOEdit(')).toBeGreaterThan(-1)
-    expect(save.indexOf('confirmPOEdit(')).toBeLessThan(save.indexOf('authFetch('))
+    // prompt 78: the PUT goes through uploadThenSend / fetchJson(authFetch, …)
+    const firstFetch = save.search(/authFetch\(|fetchJson\(|uploadThenSend\(/)
+    expect(firstFetch).toBeGreaterThan(-1)
+    expect(save.indexOf('confirmPOEdit(')).toBeLessThan(firstFetch)
     // existing actions kept
     for (const t of ['Issue PO', 'Mark Received', 'Cancel PO', 'Close PO', '>Delete</button>']) expect(com).toContain(t)
   })
@@ -297,6 +309,7 @@ describe('source wiring', () => {
 
   test('no migration 067 edits and no 071+ migrations', () => {
     const files = fs.readdirSync(path.join(__dirname, '../migrations'))
-    expect(files.filter(f => /^07[1-9]/.test(f))).toEqual([])
+    // Prompt 78 owns the only 071 (unapplied sales-docs bucket cap removal); nothing later.
+    expect(files.filter(f => /^07[1-9]/.test(f))).toEqual(['071_remove_sales_docs_file_cap.sql'])
   })
 })

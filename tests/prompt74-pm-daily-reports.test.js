@@ -320,6 +320,7 @@ describe('3) source checks', () => {
 
   test('no new migration for this package', () => {
     const files = fs.readdirSync(path.join(root, 'migrations'))
-    expect(files.filter(f => /^071_/.test(f))).toEqual([])
+    // Prompt 78 later added the only 071 (sales-docs bucket cap removal, unapplied).
+    expect(files.filter(f => /^071_/.test(f))).toEqual(['071_remove_sales_docs_file_cap.sql'])
   })
 })

@@ -3,6 +3,7 @@ import { requirePM } from '../../../lib/server-auth'
 import { todayCentral } from '../../../lib/central-date'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { drawTargetError, gcEditLockError, gcDeleteLockError } from '../../../lib/draw-guards'
+import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,16 +23,18 @@ async function badBudgetLine(budgetItemId, jobId) {
 // GC attachments live in the 'receipts' bucket (same as direct-cost receipts).
 const GC_DOC_BUCKET = 'receipts'
 
-async function uploadGCDoc(file, jobId) {
-  if (!jobId) throw new Error('Cannot upload attachment: entry has no job')
-  const ext = file.name.split('.').pop()
-  const path = `${jobId}/${Date.now()}.${ext}`
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const { error } = await adminSupabase.storage
-    .from(GC_DOC_BUCKET)
-    .upload(path, buffer, { contentType: file.type })
-  if (error) throw new Error('File upload failed: ' + error.message)
-  return path
+// A new attachment is attachment: { path, uploadReceipt } uploaded directly to Storage
+// (POST /api/file-upload, target gc-doc) for this job (and, on PUT, this entry). doc_url stays
+// the raw path in GC_DOC_BUCKET. Multipart is refused.
+async function readGCBody(request) {
+  const multipart = rejectMultipart(request)
+  if (multipart) return { error: multipart }
+  let body
+  try { body = await request.json() } catch { return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) } }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  const inline = inlineFileContentError(body)
+  if (inline) return { error: Response.json({ error: inline }, { status: 400 }) }
+  return { body }
 }
 
 export async function GET(request) {
@@ -84,20 +87,12 @@ export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let body = {}
+    const parsed = await readGCBody(request)
+    if (parsed.error) return parsed.error
+    const body = parsed.body
     let doc_url = null
-    let file = null
 
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      file = formData.get('file')
-      body = JSON.parse(formData.get('data') || '{}')
-    } else {
-      body = await request.json()
-    }
-
-    const { job_id, description, amount, category, entry_date, budget_item_id, notes, draw_request_id } = body
+    const { job_id, description, amount, category, entry_date, budget_item_id, notes, draw_request_id, attachment } = body
     if (!job_id || !description || !amount) {
       return Response.json({ error: 'job_id, description, and amount are required' }, { status: 400 })
     }
@@ -113,8 +108,10 @@ export async function POST(request) {
     }
     const badLine = await badBudgetLine(budget_item_id, job_id)
     if (badLine) return badLine
-    if (file && file.size > 0) {
-      doc_url = await uploadGCDoc(file, job_id)
+    if (attachment !== undefined && attachment !== null) {
+      const v = await verifyAttachment(adminSupabase, attachment, { target: 'gc-doc', subject: auth.userId, ctx: { job: job_id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      doc_url = v.path
     }
 
     const { data, error } = await adminSupabase
@@ -146,20 +143,12 @@ export async function PUT(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const contentType = request.headers.get('content-type') || ''
-    let body = {}
+    const parsed = await readGCBody(request)
+    if (parsed.error) return parsed.error
+    // Omitted / null attachment keeps the saved doc_url.
     let doc_url = undefined
-    let file = null
 
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      file = formData.get('file')
-      body = JSON.parse(formData.get('data') || '{}')
-    } else {
-      body = await request.json()
-    }
-
-    const { id, ...fields } = body
+    const { id, attachment, ...fields } = parsed.body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     // Load the entry's own job_id; never trust a job_id from the request for access or the storage path.
     const { data: existing, error: loadErr } = await adminSupabase
@@ -188,8 +177,10 @@ export async function PUT(request) {
       const badLine = await badBudgetLine(fields.budget_item_id, existing.job_id)
       if (badLine) return badLine
     }
-    if (file && file.size > 0) {
-      doc_url = await uploadGCDoc(file, existing.job_id)
+    if (attachment !== undefined && attachment !== null) {
+      const v = await verifyAttachment(adminSupabase, attachment, { target: 'gc-doc', subject: auth.userId, ctx: { job: existing.job_id, rec: existing.id } })
+      if (!v.ok) return attachmentErrorResponse(v)
+      doc_url = v.path
     }
 
     const updates = {}

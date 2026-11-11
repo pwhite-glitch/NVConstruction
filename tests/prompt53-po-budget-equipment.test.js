@@ -146,26 +146,26 @@ describe('1. purchase orders job guards', () => {
   })
 
   test('PUT: forged body.job_id cannot choose the upload folder or move the PO', async () => {
+    // Prompt 78: the attachment is uploaded directly to Storage; its receipt binds the saved PO and its job.
+    const { mintUpload } = require('./helpers/upload-receipt')
     as('super') // assigned to J1 only
-    const fd = new FormData()
-    fd.append('file', new File(['%PDF'], 'quote.pdf', { type: 'application/pdf' }))
-    fd.append('data', JSON.stringify({ id: 'po1', job_id: J1, notes: 'new quote' }))
-    const r = await po.PUT(new Request('http://x/api/purchase-orders', { method: 'PUT', body: fd }))
+    const up = await mintUpload({ target: 'po-attachment', subject: 'u-super', ctx: { job: J1, rec: 'po1' }, name: 'quote.pdf', store: mockState })
+    const r = await po.PUT(req('PUT', '/api/purchase-orders', { id: 'po1', job_id: J1, notes: 'new quote', attachment: up.attachment }))
     expect(r.status).toBe(200)
     const saved = mockState.db.purchase_orders.find(p => p.id === 'po1')
+    expect(saved.attachment_url).toBe(up.path)
     expect(saved.attachment_url.startsWith(`${J1}/`)).toBe(true)
     expect(saved.job_id).toBe(J1)
 
-    // A body job_id pointing elsewhere is a reassignment attempt: refused, nothing uploaded/written.
+    // A body job_id pointing elsewhere is a reassignment attempt: refused, nothing written.
     as('principal')
-    const fd2 = new FormData()
-    fd2.append('file', new File(['%PDF'], 'q2.pdf', { type: 'application/pdf' }))
-    fd2.append('data', JSON.stringify({ id: 'po1', job_id: J2 }))
+    const up2 = await mintUpload({ target: 'po-attachment', subject: 'u-principal', ctx: { job: J2, rec: 'po1' }, name: 'q2.pdf', store: mockState })
     const before = mockState.calls.length
-    const r2 = await json(await po.PUT(new Request('http://x/api/purchase-orders', { method: 'PUT', body: fd2 })))
+    const r2 = await json(await po.PUT(req('PUT', '/api/purchase-orders', { id: 'po1', job_id: J2, attachment: up2.attachment })))
     expect(r2.status).toBe(400)
     expect(mockState.calls.length).toBe(before)
     expect(mockState.db.purchase_orders.find(p => p.id === 'po1').job_id).toBe(J1)
+    expect(mockState.db.purchase_orders.find(p => p.id === 'po1').attachment_url).toBe(up.path)
   })
 
   test('PUT/POST: budget line or draw from another job is refused', async () => {

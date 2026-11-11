@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
+import { fetchJson, jsonInit } from '../../lib/fetch-json'
+import { putToSignedUrl } from '../../lib/file-upload-client'
 import { openFile, openStorageFile } from '../../lib/open-file'
 import { isPartner } from '../../lib/partners'
 import { jobHrefById } from '../../lib/job-links'
@@ -294,9 +296,9 @@ export default function AdminPortal() {
     setPoLoading(true)
     setPoError('')
     try {
-      const json = await authFetch('/api/purchase-orders').then(r => r.json())
-      if (json.error) setPoError(json.error)
-      else setPurchaseOrders(json.purchase_orders || [])
+      const r = await fetchJson(authFetch, '/api/purchase-orders')
+      if (!r.ok) setPoError(r.error)
+      else setPurchaseOrders(r.data?.purchase_orders || [])
     } catch (e) {
       setPoError(e.message)
     }
@@ -436,9 +438,11 @@ export default function AdminPortal() {
       }
     }
     const { data: { session } } = await supabase.auth.getSession()
-    const send = payload => fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify(payload) }).catch(e => ({ ok: false, json: async () => ({ error: e?.message || 'network error' }) }))
+    // Shared reader: friendly message on a non-JSON / 413 reply; an empty or invalid 2xx body is
+    // not treated as saved (the PATCH route always answers with JSON). 409 needs_confirm survives in data.
+    const send = payload => fetchJson(fetch, '/api/billing-entry', jsonInit('PATCH', payload, { headers: { 'Authorization': `Bearer ${session?.access_token}` } }))
     let res = await send(body)
-    let data = await res.json().catch(() => ({}))
+    let data = res.data || {}
     // Possible duplicate invoice #: confirm, then save anyway.
     if (res.status === 409 && data?.needs_confirm) {
       const d = data.duplicate || {}
@@ -450,12 +454,12 @@ export default function AdminPortal() {
         return
       }
       res = await send({ ...body, confirm_duplicate: true })
-      data = await res.json().catch(() => ({}))
+      data = res.data || {}
     }
     setSavingBillEdit(false)
     if (!res.ok) {
       // e.g. a net (billed − retainage) below what's already been paid is refused.
-      setPayMsg('Error saving billing: ' + (data?.error || `HTTP ${res.status}`))
+      setPayMsg('Error saving billing: ' + res.error)
       return
     }
     if (data?.waiverVoided) {
@@ -640,23 +644,13 @@ export default function AdminPortal() {
     try {
       const ext = file.name.split('.').pop()
       const path = `${dirId}/${type}-${Date.now()}.${ext}`
-      const urlRes = await authFetch('/api/sub-docs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upload-url', path }),
-      })
-      const { signedUrl, error: urlErr } = await urlRes.json().catch(() => ({}))
-      if (urlErr || !urlRes.ok || !signedUrl) { alert('Upload error: ' + (urlErr || `HTTP ${urlRes.status}`)); done(); return false }
-      const putRes = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-      if (!putRes.ok) { alert('Upload failed — could not store file.'); done(); return false }
+      const urlRes = await fetchJson(authFetch, '/api/sub-docs', jsonInit('POST', { action: 'upload-url', path }))
+      if (!urlRes.ok || !urlRes.data?.signedUrl) { alert('Upload error: ' + (urlRes.ok ? 'no upload link returned' : urlRes.error)); done(); return false }
+      const putRes = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+      if (!putRes.ok) { alert(putRes.error + ' The file was not stored.'); done(); return false }
       const fields = type === 'w9' ? { w9_url: path } : { coi_url: path, coi_expiration: coiExpiration }
-      const saveRes = await authFetch('/api/sub-docs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory_id: dirId, ...fields }),
-      })
-      const saved = await saveRes.json().catch(() => ({}))
-      if (!saveRes.ok || saved.error) { alert('Upload error — file stored but record not saved: ' + (saved.error || `HTTP ${saveRes.status}`)); done(); return false }
+      const saveRes = await fetchJson(authFetch, '/api/sub-docs', jsonInit('POST', { directory_id: dirId, ...fields }))
+      if (!saveRes.ok) { alert('Upload error — file stored but record not saved: ' + saveRes.error); done(); return false }
     } catch (e) {
       alert('Upload error: ' + (e?.message || 'unknown')); done(); return false
     }
@@ -1445,9 +1439,9 @@ export default function AdminPortal() {
               )
               const totalAmt = poList.reduce((sum, po) => sum + parseFloat(po.amount || 0), 0)
               const openAttachment = path => openFile(async () => {
-                const json = await authFetch(`/api/purchase-orders?sign=${encodeURIComponent(path)}`).then(r => r.json())
-                if (!json.signedUrl) alert('Could not open attachment: ' + (json.error || 'Unknown error'))
-                return json.signedUrl
+                const r = await fetchJson(authFetch, `/api/purchase-orders?sign=${encodeURIComponent(path)}`)
+                if (!r.ok || !r.data?.signedUrl) { alert('Could not open attachment: ' + (r.ok ? 'no link returned' : r.error)); return null }
+                return r.data.signedUrl
               })
               return (
                 <>

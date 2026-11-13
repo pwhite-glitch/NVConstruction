@@ -6,6 +6,7 @@ import { isJobLimited, denyJob, denyJobs, denyJobOf } from '../../../lib/roles'
 import { normalizePoId, poLinkError, isInvalidIdError } from '../../../lib/po-cash'
 import { writeWithMissingColumnRetry, poLinkDropped } from '../../../lib/missing-column-retry'
 import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
+import { normalizeDcAmount } from '../../../lib/dc-amount'
 
 // Columns from migration 022 that may be missing. Only stripped as a group when a schema
 // error doesn't name its column.
@@ -126,6 +127,14 @@ export async function POST(request) {
     // One receipt file belongs to one cost.
     if (attachments.length && rawRows.length !== 1) return Response.json({ error: 'A receipt can only be attached to a single cost.' }, { status: 400 })
     const rows = rawRows.map(({ attachment: _a, receipt_url: _r, ...r }) => r)
+    // Every row (bulk too): a negative amount is a return. Stored as amount >= 0 + is_credit,
+    // never a negative amount; 0 / blank / not a number is refused (lib/dc-amount.js).
+    for (let i = 0; i < rows.length; i++) {
+      const amt = normalizeDcAmount(rows[i])
+      if (amt.error) return Response.json({ error: isBulk ? `Row ${i + 1}: ${amt.error}` : amt.error }, { status: 400 })
+      rows[i].amount = amt.amount
+      rows[i].is_credit = amt.is_credit
+    }
     const row = isBulk ? rows : rows[0]
 
     const denied = await denyRows(row)

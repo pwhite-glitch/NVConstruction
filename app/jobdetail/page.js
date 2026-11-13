@@ -20,6 +20,7 @@ import { ratingScoresError } from '../../lib/sub-ratings'
 import { isCoLine } from '../../lib/sov-lines'
 import { coNumberLabel, coNumberMissingMessage, coDeleteBlock } from '../../lib/co-number'
 import { dcBilledLockReason } from '../../lib/dc-guards'
+import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, csvDcAmount, dcDuplicateKey, signedDcAmount, ownerReimbLineAmounts, dcAmountInputState, dcCreditInputState } from '../../lib/dc-amount'
 import { isFirstReviewOnOpenDraw } from '../../lib/billing-fields'
 import { sovLockReason } from '../../lib/sov-guards'
 import { shiftScreenLine } from '../../lib/aia-draw'
@@ -1300,6 +1301,9 @@ function JobDetailInner() {
   async function submitDirectCostPM(e) {
     e.preventDefault()
     if (submittingDc) return
+    // A return can be typed as a negative amount; storage stays amount >= 0 + is_credit.
+    const amt = normalizeDcAmount({ amount: dcForm.amount, is_credit: dcForm.is_credit })
+    if (amt.error) { setDcSaveErr(amt.error); return }
     setSubmittingDc(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1307,14 +1311,14 @@ function JobDetailInner() {
         job_id: id, submitted_by: session.user.id,
         cost_date: dcForm.cost_date, description: dcForm.description,
         vendor: dcForm.vendor || null,
-        category: dcForm.category, amount: parseFloat(dcForm.amount),
+        category: dcForm.category, amount: amt.amount,
         reason: dcForm.reason || null,
         notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
         assigned_to: dcForm.assigned_to || currentUserName || null,
         status: userRole === 'apm' ? 'pending' : 'approved',
         bill_to_owner: dcForm.bill_to_owner || false,
         owner_auth_ref: dcForm.owner_auth_ref || null,
-        is_credit: dcForm.is_credit || false,
+        is_credit: amt.is_credit,
         // Optional PO this cost pays down (migration 067; the server retries without it before 067).
         ...(dcForm.purchase_order_id ? { purchase_order_id: dcForm.purchase_order_id } : {}),
       }
@@ -1358,7 +1362,8 @@ function JobDetailInner() {
       else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateRaw)) {
         const [m, d, y] = dateRaw.split('/'); cost_date = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
       }
-      const amount = parseFloat(get('amount').replace(/[$,]/g, ''))
+      // A negative amount is a return: stored as |amount| with is_credit (lib/dc-amount.js).
+      const amt = csvDcAmount(get('amount'))
       const description = get('description')
       const catRaw = get('category')
       const category = CATS.find(c => c.toLowerCase() === catRaw.toLowerCase()) || 'Materials'
@@ -1366,8 +1371,8 @@ function JobDetailInner() {
       const errors = []
       if (!cost_date) errors.push('bad date')
       if (!description) errors.push('no description')
-      if (isNaN(amount) || amount <= 0) errors.push('bad amount')
-      return { cost_date, description, category, amount: isNaN(amount) ? 0 : amount, notes, errors }
+      if (amt.error) errors.push(amt.error)
+      return { cost_date, description, category, amount: amt.error ? 0 : amt.amount, is_credit: !amt.error && amt.is_credit, notes, errors }
     }).filter(r => r.description || r.amount > 0)
   }
 
@@ -1380,7 +1385,7 @@ function JobDetailInner() {
     const res = await fetchJson(authFetch, '/api/direct-costs', jsonInit('POST', valid.map(r => ({
       job_id: id, submitted_by: session.user.id,
       cost_date: r.cost_date, description: r.description,
-      category: r.category, amount: r.amount,
+      category: r.category, amount: r.amount, is_credit: !!r.is_credit,
       notes: r.notes || null, budget_item_id: null, status: 'approved',
     }))))
     if (!res.ok) { alert('Import failed: ' + res.error); return }
@@ -1486,9 +1491,12 @@ function JobDetailInner() {
   }
 
   async function saveReview(costId, andApprove = false) {
+    // A negative amount saves as a return (amount >= 0 + is_credit; lib/dc-amount.js).
+    const amt = normalizeDcAmount({ amount: reviewForm.amount, is_credit: reviewForm.is_credit })
+    if (amt.error) { setReviewMsg(amt.error); return }
     setSavingReview(true)
     setReviewMsg('')
-    const editResult = await callDcReview('edit', costId, reviewForm)
+    const editResult = await callDcReview('edit', costId, { ...reviewForm, amount: amt.amount, is_credit: amt.is_credit })
     if (editResult.error) { setReviewMsg('Save failed: ' + editResult.error); setSavingReview(false); return }
     if (editResult.po_link_saved === false) alert(PO_LINK_NOT_SAVED)
     if (andApprove) {
@@ -1513,6 +1521,7 @@ function JobDetailInner() {
       vendor: c.vendor || '',
       description: c.description || '',
       amount: String(c.amount || ''),
+      is_credit: !!c.is_credit,
       category: c.category || 'Materials',
       notes: c.notes || '',
       budget_item_id: c.budget_item_id || '',
@@ -11212,7 +11221,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                       <div>
                         <label style={s.label}>Amount ($) *</label>
-                        <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                        <input type="number" step="0.01" inputMode="decimal" style={s.input} required value={dcForm.amount} onChange={e => { const v = e.target.value; setDcSaveErr(''); setDcForm(f => dcAmountInputState(f, v)) }} placeholder="Use − for a return" />
+                        {dcReturnHint(dcForm.amount) && <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600', marginTop: '4px' }}>{dcReturnHint(dcForm.amount)}</div>}
                       </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin') ? '2fr 1fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
@@ -11280,7 +11290,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )}
                     <div style={{ marginBottom: '10px' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={dcForm.is_credit} onChange={e => setDcForm(f => ({ ...f, is_credit: e.target.checked }))} />
+                        <input type="checkbox" checked={!!dcForm.is_credit || isNegativeDcInput(dcForm.amount)} disabled={isNegativeDcInput(dcForm.amount)} onChange={e => { const checked = e.target.checked; setDcSaveErr(''); setDcForm(f => dcCreditInputState(f, checked)) }} />
                         <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (reduces job cost total)</span>
                       </label>
                     </div>
@@ -11328,7 +11338,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <td style={{ padding: '4px 8px', color: r.errors.includes('bad date') ? '#e74c3c' : '#ccc' }}>{r.cost_date || '—'}</td>
                                 <td style={{ padding: '4px 8px', color: r.errors.includes('no description') ? '#e74c3c' : '#ccc' }}>{r.description || '—'}</td>
                                 <td style={{ padding: '4px 8px', color: '#374151' }}>{r.category}</td>
-                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad amount') ? '#e74c3c' : '#ccc' }}>{r.amount > 0 ? `$${r.amount.toLocaleString()}` : '—'}</td>
+                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad amount') ? '#e74c3c' : '#ccc' }}>{r.amount > 0 ? `${r.is_credit ? '−' : ''}$${r.amount.toLocaleString()}${r.is_credit ? ' return' : ''}` : '—'}</td>
                                 <td style={{ padding: '4px 8px', color: '#4b5563' }}>{r.notes || ''}</td>
                                 <td style={{ padding: '4px 8px' }}>{r.errors.length ? <span style={{ color: '#e74c3c' }}>{r.errors.join(', ')}</span> : <span style={{ color: '#16a34a' }}>OK</span>}</td>
                               </tr>
@@ -11370,7 +11380,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 })
                 const byAmount = {}
                 directCosts.forEach(c => {
-                  const k = Number(c.amount).toFixed(2)
+                  // Direction + amount: a $250 purchase and a $250 return are not duplicates.
+                  const k = dcDuplicateKey(c)
                   if (!byAmount[k]) byAmount[k] = []
                   byAmount[k].push(c.id)
                 })
@@ -11564,8 +11575,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Amount ($)</label>
-                            <input type="number" step="0.01" min="0" style={s.input} value={reviewForm.amount} onChange={e => setReviewForm(f => ({ ...f, amount: e.target.value }))} />
+                            <input type="number" step="0.01" inputMode="decimal" style={s.input} value={reviewForm.amount} onChange={e => { const v = e.target.value; setReviewMsg(''); setReviewForm(f => dcAmountInputState(f, v)) }} placeholder="Use − for a return" />
+                            {dcReturnHint(reviewForm.amount) && <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600', marginTop: '4px' }}>{dcReturnHint(reviewForm.amount)}</div>}
                           </div>
+                        </div>
+                        <div style={{ marginBottom: '10px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!!reviewForm.is_credit || isNegativeDcInput(reviewForm.amount)} disabled={isNegativeDcInput(reviewForm.amount)} onChange={e => { const checked = e.target.checked; setReviewMsg(''); setReviewForm(f => dcCreditInputState(f, checked)) }} />
+                            <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (reduces job cost total)</span>
+                          </label>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                           <div>
@@ -15206,13 +15224,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         {/* ── OWNER REIMBURSEMENTS TAB ── */}
         {activeTab === 'reimb' && (() => {
-          const fmtC = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          // Credit (return) lines are negative: shown as −$250.00.
+          const fmtC = n => (Number(n || 0) < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
           const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
           const unbilledCosts = directCosts.filter(c => c.bill_to_owner && !c.billing_route)
           const billedCosts = directCosts.filter(c => c.bill_to_owner && c.billing_route === 'reimbursement')
-          const totalUnbilled = unbilledCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+          // Signed: a bill-to-owner return (is_credit) lowers what is owed.
+          const totalUnbilled = unbilledCosts.reduce((a, c) => a + signedDcAmount(c), 0)
           const totalInvoiced = reimbInvoices.filter(i => i.status !== 'voided').reduce((a, i) => a + (i.totalBilled || 0), 0)
           const totalCollected = reimbInvoices.filter(i => i.status !== 'voided').reduce((a, i) => a + (i.totalPaid || 0), 0)
           const totalOutstanding = reimbInvoices.filter(i => !['voided','paid'].includes(i.status)).reduce((a, i) => a + (i.outstanding || 0), 0)
@@ -15239,16 +15259,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             const lines = selectedIds.map(dcId => {
               const dc = unbilledCosts.find(c => c.id === dcId)
               if (!dc) return null
-              const markup = parseFloat(invoiceForm.markup_pct) || 0
-              const billedAmt = dc.amount * (1 + markup / 100)
+              // A return (is_credit) line is negative, markup included, so it lowers the invoice total.
+              const { expense_amount, markup_pct, billed_amount } = ownerReimbLineAmounts(dc, parseFloat(invoiceForm.markup_pct) || 0)
               return {
                 direct_cost_id: dcId,
                 description: dc.description,
                 expense_date: dc.cost_date,
                 vendor: dc.assigned_to || '',
-                expense_amount: dc.amount,
-                markup_pct: markup,
-                billed_amount: Math.round(billedAmt * 100) / 100,
+                expense_amount,
+                markup_pct,
+                billed_amount,
               }
             }).filter(Boolean)
 
@@ -15522,7 +15542,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                           <div style={{ fontSize: '13px', fontWeight: '500', color: '#111827' }}>{dc.description}</div>
                           <div style={{ fontSize: '11px', color: '#6b7280' }}>{fmtD(dc.cost_date)}{dc.category ? ` · ${dc.category}` : ''}{dc.owner_auth_ref ? ` · Auth: ${dc.owner_auth_ref}` : ''}</div>
                         </div>
-                        <div style={{ fontWeight: '700', color: '#e8590c', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmtC(dc.amount)}</div>
+                        <div style={{ fontWeight: '700', color: dc.is_credit ? '#dc2626' : '#e8590c', whiteSpace: 'nowrap', fontSize: '13px' }}>{dc.is_credit ? '−' : ''}{fmtC(dc.amount)}{dc.is_credit ? ' return' : ''}</div>
                         <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '99px', background: dc.status === 'approved' ? '#dcfce7' : '#fff7ed', color: dc.status === 'approved' ? '#166534' : '#92400e', border: `1px solid ${dc.status === 'approved' ? '#bbf7d0' : '#fde68a'}`, whiteSpace: 'nowrap' }}>{dc.status}</span>
                       </div>
                     ))}

@@ -8,6 +8,7 @@ import { resolveTakenAt, insertWithGpsFallback, photoDateCentral } from '../../l
 import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { openFile, openHtml, openStorageFile } from '../../lib/open-file'
 import { dcBilledLockReason } from '../../lib/dc-guards'
+import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, dcAmountInputState, dcCreditInputState } from '../../lib/dc-amount'
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
 import { isPreviewActive } from '../../lib/prime-co-review'
 import RfiCommentThread from '../components/RfiCommentThread'
@@ -252,6 +253,9 @@ function ResidentialJobDetailInner() {
   const [editPOFile, setEditPOFile] = useState(null)
   const [editingCostId, setEditingCostId] = useState(null)
   const [editCostForm, setEditCostForm] = useState({})
+  // Inline amount errors (lib/dc-amount.js): add-cost form and the edit form.
+  const [dcAmountErr, setDcAmountErr] = useState('')
+  const [editCostErr, setEditCostErr] = useState('')
   const [savingEditCost, setSavingEditCost] = useState(false)
   const [billingBilling, setBillingBillingTab] = useState('submissions')
   const [showBillingForm, setShowBillingForm] = useState(false)
@@ -1374,6 +1378,10 @@ function ResidentialJobDetailInner() {
   async function submitDC(e) {
     e.preventDefault()
     if (submittingDc) return
+    // A return can be typed as a negative amount; storage stays amount >= 0 + is_credit.
+    const amt = normalizeDcAmount({ amount: dcForm.amount, is_credit: dcForm.is_credit })
+    if (amt.error) { setDcAmountErr(amt.error); return }
+    setDcAmountErr('')
     setSubmittingDc(true)
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { alert('Session expired. Please refresh the page.'); setSubmittingDc(false); return }
@@ -1383,10 +1391,10 @@ function ResidentialJobDetailInner() {
       cost_date: dcForm.cost_date,
       description: dcForm.description,
       category: dcForm.category,
-      amount: parseFloat(dcForm.amount),
+      amount: amt.amount,
       notes: dcForm.notes || null,
       budget_item_id: dcForm.budget_item_id || null,
-      is_credit: dcForm.is_credit || false,
+      is_credit: amt.is_credit,
       // New costs go through review (Pending → Approve), same as commercial
       status: 'pending',
     }
@@ -1532,8 +1540,12 @@ function ResidentialJobDetailInner() {
   }
 
   async function saveEditedCost() {
+    // A negative amount saves as a return (amount >= 0 + is_credit; lib/dc-amount.js).
+    const amt = normalizeDcAmount({ amount: editCostForm.amount, is_credit: editCostForm.is_credit })
+    if (amt.error) { setEditCostErr(amt.error); return }
+    setEditCostErr('')
     setSavingEditCost(true)
-    const result = await callDcReview('edit', editingCostId, { ...editCostForm, budget_item_id: editCostForm.budget_item_id || '' })
+    const result = await callDcReview('edit', editingCostId, { ...editCostForm, amount: amt.amount, is_credit: amt.is_credit, budget_item_id: editCostForm.budget_item_id || '' })
     setSavingEditCost(false)
     if (result.error) { alert('Save failed: ' + result.error); return }
     setEditingCostId(null)
@@ -2495,7 +2507,9 @@ function ResidentialJobDetailInner() {
                         </div>
                         <div>
                           <label style={s.label}>Amount ($) *</label>
-                          <input type="number" step="0.01" min="0" style={s.input} required placeholder="0.00" value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} />
+                          <input type="number" step="0.01" inputMode="decimal" style={s.input} required placeholder="Use − for a return" value={dcForm.amount} onChange={e => { const v = e.target.value; setDcAmountErr(''); setDcForm(f => dcAmountInputState(f, v)) }} />
+                          {dcReturnHint(dcForm.amount) && <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600', marginTop: '4px' }}>{dcReturnHint(dcForm.amount)}</div>}
+                          {dcAmountErr && <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>{dcAmountErr}</div>}
                         </div>
                       </div>
                       <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '12px' }}>
@@ -2523,7 +2537,7 @@ function ResidentialJobDetailInner() {
                       </div>
                       <div style={{ marginBottom: '12px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={dcForm.is_credit} onChange={e => setDcForm(f => ({ ...f, is_credit: e.target.checked }))} />
+                          <input type="checkbox" checked={!!dcForm.is_credit || isNegativeDcInput(dcForm.amount)} disabled={isNegativeDcInput(dcForm.amount)} onChange={e => { const checked = e.target.checked; setDcAmountErr(''); setDcForm(f => dcCreditInputState(f, checked)) }} />
                           <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (reduces job cost total)</span>
                         </label>
                       </div>
@@ -2578,7 +2592,7 @@ function ResidentialJobDetailInner() {
                               <button style={s.btnSmGray} onClick={() => openDCReceipt(c.receipt_url)}>Receipt</button>
                             )}
                             {dcBilledLockReason(c) && <span title={dcBilledLockReason(c)} style={{ fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>🔒 Billed</span>}
-                            <button style={{ ...s.btnSmGray, ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={!!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => { setEditingCostId(editingCostId === c.id ? null : c.id); setEditCostForm({ cost_date: c.cost_date || '', description: c.description || '', category: c.category || 'Materials', amount: c.amount || '', notes: c.notes || '', budget_item_id: c.budget_item_id || '' }) }}>Edit</button>
+                            <button style={{ ...s.btnSmGray, ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={!!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => { setEditingCostId(editingCostId === c.id ? null : c.id); setEditCostForm({ cost_date: c.cost_date || '', description: c.description || '', category: c.category || 'Materials', amount: c.amount || '', is_credit: !!c.is_credit, notes: c.notes || '', budget_item_id: c.budget_item_id || '' }); setEditCostErr('') }}>Edit</button>
                             {!c.budget_item_id && (
                               <select style={{ ...s.select, width: '160px', fontSize: '12px', padding: '4px 8px' }} defaultValue="" onChange={e => assignDCBudgetItem(c.id, e.target.value)}>
                                 <option value="">Assign budget line</option>
@@ -2620,7 +2634,18 @@ function ResidentialJobDetailInner() {
                             <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                               <div><label style={s.label}>Date</label><input type="date" style={s.input} value={editCostForm.cost_date} onChange={e => setEditCostForm(f => ({ ...f, cost_date: e.target.value }))} /></div>
                               <div><label style={s.label}>Category</label><select style={s.select} value={editCostForm.category} onChange={e => setEditCostForm(f => ({ ...f, category: e.target.value }))}>{['Materials','Labor','Equipment','Subcontractor','Permits','Fees','Meals/Entertainment','Other'].map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
-                              <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" min="0" style={s.input} value={editCostForm.amount} onChange={e => setEditCostForm(f => ({ ...f, amount: e.target.value }))} /></div>
+                              <div>
+                                <label style={s.label}>Amount ($)</label>
+                                <input type="number" step="0.01" inputMode="decimal" style={s.input} placeholder="Use − for a return" value={editCostForm.amount} onChange={e => { const v = e.target.value; setEditCostErr(''); setEditCostForm(f => dcAmountInputState(f, v)) }} />
+                                {dcReturnHint(editCostForm.amount) && <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600', marginTop: '4px' }}>{dcReturnHint(editCostForm.amount)}</div>}
+                                {editCostErr && <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>{editCostErr}</div>}
+                              </div>
+                            </div>
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={!!editCostForm.is_credit || isNegativeDcInput(editCostForm.amount)} disabled={isNegativeDcInput(editCostForm.amount)} onChange={e => { const checked = e.target.checked; setEditCostErr(''); setEditCostForm(f => dcCreditInputState(f, checked)) }} />
+                                <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (reduces job cost total)</span>
+                              </label>
                             </div>
                             <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '10px' }}>
                               <div><label style={s.label}>Description</label><input style={s.input} value={editCostForm.description} onChange={e => setEditCostForm(f => ({ ...f, description: e.target.value }))} /></div>

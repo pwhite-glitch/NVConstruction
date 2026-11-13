@@ -7,6 +7,7 @@ import { normalizePoId, poLinkError, isInvalidIdError } from '../../../lib/po-ca
 import { writeWithMissingColumnRetry, poLinkDropped } from '../../../lib/missing-column-retry'
 import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 import { dcResubmitJobDenied } from '../../../lib/upload-guards'
+import { normalizeDcAmount, parseDcCredit, isCreditCost } from '../../../lib/dc-amount'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -64,6 +65,23 @@ async function officeGuard(auth, cost) {
   if (denied) return Response.json({ error: denied.error }, { status: denied.status })
   const billed = await dcBilledLinkError(adminSupabase, cost)
   if (billed) return Response.json({ error: billed.error }, { status: billed.status })
+  return null
+}
+
+// amount / is_credit on an edit or resubmit. A negative amount is a return: stored as
+// { amount: |x|, is_credit: true }, never negative. Sending only one of the two keeps the
+// cost's stored other half. Mutates updates; returns an error message or null.
+function applyDcAmount(updates, fields, cost) {
+  const hasAmount = fields.amount !== undefined && fields.amount !== null
+  const hasCredit = fields.is_credit !== undefined && fields.is_credit !== null
+  if (!hasAmount && !hasCredit) return null
+  const amt = normalizeDcAmount({
+    amount: hasAmount ? fields.amount : cost.amount,
+    is_credit: hasCredit ? parseDcCredit(fields.is_credit) : isCreditCost(cost),
+  })
+  if (amt.error) return amt.error
+  updates.amount = amt.amount
+  updates.is_credit = amt.is_credit
   return null
 }
 
@@ -285,7 +303,7 @@ export async function POST(request) {
       }
     }
 
-    const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'category', 'notes', 'budget_item_id', 'bill_to_owner', 'owner_auth_ref', 'purchase_order_id']
+    const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'is_credit', 'category', 'notes', 'budget_item_id', 'bill_to_owner', 'owner_auth_ref', 'purchase_order_id']
     const UUID_FIELDS = new Set(['budget_item_id', 'purchase_order_id'])
     const updates = { reviewed_by: auth.userId, reviewed_at: now }
     for (const f of EDITABLE) {
@@ -294,11 +312,10 @@ export async function POST(request) {
         updates[f] = (UUID_FIELDS.has(f) && fields[f] === '') ? null : fields[f]
       }
     }
-    if (updates.amount !== undefined) {
-      const parsed = parseFloat(updates.amount)
-      if (isNaN(parsed) || parsed < 0) return Response.json({ error: 'Invalid amount' }, { status: 400 })
-      updates.amount = parsed
-    }
+    delete updates.amount
+    delete updates.is_credit
+    const amtErr = applyDcAmount(updates, fields, cost)
+    if (amtErr) return Response.json({ error: amtErr }, { status: 400 })
 
     const { rows, error, poLinkDropped } = await dcUpdateIfUnchanged(updates, cost)
     if (error) return Response.json({ error: error.message }, { status: 500 })
@@ -317,7 +334,7 @@ export async function POST(request) {
     const billed = await dcBilledLinkError(adminSupabase, cost)
     if (billed) return Response.json({ error: billed.error }, { status: billed.status })
 
-    const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'category', 'notes']
+    const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'is_credit', 'category', 'notes']
     const updates = {
       status: 'pending',
       rejection_reason: null,
@@ -329,11 +346,14 @@ export async function POST(request) {
         updates[f] = fields[f]
       }
     }
-    if (updates.amount !== undefined) {
-      const parsed = parseFloat(updates.amount)
-      if (isNaN(parsed) || parsed <= 0) return Response.json({ error: 'Amount must be a positive number' }, { status: 400 })
-      updates.amount = parsed
-    }
+    // A blank amount keeps the stored one (as before); a negative one becomes a return.
+    delete updates.amount
+    delete updates.is_credit
+    const amtErr = applyDcAmount(updates, {
+      amount: fields.amount === '' ? undefined : fields.amount,
+      is_credit: fields.is_credit === '' ? undefined : fields.is_credit,
+    }, cost)
+    if (amtErr) return Response.json({ error: amtErr }, { status: 400 })
 
     // Replacement receipt (optional; none keeps the existing one): uploaded directly, for THIS
     // cost on its stored job, by this submitter, who must still be on that job.

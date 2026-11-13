@@ -13,6 +13,7 @@ import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { fetchJson, jsonInit, readJsonResponse } from '../../lib/fetch-json'
 import { uploadThenSend } from '../../lib/file-upload-client'
+import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, signedDcAmount, dcAmountInputState, dcCreditInputState } from '../../lib/dc-amount'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
 import { rainFlagged, coldFlagged } from '../../lib/lookahead-weather'
@@ -159,7 +160,7 @@ export default function Field() {
   const [contactSuccess, setContactSuccess] = useState(false)
 
   const [directCosts, setDirectCosts] = useState([])
-  const [dcForm, setDcForm] = useState({ cost_date: localToday(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: localToday(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', is_credit: false })
   const [dcFile, setDcFile] = useState(null)
   const [dcFileError, setDcFileError] = useState('')
   const [resubmitCostId, setResubmitCostId] = useState(null)
@@ -654,6 +655,9 @@ export default function Field() {
   async function submitDirectCost(e) {
     e.preventDefault()
     setDcFileError('')
+    // A return can be typed as a negative amount; storage stays amount >= 0 + is_credit.
+    const amt = normalizeDcAmount({ amount: dcForm.amount, is_credit: dcForm.is_credit })
+    if (amt.error) { setDcError(amt.error); return }
     if (!dcFile) {
       setDcFileError('A receipt photo or PDF is required before submitting.')
       return
@@ -665,7 +669,7 @@ export default function Field() {
         job_id: selectedJobId, submitted_by: user.id,
         cost_date: dcForm.cost_date, description: dcForm.description,
         vendor: dcForm.vendor || null,
-        category: dcForm.category, amount: parseFloat(dcForm.amount),
+        category: dcForm.category, amount: amt.amount, is_credit: amt.is_credit,
         reason: dcForm.reason || null,
         notes: dcForm.notes || null,
         assigned_to: profile?.full_name || null,
@@ -682,7 +686,7 @@ export default function Field() {
         return
       }
       setDcSuccess(true)
-      setDcForm({ cost_date: localToday(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
+      setDcForm({ cost_date: localToday(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', is_credit: false })
       setDcFile(null)
       setDcFileError('')
       setShowDcForm(false)
@@ -696,6 +700,13 @@ export default function Field() {
   }
 
   async function submitResubmit(costId) {
+    // A negative amount resubmits as a return (amount >= 0 + is_credit; lib/dc-amount.js).
+    // A blank amount keeps the stored amount (same as the server); only is_credit is sent then.
+    const blankAmount = resubmitForm.amount === undefined || resubmitForm.amount === null || String(resubmitForm.amount).trim() === ''
+    const amt = blankAmount
+      ? { amount: '', is_credit: !!resubmitForm.is_credit }
+      : normalizeDcAmount({ amount: resubmitForm.amount, is_credit: resubmitForm.is_credit })
+    if (amt.error) { setResubmitErr(amt.error); return }
     setResubmitting(true)
     setResubmitErr('')
     try {
@@ -703,7 +714,7 @@ export default function Field() {
       const uploadFile = resubmitFile ? await receiptUploadFile(resubmitFile) : null
       const r = await uploadThenSend({
         fetchFn: authFetch, putFn: fetch, file: uploadFile, target: 'dc-resubmit-receipt', context: { record_id: costId },
-        send: attachment => fetchJson(authFetch, '/api/dc-review', jsonInit('POST', { action: 'resubmit', id: costId, ...resubmitForm, ...(attachment ? { attachment } : {}) })),
+        send: attachment => fetchJson(authFetch, '/api/dc-review', jsonInit('POST', { action: 'resubmit', id: costId, ...resubmitForm, amount: amt.amount, is_credit: amt.is_credit, ...(attachment ? { attachment } : {}) })),
       })
       if (!r.ok) { setResubmitErr((r.stage === 'upload' ? 'Receipt upload failed: ' : '') + r.error); return }
       setResubmitCostId(null)
@@ -1903,7 +1914,7 @@ export default function Field() {
                     {dcSuccess && <div style={s.success}>Cost logged successfully.</div>}
                     {dcError && <div style={{ background: '#1a0000', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{dcError}</div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{directCosts.filter(c => c.submitted_by === user?.id).length} entr{directCosts.filter(c => c.submitted_by === user?.id).length !== 1 ? 'ies' : 'y'} · Total ${directCosts.filter(c => c.submitted_by === user?.id).reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{directCosts.filter(c => c.submitted_by === user?.id).length} entr{directCosts.filter(c => c.submitted_by === user?.id).length !== 1 ? 'ies' : 'y'} · Total ${directCosts.filter(c => c.submitted_by === user?.id).reduce((a, c) => a + signedDcAmount(c), 0).toLocaleString()}</p>
                       <button style={s.btnSm('orange')} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
                     </div>
                     {showDcForm && (
@@ -1923,8 +1934,15 @@ export default function Field() {
                             </div>
                             <div>
                               <label style={s.label}>Amount ($) *</label>
-                              <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                              <input type="number" step="0.01" inputMode="decimal" style={s.input} required value={dcForm.amount} onChange={e => { const v = e.target.value; setDcError(''); setDcForm(f => dcAmountInputState(f, v)) }} placeholder="Use − for a return" />
+                              {dcReturnHint(dcForm.amount) && <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600', marginTop: '4px' }}>{dcReturnHint(dcForm.amount)}</div>}
                             </div>
+                          </div>
+                          <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={!!dcForm.is_credit || isNegativeDcInput(dcForm.amount)} disabled={isNegativeDcInput(dcForm.amount)} onChange={e => { const checked = e.target.checked; setDcError(''); setDcForm(f => dcCreditInputState(f, checked)) }} />
+                              <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (attach the return slip as the receipt)</span>
+                            </label>
                           </div>
                           <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                             <div>
@@ -1990,7 +2008,7 @@ export default function Field() {
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                            <span style={{ fontSize: '15px', fontWeight: '800', color: '#111827' }}>${Number(c.amount).toLocaleString()}</span>
+                            <span style={{ fontSize: '15px', fontWeight: '800', color: c.is_credit ? '#dc2626' : '#111827' }}>{c.is_credit ? '−' : ''}${Number(c.amount).toLocaleString()}{c.is_credit ? ' return' : ''}</span>
                             <span style={{ color: '#6b7280', display: 'flex' }}>{isExpanded ? IC.chevU : IC.chevD}</span>
                           </div>
                         </div>
@@ -2005,7 +2023,7 @@ export default function Field() {
                                 <button style={s.btnSm('orange')} onClick={e => { e.stopPropagation(); openReceiptUrl(c.receipt_url) }}>View receipt</button>
                               )}
                               {isMyRejected && (
-                                <button style={s.btnSm('orange')} onClick={e => { e.stopPropagation(); if (isResubmitting) { setResubmitCostId(null); return }; setResubmitCostId(c.id); setResubmitErr(''); setResubmitFile(null); setResubmitForm({ cost_date: c.cost_date, description: c.description, vendor: c.vendor || '', amount: String(c.amount), category: c.category, reason: c.reason || '', notes: c.notes || '' }) }}>
+                                <button style={s.btnSm('orange')} onClick={e => { e.stopPropagation(); if (isResubmitting) { setResubmitCostId(null); return }; setResubmitCostId(c.id); setResubmitErr(''); setResubmitFile(null); setResubmitForm({ cost_date: c.cost_date, description: c.description, vendor: c.vendor || '', amount: String(c.amount), is_credit: !!c.is_credit, category: c.category, reason: c.reason || '', notes: c.notes || '' }) }}>
                                   {isResubmitting ? 'Cancel' : 'Fix & Resubmit'}
                                 </button>
                               )}
@@ -2028,8 +2046,15 @@ export default function Field() {
                               </div>
                               <div>
                                 <label style={s.label}>Amount ($)</label>
-                                <input type="number" step="0.01" min="0" style={s.input} value={resubmitForm.amount || ''} onChange={e => setResubmitForm(f => ({ ...f, amount: e.target.value }))} />
+                                <input type="number" step="0.01" inputMode="decimal" style={s.input} value={resubmitForm.amount || ''} onChange={e => { const v = e.target.value; setResubmitErr(''); setResubmitForm(f => dcAmountInputState(f, v)) }} placeholder="Use − for a return" />
+                                {dcReturnHint(resubmitForm.amount) && <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600', marginTop: '4px' }}>{dcReturnHint(resubmitForm.amount)}</div>}
                               </div>
+                            </div>
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={!!resubmitForm.is_credit || isNegativeDcInput(resubmitForm.amount)} disabled={isNegativeDcInput(resubmitForm.amount)} onChange={e => { const checked = e.target.checked; setResubmitErr(''); setResubmitForm(f => dcCreditInputState(f, checked)) }} />
+                                <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit</span>
+                              </label>
                             </div>
                             <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                               <div>

@@ -16,6 +16,7 @@ import { isCoiDate, fmtCoiDate } from '../../lib/coi-status'
 import { findDirectoryEntry, coiBadgeModel, confirmCoiOrProceed } from '../../lib/coi-warning'
 import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentMismatchWarning } from '../../lib/billing-payment'
 import { signedWaiverTerms, waiverTermChanges } from '../../lib/lien-waiver-terms'
+import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, dcAmountInputState, dcCreditInputState, signedDcAmount } from '../../lib/dc-amount'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -184,8 +185,9 @@ export default function AdminPortal() {
 
   // Direct costs state
   const [showAddCost, setShowAddCost] = useState(false)
-  const [costForm, setCostForm] = useState({ job_id: '', budget_item_id: '', cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '' })
+  const [costForm, setCostForm] = useState({ job_id: '', budget_item_id: '', cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '', is_credit: false })
   const [savingCost, setSavingCost] = useState(false)
+  const [costAmountErr, setCostAmountErr] = useState('')
   const [filterCostJob, setFilterCostJob] = useState('')
   const [filterCostLogged, setFilterCostLogged] = useState('')
   const [filterCostCat, setFilterCostCat] = useState('')
@@ -364,20 +366,27 @@ export default function AdminPortal() {
 
   async function addCost(e) {
     e.preventDefault()
+    // A return can be typed as a negative amount; storage stays amount >= 0 + is_credit
+    // (lib/dc-amount.js). Never insert a raw negative / blank / NaN amount.
+    const amt = normalizeDcAmount({ amount: costForm.amount, is_credit: costForm.is_credit })
+    if (amt.error) { setCostAmountErr(amt.error); return }
+    setCostAmountErr('')
     setSavingCost(true)
     const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('direct_costs').insert({
+    const { error: insErr } = await supabase.from('direct_costs').insert({
       job_id: costForm.job_id,
       budget_item_id: costForm.budget_item_id || null,
       cost_date: costForm.cost_date,
       description: costForm.description,
       category: costForm.category,
-      amount: parseFloat(costForm.amount),
+      amount: amt.amount,
+      is_credit: amt.is_credit,
       notes: costForm.notes || null,
       submitted_by: session.user.id,
       status: 'approved',
     })
-    setCostForm({ job_id: '', budget_item_id: '', cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '' })
+    if (insErr) { setCostAmountErr(insErr.message || 'Could not save the cost.'); setSavingCost(false); return }
+    setCostForm({ job_id: '', budget_item_id: '', cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '', is_credit: false })
     setShowAddCost(false)
     setSavingCost(false)
     await loadCosts()
@@ -1076,7 +1085,9 @@ export default function AdminPortal() {
                         </div>
                         <div>
                           <label style={s.label}>Amount *</label>
-                          <input type="number" style={s.input} value={costForm.amount} onChange={e => setCostForm(f => ({ ...f, amount: e.target.value }))} required placeholder="0.00" />
+                          <input type="number" step="0.01" inputMode="decimal" style={s.input} value={costForm.amount} onChange={e => { const v = e.target.value; setCostAmountErr(''); setCostForm(f => dcAmountInputState(f, v)) }} required placeholder="Use − for a return" />
+                          {dcReturnHint(costForm.amount) && <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600', marginTop: '4px' }}>{dcReturnHint(costForm.amount)}</div>}
+                          {costAmountErr && <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>{costAmountErr}</div>}
                         </div>
                       </div>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
@@ -1091,6 +1102,12 @@ export default function AdminPortal() {
                           <label style={s.label}>Notes</label>
                           <input style={s.input} value={costForm.notes} onChange={e => setCostForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" />
                         </div>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!costForm.is_credit || isNegativeDcInput(costForm.amount)} disabled={isNegativeDcInput(costForm.amount)} onChange={e => { const checked = e.target.checked; setCostAmountErr(''); setCostForm(f => dcCreditInputState(f, checked)) }} />
+                          <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (reduces job cost total)</span>
+                        </label>
                       </div>
                       <button type="submit" style={{ ...s.btn, opacity: savingCost ? 0.6 : 1 }} disabled={savingCost}>{savingCost ? 'Saving...' : 'Add cost'}</button>
                     </form>
@@ -1131,7 +1148,7 @@ export default function AdminPortal() {
                             <td style={s.td}>{c.description}{c.notes ? <><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{c.notes}</span></> : ''}</td>
                             <td style={s.td}><span style={{ fontSize: '12px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '4px', padding: '2px 8px' }}>{c.category}</span></td>
                             <td style={s.td}>{c.budget_items ? <>{c.budget_items.cost_code ? <span style={{ color: '#6b7280', fontSize: '11px' }}>{c.budget_items.cost_code} · </span> : ''}{c.budget_items.description}</> : <span style={{ color: '#374151' }}>—</span>}</td>
-                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#111827' }}>${parseFloat(c.amount || 0).toLocaleString()}</td>
+                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: signedDcAmount(c) < 0 ? '#dc2626' : '#111827' }}>{signedDcAmount(c) < 0 ? '−' : ''}${Math.abs(signedDcAmount(c)).toLocaleString()}</td>
                             <td style={s.td}><span style={s.badge(c.status)}>{c.status}</span></td>
                             <td style={s.td}>{teamMap[c.submitted_by] || '—'}<br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span></td>
                           </tr>
@@ -1139,7 +1156,7 @@ export default function AdminPortal() {
                         <tr>
                           <td style={s.td} />
                           <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</td>
-                          <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '16px' }}>${filteredCosts.reduce((a, c) => a + parseFloat(c.amount || 0), 0).toLocaleString()}</td>
+                          <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '16px' }}>{(() => { const t = filteredCosts.reduce((a, c) => a + signedDcAmount(c), 0); return `${t < 0 ? '−' : ''}$${Math.abs(t).toLocaleString()}` })()}</td>
                           <td style={s.td} />
                           <td style={s.td} />
                         </tr>

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
 import { isBeforeTodayCentral } from '../../../lib/central-date'
 import { denyJob } from '../../../lib/roles'
+import { ownerReimbLineAmounts } from '../../../lib/dc-amount'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -76,15 +77,17 @@ export async function POST(request) {
 
   // Validate direct_cost_id references: must belong to the job, be bill_to_owner, not already routed elsewhere
   const dcIds = lines.map(l => l.direct_cost_id).filter(Boolean)
+  const dcById = new Map()
   if (dcIds.length > 0) {
     const { data: costs, error: dcErr } = await adminSupabase
       .from('direct_costs')
-      .select('id, job_id, bill_to_owner, billing_route')
+      .select('id, job_id, bill_to_owner, billing_route, amount, is_credit')
       .in('id', dcIds)
 
     if (dcErr) return Response.json({ error: 'Failed to validate expense records' }, { status: 500 })
 
     for (const dc of (costs || [])) {
+      dcById.set(dc.id, dc)
       if (dc.job_id !== job_id) {
         return Response.json({ error: `Expense ${dc.id} does not belong to this job` }, { status: 422 })
       }
@@ -109,6 +112,30 @@ export async function POST(request) {
         error: `One or more expenses are already on an issued invoice (${existingLines.map(l => l.direct_cost_id).join(', ')})`
       }, { status: 422 })
     }
+  }
+
+  // Line amounts. A line linked to a direct cost is priced on the server from the stored cost
+  // (a return / credit is negative, markup applies to |amount|); the client's numbers for
+  // that line are ignored. Unlinked lines keep the amounts sent.
+  const pricedLines = []
+  for (const l of lines) {
+    if (l.direct_cost_id) {
+      const dc = dcById.get(l.direct_cost_id)
+      if (!dc) return Response.json({ error: `Expense ${l.direct_cost_id} was not found` }, { status: 422 })
+      const a = ownerReimbLineAmounts(dc, parseFloat(l.markup_pct) || 0)
+      pricedLines.push({ ...l, expense_amount: a.expense_amount, markup_pct: a.markup_pct, billed_amount: a.billed_amount })
+    } else {
+      pricedLines.push({
+        ...l,
+        expense_amount: parseFloat(l.expense_amount) || 0,
+        markup_pct: parseFloat(l.markup_pct) || 0,
+        billed_amount: parseFloat(l.billed_amount) || 0,
+      })
+    }
+  }
+  const totalBilledCents = pricedLines.reduce((a, l) => a + Math.round(l.billed_amount * 100), 0)
+  if (totalBilledCents <= 0) {
+    return Response.json({ error: 'Invoice total must be greater than $0 (returns can only reduce an invoice that has charges)' }, { status: 422 })
   }
 
   // Insert invoice
@@ -136,15 +163,15 @@ export async function POST(request) {
   }
 
   // Insert lines
-  const lineRows = lines.map((l, i) => ({
+  const lineRows = pricedLines.map((l, i) => ({
     invoice_id: inv.id,
     direct_cost_id: l.direct_cost_id || null,
     description: l.description,
     expense_date: l.expense_date || null,
     vendor: l.vendor?.trim() || null,
-    expense_amount: parseFloat(l.expense_amount) || 0,
-    markup_pct: parseFloat(l.markup_pct) || 0,
-    billed_amount: parseFloat(l.billed_amount) || 0,
+    expense_amount: l.expense_amount,
+    markup_pct: l.markup_pct,
+    billed_amount: l.billed_amount,
     sort_order: i,
   }))
 

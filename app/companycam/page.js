@@ -5,10 +5,12 @@ import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
 import { photoDateCentral } from '../../lib/photo-taken-at'
 import { siteUrl } from '../../lib/site-url'
+import { importStatusLabel, importRangeLabel, centralDateTimeLabel } from '../../lib/companycam-import'
 
 // Owner-only: CompanyCam photos that did not land in a job (project not linked, or the import
 // failed). Assign one to a job (optionally linking its CompanyCam project) or dismiss it.
-// Also registers / updates the CompanyCam webhook (token comes from Vercel env, never shown).
+// Also registers / updates the CompanyCam webhook (token comes from Vercel env, never shown),
+// and (prompt 84) lists linked jobs with an active or recent background import (read-only).
 const s = {
   page: { minHeight: '100vh', background: '#f4f6f8', padding: '1.5rem 1rem' },
   wrap: { maxWidth: '1000px', margin: '0 auto' },
@@ -46,6 +48,8 @@ export default function CompanyCamInbox() {
   const [rowMsg, setRowMsg] = useState({}) // inbox id → { ok, text }
   const [hookBusy, setHookBusy] = useState(false)
   const [hookMsg, setHookMsg] = useState(null)
+  const [bgRows, setBgRows] = useState([])
+  const [bgErr, setBgErr] = useState('')
 
   useEffect(() => { init() }, [])
 
@@ -56,7 +60,7 @@ export default function CompanyCamInbox() {
     setRole(profile?.role || null)
     setReady(true)
     if (profile?.role !== 'principal') return
-    await Promise.all([loadRows(), loadJobs()])
+    await Promise.all([loadRows(), loadJobs(), loadBackground()])
   }
 
   async function loadRows() {
@@ -65,6 +69,13 @@ export default function CompanyCamInbox() {
     setLoadErr('')
     setNeeds074(r.data.migration_required === '074')
     setRows(r.data.rows || [])
+  }
+
+  async function loadBackground() {
+    const r = await api('/api/companycam/background-imports')
+    if (!r.ok) { setBgErr(r.data.error || `Error ${r.status}`); return }
+    setBgErr('')
+    setBgRows(r.data.rows || [])
   }
 
   async function loadJobs() {
@@ -131,6 +142,26 @@ export default function CompanyCamInbox() {
           <p style={{ ...s.sub, marginTop: '6px' }}>Tags sync from CompanyCam automatically. If a tag is added or removed while a photo is still being imported, that change may not show here until the photo or its tags change again in CompanyCam.</p>
           {hookMsg && <div style={hookMsg.ok ? s.ok : s.err}>{hookMsg.text}</div>}
           {hookMsg?.warn && <div style={s.err}>{hookMsg.warn}</div>}
+        </div>
+
+        <div style={s.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+            <p style={{ ...s.h2, margin: 0 }}>Background imports</p>
+            <button type="button" style={s.btnGray} onClick={loadBackground}>Refresh</button>
+          </div>
+          <p style={{ ...s.sub, marginTop: '4px' }}>Imports started from a job's Photos tab run on their own about every minute until done. Active runs and runs that ended in the last 7 days.</p>
+          {bgErr && <div style={s.err}>{bgErr}</div>}
+          {!bgErr && bgRows.length === 0 && <p style={{ ...s.sub, marginTop: '8px' }}>No background imports right now.</p>}
+          {bgRows.map(b => (
+            <div key={b.job_id} style={{ borderTop: '1px solid #f3f4f6', padding: '8px 0', fontSize: '13px', color: '#374151' }}>
+              <div style={{ fontWeight: 600 }}>{b.job_number ? `#${b.job_number} ` : ''}{b.project_name || b.job_id} <span style={{ fontWeight: 400, color: '#6b7280' }}>· CompanyCam project {b.companycam_project_id}</span></div>
+              <div style={{ color: b.status === 'done' ? '#15803d' : b.status === 'paused' && b.last_error ? '#a16207' : '#374151' }}>
+                {importStatusLabel({ status: b.status, background: !b.parked, last_error: b.last_error, paused_reason: b.parked ? 'repeated_errors' : null })} · Range {importRangeLabel(b)} · Imported {b.imported} · Already in portal {b.skipped} · Failed {b.failed}
+                {b.updated_at ? ` · Last update ${centralDateTimeLabel(b.updated_at)} (Central)` : ''}
+              </div>
+              {b.last_error && <div style={{ color: '#dc2626', fontSize: '12px' }}>Last error: {b.last_error}</div>}
+            </div>
+          ))}
         </div>
 
         {needs074 && <div style={s.err}>Needs database migration 074 before CompanyCam photos can be stored.</div>}

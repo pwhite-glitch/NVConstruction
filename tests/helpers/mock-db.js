@@ -21,7 +21,12 @@
 //       from mockState.calls so older assertions on calls are unchanged)
 const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, pauseWrite: null, triggers: {}, calls: [], files: {}, failUpload: {}, failWrite: {}, strictUpload: false, defaults: {}, unique: {}, fileMeta: {}, failInfo: {}, storageCalls: [] }
 
-const get = (r, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r)
+// 'col->>key' reads a jsonb key as text (PostgREST JSON filter); anything else is a dotted path.
+const get = (r, path) => {
+  const m = /^(\w+)->>(\w+)$/.exec(path)
+  if (m) { const v = r?.[m[1]]?.[m[2]]; return v == null ? null : typeof v === 'object' ? JSON.stringify(v) : String(v) }
+  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r)
+}
 
 function embed(table, row, cols) {
   const out = { ...row }

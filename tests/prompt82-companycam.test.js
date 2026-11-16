@@ -204,10 +204,10 @@ describe('1) pure helpers', () => {
     expect(ccImport.canResumeImport({ status: 'done' }, t)).toBe(false)
     expect(ccImport.canResumeImport(null, t)).toBe(false)
 
-    expect(ccImport.IMPORT_SESSION_CAP).toBe(200)
-    expect(ccImport.nextImportStep({ done: false, sessionImported: 180 })).toBe('continue')
-    expect(ccImport.nextImportStep({ done: false, sessionImported: 200 })).toBe('pause')
-    expect(ccImport.nextImportStep({ done: true, sessionImported: 500 })).toBe('done')
+    // prompt 84: the per-click cap is gone (background import); stopped runs resume too.
+    expect(ccImport.IMPORT_SESSION_CAP).toBeUndefined()
+    expect(ccImport.nextImportStep).toBeUndefined()
+    expect(ccImport.canResumeImport({ status: 'stopped' }, t)).toBe(true)
     expect(ccImport.defaultImportSince(now)).toBe('2026-10-17')
   })
 })
@@ -587,7 +587,7 @@ describe('4b) import route (Addendum A: range + resumable batches)', () => {
   const page2 = [ccPhoto(4, '900'), ccPhoto(5, '900', { captured_at: IN + 60 })]
   const twoPages = () => jest.fn(u => (u.searchParams.get('after') === 'c2' ? json(page2, 200, { has_next: false, next_cursor: null }) : json(page1, 200, { has_next: true, next_cursor: 'c2' })))
 
-  test('dates are passed as Central epoch bounds, local filter drops out-of-range, cursor resumes to done', async () => {
+  test('dates are NOT sent to CompanyCam (prompt 84: 422), local filter drops out-of-range, cursor resumes to done', async () => {
     as('principal')
     const pages = twoPages()
     global.fetch = ccWorld({ pages })
@@ -597,15 +597,15 @@ describe('4b) import route (Addendum A: range + resumable batches)', () => {
     expect(a.body).toMatchObject({ imported: 1, skipped: 1, out_of_range: 1, failed: [], next_cursor: 'c2', done: false })
     const q1 = pages.mock.calls[0][0].searchParams
     expect(q1.get('limit')).toBe('20')
-    expect(q1.get('start_date')).toBe(String(Date.parse('2025-01-01T06:00:00Z') / 1000))
-    expect(q1.get('end_date')).toBe(String(Date.parse('2026-01-01T06:00:00Z') / 1000 - 1))
+    expect(q1.get('start_date')).toBe(null)
+    expect(q1.get('end_date')).toBe(null)
     expect(q1.get('after')).toBe(null)
     expect(mockState.db.jobs[0].companycam_import_state).toMatchObject({ start_date: '2025-01-01', end_date: '2025-12-31', cursor: 'c2', imported: 1, skipped: 1, failed: 0, status: 'paused', updated_by: 'principal1' })
 
     const b = await imp({ resume: true })
     expect(b.body).toMatchObject({ imported: 2, skipped: 0, next_cursor: null, done: true })
     expect(pages.mock.calls[1][0].searchParams.get('after')).toBe('c2')
-    expect(pages.mock.calls[1][0].searchParams.get('start_date')).toBe(q1.get('start_date'))
+    expect(pages.mock.calls[1][0].searchParams.get('start_date')).toBe(null)
     expect(mockState.db.jobs[0].companycam_import_state).toMatchObject({ status: 'done', imported: 3, cursor: null })
     expect(mockState.db.job_photos.map(p => p.companycam_photo_id).sort()).toEqual(['1', '2', '4', '5'])
     for (const p of mockState.db.job_photos.filter(p => p.id !== 'old')) expect(p.internal_only).toBe(true)
@@ -727,9 +727,11 @@ describe('4b) import route (Addendum A: range + resumable batches)', () => {
   test('(b) import time box: 35 s budget, no new photo starts after it, thumbnail skipped past the deadline', async () => {
     expect(cc.DOWNLOAD_BUDGET_MS).toBe(35000)
     expect(cc.DOWNLOAD_TIMEOUT_MS).toBe(15000)
-    const src = read('app/api/companycam/import/route.js')
-    expect(src).toMatch(/const TIME_BUDGET_MS = DOWNLOAD_BUDGET_MS/)
-    expect(src).toMatch(/downloadDeadline: started \+ TIME_BUDGET_MS/)
+    // prompt 84: the batch moved to lib/companycam-import-batch.js (shared with the cron).
+    expect(read('app/api/companycam/import/route.js')).toMatch(/const TIME_BUDGET_MS = DOWNLOAD_BUDGET_MS/)
+    const src = read('lib/companycam-import-batch.js')
+    expect(src).toMatch(/const deadline = startedAt \+ budgetMs/)
+    expect(src).toMatch(/downloadDeadline: deadline/)
     global.fetch = ccWorld()
     const r = await cc.importCcPhotoToJob(require('@supabase/supabase-js').createClient(), { job: { id: 'J1' }, photo: cc.normalizeCcPhoto(ccPhoto(555)), downloadDeadline: Date.now() - 1 })
     expect(r.status).toBe('imported')
@@ -964,6 +966,6 @@ describe('5) source checks', () => {
     expect(rd).toContain('companycam: !!p.companycam_photo_id, by: p.companycam_creator_name || null, ccTags: p.companycam_tags || []')
     const bar = read('app/components/CompanyCamLinkBar.js')
     expect(bar).toContain('Needs database migration 074')
-    expect(bar).toContain('nextImportStep')
+    expect(bar).toContain('Start background import')
   })
 })

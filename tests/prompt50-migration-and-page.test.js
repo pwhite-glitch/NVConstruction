@@ -73,7 +73,9 @@ describe('residential page wiring', () => {
     expect(page).toMatch(/from\('job_photos'\)\.insert\(\{ job_id: id, super_id: [^}]*storage_path: path, file_name: file\.name/)
     expect(page).toContain("await supabase.storage.from('daily-report-photos').remove([path])") // failed row → cleanup
     expect(page).toContain("api('/api/delete-photo'")
-    expect(page).toContain("supabase.from('daily_reports').select('id, report_date, photos')")
+    // prompt 85: select('*') so status (migration 075) is read; only final reports' photos listed
+    expect(page).toContain("supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),")
+    expect(page).toMatch(/publishedReports\(reports \|\| \[\]\)\.flatMap/)
   })
   test('docs: job_documents via job-scoped route; legacy job_docs read-only', () => {
     expect(page).toContain('include=documents')

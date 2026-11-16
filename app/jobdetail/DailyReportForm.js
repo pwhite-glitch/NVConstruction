@@ -1,10 +1,12 @@
 'use client'
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { localToday } from '../../lib/lookahead-dates'
 import {
   WEATHER, emptyDailyForm, emptyCrewRow, emptyEquipmentRow, emptyMaterialRow, emptyVisitorRow, emptySubActivityRow,
-  filledCrew, filledSubActivity, duplicateReportMessage, uniquePhotoName, thumbPath,
+  filledCrew, filledSubActivity, duplicateReportMessage, uniquePhotoName, thumbPath, isReferencedReportPhoto,
 } from '../../lib/daily-report-payload'
+import { saveDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, DRAFT_BADGE } from '../../lib/daily-report-client'
+import JobPhotoPicker from './JobPhotoPicker'
 
 const BUCKET = 'daily-report-photos'
 
@@ -38,23 +40,56 @@ function compressImage(file, maxWidth = 1200, quality = 0.82) {
   })
 }
 
+// Phone tap targets ≥ 44px (iOS HIG) — buttons, the photo-upload label and checkbox rows.
+export const TAP_TARGET_CSS = `@media (max-width: 768px) {
+  .nv-drf button, .nv-drf label:has(> input[type="file"]) { min-height: 44px !important; min-width: 44px !important; }
+  .nv-drf input[type="checkbox"] { width: 22px; height: 22px; }
+  .nv-drf label:has(> input[type="checkbox"]) { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
+}`
 const removeBtn = { background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }
 
-// New daily report from the job page (commercial jobdetail + residentialjobdetail).
-// Photos upload to daily-report-photos `{jobId}/{unique}.jpg` (+ thumb) on submit, then the
-// report is POSTed to /api/daily-reports, which enforces job assignment and sets the filer.
-// Each photo element may carry internal_only (prompt73) — "Internal only" stamps it.
-export default function DailyReportForm({ jobId, styles, supabase, authFetch, existingDates = [], onSuccess, onCancel, disabled = false }) {
+const rowsOr = (v, make) => (Array.isArray(v) && v.length ? v.map(r => ({ ...make(), ...r })) : null)
+const txt = v => (v == null ? '' : String(v))
+
+// Form fields from a saved draft (edit mode).
+function formFromReport(r) {
+  return {
+    ...emptyDailyForm(r.report_date || localToday()),
+    weather: txt(r.weather), weather_temp: txt(r.weather_temp), weather_delay: r.weather_delay === true,
+    crew_count: txt(r.crew_count), work_performed: txt(r.work_performed), issues: txt(r.issues),
+    safety_observations: txt(r.safety_observations), toolbox_talk: txt(r.toolbox_talk),
+  }
+}
+
+// Daily report from the job page (commercial jobdetail + residentialjobdetail).
+// Prompt 85 (Peyton's decision 3): the office uses the SAME Save draft / Finalize flow as
+// the field app — "Save draft" keeps it a draft (labeled Draft, hidden from the owner portal
+// and weather-day counts); "Finalize – 100% complete" publishes it. initialReport = a draft
+// to edit (PATCH), otherwise a new report (POST). All writes go through /api/daily-reports
+// (lib/daily-report-client), which enforces job assignment and sets the filer.
+// Photos: new files upload to daily-report-photos `{jobId}/{unique}.jpg` (+ thumb) on save;
+// "Choose from CompanyCam / job photos" attaches existing job photos BY REFERENCE (no copy).
+// × only drops the element from this report — it never deletes a file.
+// Each photo element may carry internal_only (prompt73) — "Internal only" stamps uploads;
+// picked job photos keep their own internal_only.
+export default function DailyReportForm({ jobId, styles, supabase, authFetch, existingDates = [], onSuccess, onCancel, disabled = false, initialReport = null }) {
   const s = { ...DEFAULT_STYLES, ...(styles || {}) }
-  const [form, setForm] = useState(() => emptyDailyForm(localToday()))
-  const [crew, setCrew] = useState([emptyCrewRow()])
-  const [subs, setSubs] = useState([])
-  const [equipment, setEquipment] = useState([])
-  const [materials, setMaterials] = useState([])
-  const [visitors, setVisitors] = useState([])
-  const [photos, setPhotos] = useState([]) // [{ file, name, internal_only, path? }] — path once uploaded
+  const editing = !!initialReport?.id
+  const [form, setForm] = useState(() => (editing ? formFromReport(initialReport) : emptyDailyForm(localToday())))
+  const [crew, setCrew] = useState(() => (editing && rowsOr(initialReport.crew_log, emptyCrewRow)) || [emptyCrewRow()])
+  const [subs, setSubs] = useState(() => (editing && rowsOr(initialReport.subcontractor_activity, emptySubActivityRow)) || [])
+  const [equipment, setEquipment] = useState(() => (editing && rowsOr(initialReport.equipment_log, emptyEquipmentRow)) || [])
+  const [materials, setMaterials] = useState(() => (editing && rowsOr(initialReport.materials_delivered, emptyMaterialRow)) || [])
+  const [visitors, setVisitors] = useState(() => (editing && rowsOr(initialReport.visitors, emptyVisitorRow)) || [])
+  // [{ file?, name, internal_only?, path?, job_photo_id?, source? }] — path once uploaded / picked
+  const [photos, setPhotos] = useState(() => (editing && Array.isArray(initialReport.photos) ? initialReport.photos.filter(p => p?.path).map(p => ({ ...p })) : []))
   const [photosInternal, setPhotosInternal] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
   const [saving, setSaving] = useState(false)
+  // L5 (prompt 85): a ref blocks a second tap before React re-renders the disabled button, and
+  // once the first save created the report, every later save PATCHes that id (no second draft).
+  const savingRef = useRef(false)
+  const reportIdRef = useRef(editing ? initialReport.id : null)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
 
@@ -83,14 +118,30 @@ export default function DailyReportForm({ jobId, styles, supabase, authFetch, ex
     return out
   }
 
-  async function submit(e) {
-    if (e?.preventDefault) e.preventDefault()
-    if (saving || disabled) return
+  // Element stored on daily_reports.photos. Picked job photos keep job_photo_id + source.
+  const toElement = p => ({
+    path: p.path, caption: p.caption || '', name: p.name,
+    ...(typeof p.internal_only === 'boolean' ? { internal_only: p.internal_only } : {}),
+    ...(isReferencedReportPhoto(p) ? { job_photo_id: p.job_photo_id, source: 'job_photos' } : {}),
+  })
+
+  function attachPicked(elements) {
+    setPhotos(prev => {
+      const have = new Set(prev.map(p => p.path).filter(Boolean))
+      return [...prev, ...elements.filter(el => !have.has(el.path))]
+    })
+  }
+
+  async function save(finalize) {
+    if (saving || savingRef.current || disabled) return
     setError('')
     if (!form.report_date) { setError('Report date is required.'); return }
-    if (!form.work_performed.trim()) { setError('Work performed is required.'); return }
+    if (finalize && !form.work_performed.trim()) { setError('Work performed is required to finalize.'); return }
+    // Only FINAL reports on that date count as duplicates (a draft is the one being worked on).
     const dup = duplicateReportMessage(form.report_date, existingDates)
     if (dup && !window.confirm(dup)) return
+    if (finalize && !window.confirm(FINALIZE_CONFIRM)) return
+    savingRef.current = true
     setSaving(true)
     try {
       let uploaded = photos
@@ -99,34 +150,39 @@ export default function DailyReportForm({ jobId, styles, supabase, authFetch, ex
         uploaded = await uploadPending(photos)
         setPhotos(uploaded)
       }
-      setStatus('Saving…')
-      const res = await authFetch('/api/daily-reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_id: jobId,
-          ...form,
-          crew_log: crew,
-          subcontractor_activity: subs,
-          equipment_log: equipment,
-          materials_delivered: materials,
-          visitors,
-          // jsonb elements: { path, caption, name, internal_only? } — same as field
-          photos: uploaded.map(p => ({ path: p.path, caption: '', name: p.name, ...(typeof p.internal_only === 'boolean' ? { internal_only: p.internal_only } : {}) })),
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.ok) throw new Error(data.error || `Could not save daily report (server returned ${res.status}).`)
-      if (data.warning) alert(data.warning)
+      setStatus(finalize ? 'Finalizing…' : 'Saving draft…')
+      const payload = {
+        job_id: jobId,
+        ...form,
+        crew_log: crew,
+        subcontractor_activity: subs,
+        equipment_log: equipment,
+        materials_delivered: materials,
+        visitors,
+        // jsonb elements: { path, caption, name, internal_only?, job_photo_id?, source? } — same as field
+        photos: uploaded.map(toElement),
+      }
+      const { report, warning } = await saveDailyReport(authFetch, { id: reportIdRef.current, payload, finalize })
+      if (report?.id) reportIdRef.current = report.id
+      if (warning) alert(warning)
       setForm(emptyDailyForm(localToday()))
       setCrew([emptyCrewRow()]); setSubs([]); setEquipment([]); setMaterials([]); setVisitors([]); setPhotos([]); setPhotosInternal(false)
-      onSuccess?.(data.report)
+      // The form is now blank for a NEW report (the parent usually closes it) — forget the id.
+      reportIdRef.current = editing ? initialReport.id : null
+      onSuccess?.(report, { finalized: !!finalize })
     } catch (err) {
       setError(err.message || 'Could not save daily report.')
     } finally {
+      savingRef.current = false
       setSaving(false)
       setStatus('')
     }
+  }
+
+  function submit(e) {
+    if (e?.preventDefault) e.preventDefault()
+    // Enter in a field only saves a draft — publishing is always the explicit Finalize button.
+    save(false)
   }
 
   const section = (label, onAdd, children) => (
@@ -145,8 +201,14 @@ export default function DailyReportForm({ jobId, styles, supabase, authFetch, ex
   const subCount = filledSubActivity(subs).length
 
   return (
-    <form onSubmit={submit} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-      <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>New daily report</div>
+    <form className="nv-drf" onSubmit={submit} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+      {/* L8 (prompt 85): on phones every button / tap target in this form is at least 44px
+          (inline sizes are 32–36px for desktop density, so the overrides need !important). */}
+      <style>{TAP_TARGET_CSS}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: '700', color: '#111827', marginBottom: '12px' }}>
+        {editing ? 'Edit daily report' : 'New daily report'}
+        {editing && <span style={DRAFT_BADGE}>Draft</span>}
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '14px' }}>
         <div><label style={s.label}>Date *</label><input type="date" style={s.input} value={form.report_date} onChange={set('report_date')} required /></div>
@@ -167,7 +229,7 @@ export default function DailyReportForm({ jobId, styles, supabase, authFetch, ex
       </div>
 
       <div style={{ marginBottom: '14px' }}>
-        <label style={s.label}>Work performed *</label>
+        <label style={s.label}>Work performed * <span style={{ fontWeight: 400, color: '#6b7280' }}>(required to finalize)</span></label>
         <textarea rows={4} style={{ ...s.input, resize: 'vertical' }} value={form.work_performed} onChange={set('work_performed')} placeholder="Describe all work completed..." />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginBottom: '14px' }}>
@@ -230,24 +292,39 @@ export default function DailyReportForm({ jobId, styles, supabase, authFetch, ex
 
       <div style={{ marginBottom: '14px' }}>
         <label style={s.label}>Photos</label>
-        <label style={{ ...s.btnSmall, display: 'inline-block', cursor: saving ? 'default' : 'pointer' }}>
-          Add Photos
-          <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={saving} onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; addFiles(files) }} />
-        </label>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '12px', fontSize: '12px', color: '#4b5563', cursor: 'pointer' }} title="Internal only photos are hidden from the owner portal">
-          <input type="checkbox" checked={photosInternal} onChange={e => setPhotosInternal(e.target.checked)} />
-          Internal only (hide from owner)
-        </label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+          <label style={{ ...s.btnSmall, display: 'inline-flex', alignItems: 'center', minHeight: '36px', cursor: saving ? 'default' : 'pointer' }}>
+            Add Photos
+            <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={saving} onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; addFiles(files) }} />
+          </label>
+          <button type="button" disabled={saving} onClick={() => setShowPicker(true)} style={{ ...s.btnSmall, minHeight: '36px' }}>Choose from CompanyCam / job photos</button>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#4b5563', cursor: 'pointer' }} title="Internal only photos are hidden from the owner portal">
+            <input type="checkbox" checked={photosInternal} onChange={e => setPhotosInternal(e.target.checked)} />
+            Internal only (hide from owner)
+          </label>
+        </div>
         {photos.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
             {photos.map((p, i) => (
-              <div key={i} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {p.name}
+              <div key={p.path || `new-${i}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '4px 4px 4px 10px', fontSize: '12px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {p.name || (p.path || '').split('/').pop()}
+                {isReferencedReportPhoto(p) && <span style={{ fontSize: '10px', fontWeight: '800', color: '#1e40af', background: '#dbeafe', padding: '1px 5px', borderRadius: '3px', textTransform: 'uppercase' }}>Job photo</span>}
                 {p.internal_only === true && <span style={{ fontSize: '10px', fontWeight: '800', color: '#7c2d12', background: '#ffedd5', padding: '1px 5px', borderRadius: '3px', textTransform: 'uppercase' }}>Internal</span>}
-                <button type="button" disabled={saving} onClick={() => setPhotos(l => l.filter((_, j) => j !== i))} style={{ ...removeBtn, fontSize: '14px' }}>×</button>
+                {/* Unlink only: drops the element from this report; never deletes the file. */}
+                <button type="button" aria-label={`Remove ${p.name || 'photo'} from this report`} disabled={saving} onClick={() => setPhotos(l => l.filter((_, j) => j !== i))} style={{ ...removeBtn, fontSize: '16px', minWidth: '32px', minHeight: '32px' }}>×</button>
               </div>
             ))}
           </div>
+        )}
+        {showPicker && (
+          <JobPhotoPicker
+            jobId={jobId}
+            reportDate={form.report_date}
+            authFetch={authFetch}
+            attachedPaths={photos.map(p => p.path).filter(Boolean)}
+            onAttach={attachPicked}
+            onClose={() => setShowPicker(false)}
+          />
         )}
       </div>
 
@@ -257,8 +334,10 @@ export default function DailyReportForm({ jobId, styles, supabase, authFetch, ex
         </div>
       )}
       {error && <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px 12px', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button type="submit" disabled={saving || disabled} style={{ ...s.btn, opacity: saving || disabled ? 0.6 : 1 }}>{saving ? (status || 'Saving…') : 'Submit daily report'}</button>
+      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>Drafts are visible to you and to Owner / PM, labeled Draft. Finalize publishes it (owner portal, weather-day counts).</div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => save(false)} disabled={saving || disabled} style={{ ...s.btnGray, opacity: saving || disabled ? 0.6 : 1 }}>Save draft</button>
+        <button type="button" onClick={() => save(true)} disabled={saving || disabled} style={{ ...s.btn, opacity: saving || disabled ? 0.6 : 1 }}>{saving ? (status || 'Saving…') : FINALIZE_LABEL}</button>
         {onCancel && <button type="button" onClick={onCancel} disabled={saving} style={s.btnGray}>Cancel</button>}
       </div>
     </form>

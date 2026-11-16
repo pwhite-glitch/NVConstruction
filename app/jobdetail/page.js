@@ -67,6 +67,9 @@ import { writeWithMissingColumnRetry, isMissingColumnError } from '../../lib/mis
 import { g703Row, screenStored, storedBalanceByKey, storedInstalledError, hasStoredColumns } from '../../lib/aia-g703'
 import { findDirectoryEntry, coiBadgeModel, confirmCoiForCompany } from '../../lib/coi-warning'
 import DailyReportForm from './DailyReportForm'
+import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates } from '../../lib/daily-report-payload'
+import { reportPhotoInternal } from '../../lib/report-photo-links'
+import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE } from '../../lib/daily-report-client'
 
 const s = {
   // ── Layout ──
@@ -388,6 +391,9 @@ function JobDetailInner() {
   const [fieldSubTab, setFieldSubTab] = useState('reports')
   const [showNewDailyReport, setShowNewDailyReport] = useState(false)
   const [dailyReportSaved, setDailyReportSaved] = useState(false)
+  const [editingDailyReport, setEditingDailyReport] = useState(null) // a draft open in DailyReportForm (prompt 85)
+  const [fieldUserId, setFieldUserId] = useState(null)
+  const [reopeningReport, setReopeningReport] = useState(null)
   const [respondingRfi, setRespondingRfi] = useState(null)
   const [rfiResponse, setRfiResponse] = useState('')
   const [savingRfiResponse, setSavingRfiResponse] = useState(false)
@@ -1080,14 +1086,29 @@ function JobDetailInner() {
     return <span title={m.label} style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '10px', background: m.bg, color: m.color, border: `1px solid ${m.border}`, whiteSpace: 'nowrap' }}>{m.label}</span>
   }
 
+  // Daily reports (prompt 85): finals, plus drafts this user may see — their own, or all of
+  // them for Owner / admin / PM (Peyton's decision 1). RLS (migration 075) enforces the same;
+  // filtered here too so a pre-075 or misconfigured policy never shows someone's draft.
+  // Drafts carry a "Draft" badge; weather-day counts / the log ignore them (lib/contract-time).
+  // L2 (prompt 85): the list is filtered with the role known at load time. If it loaded before
+  // userRole resolved (e.g. from the Overview tab), a PM / Owner would see only finals and
+  // their own drafts — so reload once the role changes from what the last load used.
+  const fieldReportsRoleRef = useRef(undefined)
+  useEffect(() => {
+    if (fieldReportsRoleRef.current !== undefined && fieldReportsRoleRef.current !== userRole) loadFieldData()
+  }, [userRole]) // eslint-disable-line react-hooks/exhaustive-deps
   async function loadFieldData() {
+    const { data: { session: fieldSession } } = await supabase.auth.getSession()
+    const me = fieldSession?.user?.id || null
+    setFieldUserId(me)
     const [{ data: reports }, { data: rfis }, { data: deliveries }, { data: milestones }] = await Promise.all([
       supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),
       loadJobRfis(),
       supabase.from('deliveries').select('*').eq('job_id', id).order('expected_date', { ascending: true }),
       supabase.from('milestones').select('*').eq('job_id', id).order('due_date', { ascending: true }),
     ])
-    setFieldDailyReports(reports || [])
+    setFieldDailyReports(visibleReports(reports || [], { role: userRole, userId: me }))
+    fieldReportsRoleRef.current = userRole
     setFieldRfis(rfis || [])
     setFieldDeliveries(deliveries || [])
     setFieldMilestones(milestones || [])
@@ -3425,11 +3446,14 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   async function loadFieldPhotos() {
     const [{ data: standalone }, { data: reports }] = await Promise.all([
       supabase.from('job_photos').select('*').eq('job_id', id).order('taken_at', { ascending: false }),
-      supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
+      // '*' so status (075) is read when present. Site Photos shows FINAL reports' photos only
+      // (prompt 85); a draft's photos show inside the draft on the Field tab.
+      supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),
     ])
     const all = [
       ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at), name: p.file_name, internal_only: p.internal_only === true, companycam: !!p.companycam_photo_id, by: p.companycam_creator_name || null, ccTags: p.companycam_tags || [] })),
-      ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, tag: p.tag || null, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: p.internal_only === true })))),
+      // A report photo picked from the job photos (prompt 85) is the same file as its gallery row — list it once.
+      ...(publishedReports(reports || []).flatMap(r => (r.photos || []).filter(p => !(standalone || []).some(sp => sp.storage_path === p?.path)).map(p => ({ path: p.path, caption: p.caption, tag: p.tag || null, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: reportPhotoInternal(p, standalone) })))),
     ].sort((a, b) => new Date(b.date) - new Date(a.date))
     setFieldPhotos(all)
     const paths = all.map(p => p.path).filter(Boolean)
@@ -10734,20 +10758,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={{ marginBottom: '12px' }}>
                 {!showNewDailyReport && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button type="button" style={{ ...s.btnSmallGreen, opacity: inPreview ? 0.5 : 1 }} disabled={inPreview} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => { setDailyReportSaved(false); setShowNewDailyReport(true) }}>+ New daily report</button>
-                    {dailyReportSaved && <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: '600' }}>Daily report saved.</span>}
+                    <button type="button" style={{ ...s.btnSmallGreen, opacity: inPreview ? 0.5 : 1 }} disabled={inPreview} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => { setDailyReportSaved(false); setEditingDailyReport(null); setShowNewDailyReport(true) }}>+ New daily report</button>
+                    {dailyReportSaved && <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: '600' }}>{dailyReportSaved === 'final' ? 'Daily report finalized.' : 'Draft saved.'}</span>}
                   </div>
                 )}
                 {showNewDailyReport && (
                   <DailyReportForm
+                    key={editingDailyReport?.id || 'new'}
                     jobId={id}
                     styles={s}
                     supabase={supabase}
                     authFetch={authFetch}
                     disabled={inPreview}
-                    existingDates={fieldDailyReports.map(r => r.report_date)}
-                    onCancel={() => setShowNewDailyReport(false)}
-                    onSuccess={() => { setShowNewDailyReport(false); setDailyReportSaved(true); setTimeout(() => setDailyReportSaved(false), 4000); loadFieldData() }}
+                    initialReport={editingDailyReport}
+                    existingDates={finalReportDates(fieldDailyReports, { excludeId: editingDailyReport?.id })}
+                    onCancel={() => { setShowNewDailyReport(false); setEditingDailyReport(null) }}
+                    onSuccess={(_report, { finalized } = {}) => { setShowNewDailyReport(false); setEditingDailyReport(null); setDailyReportSaved(finalized ? 'final' : 'draft'); setTimeout(() => setDailyReportSaved(false), 4000); loadFieldData() }}
                   />
                 )}
               </div>
@@ -10755,10 +10781,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             {fieldSubTab === 'reports' && (
               fieldDailyReports.length === 0 ? <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' }}>No daily reports submitted yet.</div>
               : fieldDailyReports.map(r => (
-                <div key={r.id} style={s.billingEntryRow}>
+                <div key={r.id} style={{ ...s.billingEntryRow, ...(isDraftReport(r) ? { borderLeft: '3px solid #f59e0b' } : {}) }}>
                   <div style={s.billingEntryHeader} onClick={() => setExpandedFieldReport(expandedFieldReport === r.id ? null : r.id)}>
-                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                      {isDraftReport(r) && <span style={DRAFT_BADGE} title="Draft — not final; hidden from the owner portal and weather-day counts">Draft</span>}
+                      {isDraftReport(r) && canEditDraft({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
+                        <button type="button" style={s.btnSmall} onClick={e => { e.stopPropagation(); setDailyReportSaved(false); setEditingDailyReport(r); setShowNewDailyReport(true); setFieldSubTab('reports') }}>Edit draft</button>
+                      )}
+                      {!isDraftReport(r) && canReopenReport(userRole) && !inPreview && (
+                        <button type="button" style={s.btnSmall} disabled={reopeningReport === r.id} onClick={async e => {
+                          e.stopPropagation()
+                          if (!window.confirm(REOPEN_CONFIRM)) return
+                          setReopeningReport(r.id)
+                          try { await reopenDailyReport(authFetch, r.id); await loadFieldData() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
+                        }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
+                      )}
                       {r.weather && <span style={{ fontSize: '12px', color: '#6b7280' }}>{r.weather}</span>}
                       {r.crew_count != null && <span style={{ fontSize: '12px', color: '#6b7280' }}>{r.crew_count} crew</span>}
                     </div>

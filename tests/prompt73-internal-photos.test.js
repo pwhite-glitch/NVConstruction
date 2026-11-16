@@ -365,30 +365,33 @@ describe('5) source checks', () => {
     expect(field).toMatch(/setInternalOnlyDraft/)
   })
 
-  test('field deletePhoto (report branch): fresh re-read before write, preserves other elements (internal_only), storage removed only after DB write', () => {
+  // Prompt 85: migration 075 RLS lets browsers update only their own DRAFT reports, and a
+  // report photo may share its file with a job photo, so the field app now goes through
+  // /api/delete-photo. The prompt-73 guarantees (fresh re-read, other elements preserved,
+  // storage only after the DB write, errors stop before any removal) move to the route.
+  test('field deletePhoto → /api/delete-photo; route: fresh re-read before write, preserves other elements (internal_only), storage removed only after DB write', () => {
     const field = read('app/field/page.js')
     const del = between(field, 'async function deletePhoto(', 'async function uploadGalleryPhoto')
-    const rep = between(del, 'if (photo.fromReport)', '} else {')
-    // not the cached state copy
-    expect(rep).not.toMatch(/dailyReports\.find/)
-    const iRead = rep.indexOf(".from('daily_reports').select('id, photos').eq('id', photo.reportId).maybeSingle()")
-    const iFilter = rep.indexOf('current.filter(p => p?.path !== photo.path)')
-    const iWrite = rep.indexOf(".from('daily_reports').update({ photos: updated.length ? updated : null }).eq('id', fresh.id)")
-    const iStorage = rep.indexOf(".storage.from('daily-report-photos').remove(")
+    expect(del).toMatch(/authFetch\('\/api\/delete-photo'/)
+    expect(del).toMatch(/fromReport: !!photo\.fromReport, reportId: photo\.reportId/)
+    expect(del).not.toMatch(/from\('daily_reports'\)\.update/)
+    expect(del).not.toMatch(/storage\.from\('daily-report-photos'\)\.remove/)
+
+    const route = read('app/api/delete-photo/route.js')
+    const rep = between(route, 'if (fromReport) {', '// Gallery photo:')
+    const iRead = rep.indexOf(".from('daily_reports').select('*').eq('id', reportId).maybeSingle()")
+    const iFilter = rep.indexOf('current.filter(p => p?.path !== path)')
+    const iWrite = rep.indexOf(".from('daily_reports').update({ photos: updated.length ? updated : null }).eq('id', reportId)")
+    const iStorage = rep.indexOf('.remove(')
     expect(iRead).toBeGreaterThan(-1)
     expect(iFilter).toBeGreaterThan(iRead)
     expect(iWrite).toBeGreaterThan(iFilter)
     expect(iStorage).toBeGreaterThan(iWrite)
-    // fresh read / write errors stop before any write / storage removal
-    expect(rep).toMatch(/if \(readErr\) throw/)
-    expect(rep).toMatch(/if \(!fresh\) throw/)
-    expect(rep).toMatch(/if \(writeErr\) throw/)
-    expect(rep).toMatch(/setDailyReports\(/)
-    // still browser-direct (apm keeps working), not /api/delete-photo
-    expect(del).not.toMatch(/\/api\/delete-photo/)
-    // gallery branch unchanged: storage then job_photos delete
-    const gal = del.slice(del.indexOf('} else {'))
-    expect(gal.indexOf(".remove(")).toBeLessThan(gal.indexOf(".from('job_photos').delete()"))
+    expect(rep).toMatch(/if \(readErr\) return/)
+    expect(rep).toMatch(/if \(!report\) return/)
+    expect(rep).toMatch(/if \(upErr\) return/)
+    // apm keeps working in the field app (assigned super | apm)
+    expect(route).toMatch(/role === 'super' \|\| role === 'apm'/)
 
     // Filter semantics: only the deleted path goes; other elements kept exactly (internal_only, caption, tag, name)
     const current = [
@@ -404,7 +407,9 @@ describe('5) source checks', () => {
     const load = between(field, 'async function loadPhotoGallery()', 'async function deletePhoto(')
     expect(load).not.toMatch(/let reports = dailyReports/)
     expect(load.match(/\.from\('daily_reports'\)/g)).toHaveLength(1)
-    expect(load).toMatch(/setDailyReports\(rpts \|\| \[\]\)/)
+    // prompt 85: own drafts kept for the past-reports list; gallery uses final reports only
+    expect(load).toMatch(/setDailyReports\(visibleReports\(rpts \|\| \[\]/)
+    expect(load).toMatch(/const reports = publishedReports\(rpts \|\| \[\]\)/)
   })
 
   test('jobdetail + residential: badge and Hide / Show to owner via /api/photo-visibility', () => {

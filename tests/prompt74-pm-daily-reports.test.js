@@ -3,7 +3,10 @@
  *   1. Pure: lib/daily-report-payload validate / buildDailyReportRow / buildDeliveriesFromMaterials.
  *   2. POST /api/daily-reports: requirePM + denyUnlessOnJob, super_id = caller, deliveries
  *      side-effect, duplicates allowed, no email.
- *   3. Source checks: job pages use the shared form + API; field app unchanged; no migration.
+ *   3. Source checks: job pages use the shared form + API; no migration for prompt 74.
+ * Prompt 85 update: POST without finalize now saves a DRAFT (no deliveries, work_performed
+ * optional); { finalize: true } publishes and creates deliveries. The field app moved off
+ * its browser insert onto this API (see tests/prompt85-daily-report-cc-photos-and-drafts).
  * All DB access is the in-memory mock; nothing live, no migration applied.
  */
 const fs = require('fs')
@@ -199,9 +202,9 @@ describe('2) POST /api/daily-reports', () => {
     }
   })
 
-  test('missing work_performed / report_date / job_id → 400', async () => {
+  test('missing work_performed (on finalize) / report_date / job_id → 400', async () => {
     seed(); as('principal')
-    expect((await post(base({ work_performed: '  ' }))).status).toBe(400)
+    expect((await post(base({ work_performed: '  ', finalize: true }))).status).toBe(400)
     expect((await post(base({ report_date: '' }))).status).toBe(400)
     expect((await post(base({ job_id: '' }))).status).toBe(400)
     expect((await post(base({ photos: [{ path: 'J2/x.jpg' }] }))).status).toBe(400)
@@ -217,7 +220,7 @@ describe('2) POST /api/daily-reports', () => {
 
   test('materials side-effect inserts received deliveries with source daily_report', async () => {
     seed(); as('pm')
-    const r = await post(base({ materials_delivered: [{ description: 'Studs', quantity: '200', supplier: 'Lowes' }, { description: '', quantity: '1', supplier: '' }] }))
+    const r = await post(base({ finalize: true, materials_delivered: [{ description: 'Studs', quantity: '200', supplier: 'Lowes' }, { description: '', quantity: '1', supplier: '' }] }))
     expect(r.status).toBe(200)
     expect(mockState.db.deliveries).toHaveLength(1)
     expect(mockState.db.deliveries[0]).toMatchObject({ job_id: 'J1', super_id: 'pm1', material: 'Studs', vendor: 'Lowes', quantity: '200', status: 'received', received_date: '2026-11-09', source: 'daily_report' })
@@ -232,7 +235,7 @@ describe('2) POST /api/daily-reports', () => {
   test('deliveries failure does not undo the report (soft warning)', async () => {
     seed(); as('pm')
     mockState.failWrite = { deliveries: { insert: 'boom' } }
-    const r = await post(base({ materials_delivered: [{ description: 'Studs', quantity: '1', supplier: '' }] }))
+    const r = await post(base({ finalize: true, materials_delivered: [{ description: 'Studs', quantity: '1', supplier: '' }] }))
     expect(r.status).toBe(200)
     expect(r.body.ok).toBe(true)
     expect(r.body.warning).toMatch(/boom/)
@@ -289,12 +292,15 @@ describe('3) source checks', () => {
   test('commercial jobdetail uses the shared form for office roles', () => {
     expect(jd).toMatch(/import DailyReportForm from '\.\/DailyReportForm'/)
     expect(jd).toMatch(/New daily report/)
-    expect(jd).toMatch(/<DailyReportForm[\s\S]*?existingDates=\{fieldDailyReports\.map\(r => r\.report_date\)\}/)
+    // prompt 85: only FINAL report dates count as duplicates
+    expect(jd).toMatch(/<DailyReportForm[\s\S]*?existingDates=\{finalReportDates\(fieldDailyReports/)
     expect(jd).toMatch(/\['principal', 'admin', 'pm', 'apm'\]\.includes\(userRole\)[\s\S]{0,900}New daily report/)
   })
 
   test('form posts to /api/daily-reports (no browser insert) and confirms duplicates', () => {
-    expect(form).toMatch(/authFetch\('\/api\/daily-reports'/)
+    // prompt 85: via lib/daily-report-client (POST / PATCH /api/daily-reports, /finalize)
+    expect(form).toMatch(/saveDailyReport\(authFetch,/)
+    expect(read('lib/daily-report-client.js')).toMatch(/'\/api\/daily-reports'/)
     expect(form).not.toMatch(/from\('daily_reports'\)/)
     expect(form).toMatch(/duplicateReportMessage/)
     expect(form).toMatch(/window\.confirm/)
@@ -311,9 +317,9 @@ describe('3) source checks', () => {
     expect(res).not.toMatch(/Supers file them in the field app/)
   })
 
-  test('field app unchanged: browser insert, no new API, gate still super|apm', () => {
-    expect(field).toMatch(/async function submitDailyReport[\s\S]*?supabase\.from\('daily_reports'\)\.insert\(/)
-    expect(field).not.toMatch(/\/api\/daily-reports/)
+  test('field app (prompt 85): no browser insert, saves through the API, gate still super|apm', () => {
+    expect(field).not.toMatch(/supabase\.from\('daily_reports'\)\.insert\(/)
+    expect(field).toMatch(/async function submitDailyReport[\s\S]*?saveDailyReport\(authFetch,/)
     expect(field).not.toMatch(/DailyReportForm/)
     expect(field).toMatch(/prof\.role !== 'super' && prof\.role !== 'apm'/)
   })

@@ -33,6 +33,9 @@ import { fetchJson, jsonInit } from '../../lib/fetch-json'
 import { uploadThenSend, putToSignedUrl, forgetUpload } from '../../lib/file-upload-client'
 import { AI_PARSE_MAX_BYTES, AI_PARSE_LIMIT_PRECHECK_MESSAGE } from '../../lib/ai-parse-limits'
 import DailyReportForm from '../jobdetail/DailyReportForm'
+import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates } from '../../lib/daily-report-payload'
+import { reportPhotoInternal } from '../../lib/report-photo-links'
+import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE } from '../../lib/daily-report-client'
 import NewPOForm from '../jobdetail/NewPOForm'
 import EditPOForm from '../jobdetail/EditPOForm'
 import PaymentTypeSelector from '../jobdetail/PaymentTypeSelector' // eslint-disable-line no-unused-vars -- used inside the shared PO forms
@@ -166,6 +169,9 @@ function ResidentialJobDetailInner() {
   const [fieldData, setFieldData] = useState(null) // { reports, rfis, deliveries } — Field tab (office can add a daily report)
   const [showNewDailyReport, setShowNewDailyReport] = useState(false)
   const [dailyReportSaved, setDailyReportSaved] = useState(false)
+  const [editingDailyReport, setEditingDailyReport] = useState(null) // a draft open in DailyReportForm (prompt 85)
+  const [fieldUserId, setFieldUserId] = useState(null)
+  const [reopeningReport, setReopeningReport] = useState(null)
   const [photoUrls, setPhotoUrls] = useState({})
   const [lightbox, setLightbox] = useState(null) // index into photos
   const [deletingPhoto, setDeletingPhoto] = useState(null)
@@ -664,12 +670,15 @@ function ResidentialJobDetailInner() {
     const [{ data: standalone, error: e1 }, { data: reports, error: e2 }] = await Promise.all([
       // select('*'): internal_only (migration 070) is read when present, absent before it.
       supabase.from('job_photos').select('*').eq('job_id', id).order('taken_at', { ascending: false }),
-      supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
+      // '*' so status (075) is read when present; only FINAL reports' photos are listed here
+      // (prompt 85) — a draft's photos show inside the draft.
+      supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),
     ])
     noteLoad('Photos', e1 || e2)
     const all = [
       ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: photoDateCentral(p.taken_at || p.created_at), name: p.file_name, internal_only: p.internal_only === true, companycam: !!p.companycam_photo_id, by: p.companycam_creator_name || null, ccTags: p.companycam_tags || [] })),
-      ...(reports || []).flatMap(r => (Array.isArray(r.photos) ? r.photos : []).filter(p => p?.path).map((p, i) => ({ key: `r${r.id}-${i}`, path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: p.internal_only === true }))),
+      // A report photo picked from the job photos (prompt 85) is the same file as its gallery row — list it once.
+      ...publishedReports(reports || []).flatMap(r => (Array.isArray(r.photos) ? r.photos : []).filter(p => p?.path && !(standalone || []).some(sp => sp.storage_path === p.path)).map((p, i) => ({ key: `r${r.id}-${i}`, path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: reportPhotoInternal(p, standalone) }))),
     ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
     setPhotos(all)
     const paths = [...new Set(all.map(p => p.path))]
@@ -737,14 +746,28 @@ function ResidentialJobDetailInner() {
   }
 
   // Read-only Field tab: what the super logs in the field app on this job.
+  // Daily reports (prompt 85): finals + drafts this user may see (own; all for Owner / admin /
+  // PM), drafts labeled "Draft". select('*') so status / super_id are read when present
+  // (before migration 075 there is no status and everything is final).
+  // L2 (prompt 85): the list is filtered with the role known at load time. If it loaded before
+  // userRole resolved (e.g. from the Overview tab), a PM / Owner would see only finals and
+  // their own drafts — so reload once the role changes from what the last load used.
+  const fieldReportsRoleRef = useRef(undefined)
+  useEffect(() => {
+    if (fieldReportsRoleRef.current !== undefined && fieldReportsRoleRef.current !== userRole) loadFieldData()
+  }, [userRole]) // eslint-disable-line react-hooks/exhaustive-deps
   async function loadFieldData() {
+    const { data: { session: fieldSession } } = await supabase.auth.getSession()
+    const me = fieldSession?.user?.id || null
+    setFieldUserId(me)
     const [rep, rfis, del] = await Promise.all([
-      supabase.from('daily_reports').select('id, report_date, work_performed, issues, photos').eq('job_id', id).order('report_date', { ascending: false }).limit(60),
+      supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }).limit(60),
       supabase.from('rfis').select('*').eq('job_id', id).order('created_at', { ascending: false }),
       supabase.from('deliveries').select('id, material, vendor, status, expected_date, received_date').eq('job_id', id).order('expected_date', { ascending: true }),
     ])
     noteLoad('Field', rep.error || rfis.error || del.error)
-    setFieldData({ reports: rep.data || [], rfis: rfis.data || [], deliveries: del.data || [] })
+    setFieldData({ reports: visibleReports(rep.data || [], { role: userRole, userId: me }), rfis: rfis.data || [], deliveries: del.data || [] })
+    fieldReportsRoleRef.current = userRole
   }
 
   async function loadTeamMembers() {
@@ -3923,7 +3946,7 @@ function ResidentialJobDetailInner() {
             {!fieldData ? <div style={s.emptyMsg}>Loading field activity…</div> : (
               <>
                 <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-                  <div style={s.statCard}><div style={s.statLabel}>Daily reports</div><div style={s.statValue()}>{fieldData.reports.length}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Daily reports</div><div style={s.statValue()}>{publishedReports(fieldData.reports).length}</div>{fieldData.reports.some(isDraftReport) && <div style={{ fontSize: '11px', color: '#92400e' }}>+ {fieldData.reports.filter(isDraftReport).length} draft</div>}</div>
                   <div style={s.statCard}><div style={s.statLabel}>Open RFIs</div><div style={s.statValue(fieldData.rfis.some(r => r.status === 'open') ? '#e8590c' : undefined)}>{fieldData.rfis.filter(r => r.status === 'open').length}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Deliveries pending</div><div style={s.statValue()}>{fieldData.deliveries.filter(d => !d.received_date).length}</div></div>
                 </div>
@@ -3931,25 +3954,40 @@ function ResidentialJobDetailInner() {
                   <p style={s.cardTitle}>Daily Reports</p>
                   {isOffice && !showNewDailyReport && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                      <button type="button" style={{ ...s.btnGreen, opacity: inPreview ? 0.5 : 1 }} disabled={inPreview} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => { setDailyReportSaved(false); setShowNewDailyReport(true) }}>+ New daily report</button>
-                      {dailyReportSaved && <span style={{ fontSize: '13px', color: '#15803d', fontWeight: 600 }}>Daily report saved.</span>}
+                      <button type="button" style={{ ...s.btnGreen, opacity: inPreview ? 0.5 : 1 }} disabled={inPreview} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => { setDailyReportSaved(false); setEditingDailyReport(null); setShowNewDailyReport(true) }}>+ New daily report</button>
+                      {dailyReportSaved && <span style={{ fontSize: '13px', color: '#15803d', fontWeight: 600 }}>{dailyReportSaved === 'final' ? 'Daily report finalized.' : 'Draft saved.'}</span>}
                     </div>
                   )}
                   {isOffice && showNewDailyReport && (
                     <DailyReportForm
+                      key={editingDailyReport?.id || 'new'}
                       jobId={id}
                       styles={{ label: s.label, input: s.input, btn: s.btn, btnGray: s.btnGray, btnSmall: s.btnSmGray }}
                       supabase={supabase}
                       authFetch={authFetch}
                       disabled={inPreview}
-                      existingDates={fieldData.reports.map(r => r.report_date)}
-                      onCancel={() => setShowNewDailyReport(false)}
-                      onSuccess={() => { setShowNewDailyReport(false); setDailyReportSaved(true); setTimeout(() => setDailyReportSaved(false), 4000); loadFieldData() }}
+                      initialReport={editingDailyReport}
+                      existingDates={finalReportDates(fieldData.reports, { excludeId: editingDailyReport?.id })}
+                      onCancel={() => { setShowNewDailyReport(false); setEditingDailyReport(null) }}
+                      onSuccess={(_report, { finalized } = {}) => { setShowNewDailyReport(false); setEditingDailyReport(null); setDailyReportSaved(finalized ? 'final' : 'draft'); setTimeout(() => setDailyReportSaved(false), 4000); loadFieldData() }}
                     />
                   )}
                   {fieldData.reports.length === 0 ? <div style={s.emptyMsg}>No daily reports yet.</div> : fieldData.reports.map(r => (
                     <div key={r.id} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
-                      <div style={{ fontWeight: 600 }}>{fmtDate(r.report_date)}{Array.isArray(r.photos) && r.photos.length ? ` · ${r.photos.length} photo${r.photos.length !== 1 ? 's' : ''}` : ''}</div>
+                      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>{fmtDate(r.report_date)}{Array.isArray(r.photos) && r.photos.length ? ` · ${r.photos.length} photo${r.photos.length !== 1 ? 's' : ''}` : ''}</span>
+                        {isDraftReport(r) && <span style={DRAFT_BADGE} title="Draft — not final; hidden from the owner portal">Draft</span>}
+                        {isOffice && isDraftReport(r) && canEditDraft({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
+                          <button type="button" style={s.btnSmGray} onClick={() => { setDailyReportSaved(false); setEditingDailyReport(r); setShowNewDailyReport(true) }}>Edit draft</button>
+                        )}
+                        {!isDraftReport(r) && canReopenReport(userRole) && !inPreview && (
+                          <button type="button" style={s.btnSmGray} disabled={reopeningReport === r.id} onClick={async () => {
+                            if (!window.confirm(REOPEN_CONFIRM)) return
+                            setReopeningReport(r.id)
+                            try { await reopenDailyReport(authFetch, r.id); await loadFieldData() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
+                          }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
+                        )}
+                      </div>
                       {r.work_performed && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.work_performed}</div>}
                       {r.issues && <div style={{ color: '#b91c1c', whiteSpace: 'pre-wrap' }}>Issues: {r.issues}</div>}
                     </div>

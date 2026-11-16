@@ -3,6 +3,7 @@ import { requireAuth } from '../../../lib/server-auth'
 import { ownerJobDenied } from '../../../lib/owner-access'
 import { ownerPhotoList, signOwnerPhotos, thumbPath, PHOTO_BUCKET } from '../../../lib/owner-photos'
 import { parseOwnerPaging, pageOwnerPhotos } from '../../../lib/photo-visibility'
+import { publishedReports } from '../../../lib/daily-report-payload'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -27,11 +28,13 @@ export async function GET(request) {
     // latitude / longitude / 066) — a column that isn't there is simply absent.
     const [gal, rep] = await Promise.all([
       adminSupabase.from('job_photos').select('*').eq('job_id', jobId),
-      adminSupabase.from('daily_reports').select('id, report_date, photos').eq('job_id', jobId),
+      // '*' so status (migration 075) is read when present; drafts are dropped below
+      // (publishedReports) and again inside ownerPhotoList. Missing status = final.
+      adminSupabase.from('daily_reports').select('*').eq('job_id', jobId),
     ])
     if (gal.error) return Response.json({ error: gal.error.message }, { status: 500 })
     if (rep.error) return Response.json({ error: rep.error.message }, { status: 500 })
-    const page = pageOwnerPhotos(ownerPhotoList({ jobId, jobPhotos: gal.data || [], reports: rep.data || [] }), { limit, offset })
+    const page = pageOwnerPhotos(ownerPhotoList({ jobId, jobPhotos: gal.data || [], reports: publishedReports(rep.data || []) }), { limit, offset })
     const meta = { total: page.total, limit: page.limit, offset: page.offset, has_more: page.has_more }
     const noStore = { headers: { 'Cache-Control': 'no-store' } }
     if (!page.photos.length) return Response.json({ photos: [], ...meta }, noStore)

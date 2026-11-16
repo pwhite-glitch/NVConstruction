@@ -847,14 +847,14 @@ describe('4d) register-webhook route', () => {
     expect(global.fetch).not.toHaveBeenCalled()
   })
 
-  test('none registered → POST with our URL, token and photo.created; response has no token', async () => {
+  test('none registered → POST with our URL, token and photo.* (prompt 83); response has no token', async () => {
     as('principal')
     global.fetch = ccWorld({ webhooks: [{ id: 3, url: 'https://elsewhere.example/hook', scopes: ['photo.created'] }] })
     const r = await reg()
     expect(r.status).toBe(200)
     const post = global.fetch.mock.calls.find(c => c[1]?.method === 'POST')
-    expect(JSON.parse(post[1].body)).toEqual({ webhook: { url: URL_, scopes: ['photo.created'], token: HOOK_TOKEN } })
-    expect(r.body).toMatchObject({ ok: true, action: 'created', webhook_id: '501', url: URL_, scopes: ['photo.created'], enabled: true, deleted: [] })
+    expect(JSON.parse(post[1].body)).toEqual({ webhook: { url: URL_, scopes: ['photo.*'], token: HOOK_TOKEN } }) // prompt 83: photo.*
+    expect(r.body).toMatchObject({ ok: true, action: 'created', webhook_id: '501', url: URL_, scopes: ['photo.*'], enabled: true, deleted: [] })
     expect(global.fetch.mock.calls.some(c => c[1]?.method === 'DELETE' || c[1]?.method === 'PATCH')).toBe(false)
     expect(r.body).not.toHaveProperty('token')
     expect(JSON.stringify(r.body)).not.toContain(HOOK_TOKEN)
@@ -871,8 +871,8 @@ describe('4d) register-webhook route', () => {
     expect(methods()).toEqual(['GET /webhooks?limit=100', 'DELETE /webhooks/77', 'DELETE /webhooks/78', 'POST /webhooks'])
     expect(global.fetch.mock.calls.some(c => c[1]?.method === 'PATCH')).toBe(false)
     const post = global.fetch.mock.calls.find(c => c[1]?.method === 'POST')
-    expect(JSON.parse(post[1].body)).toEqual({ webhook: { url: URL_, scopes: ['photo.created'], token: HOOK_TOKEN } })
-    expect(r.body).toMatchObject({ ok: true, action: 'recreated', webhook_id: '501', url: URL_, scopes: ['photo.created'], enabled: true, deleted: ['77', '78'] })
+    expect(JSON.parse(post[1].body)).toEqual({ webhook: { url: URL_, scopes: ['photo.*'], token: HOOK_TOKEN } }) // prompt 83: photo.*
+    expect(r.body).toMatchObject({ ok: true, action: 'recreated', webhook_id: '501', url: URL_, scopes: ['photo.*'], enabled: true, deleted: ['77', '78'] })
     expect(r.body).not.toHaveProperty('token')
     expect(JSON.stringify(r.body)).not.toContain(HOOK_TOKEN)
     expect(JSON.stringify(info.mock.calls)).not.toContain(HOOK_TOKEN)

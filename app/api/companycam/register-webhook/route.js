@@ -2,19 +2,32 @@ import { requireAuth } from '../../../../lib/server-auth'
 import { isPrincipal } from '../../../../lib/roles'
 import { ccFetch, companycamWebhookUrl, stripSecrets } from '../../../../lib/companycam'
 
-// Owner-only: (re)create the one CompanyCam photo.created webhook pointing at this portal,
+// Owner-only: (re)create the one CompanyCam photo webhook (photo.*) pointing at this portal,
 // with the signing token from COMPANYCAM_WEBHOOK_TOKEN (Vercel env only). CompanyCam's
 // connector create_webhook cannot set a token, so registration happens here. Existing
 // webhooks for our URL are deleted and re-POSTed (PATCH can't set a token).
-// → { ok, action: 'created'|'recreated', webhook_id, url, scopes, enabled, deleted: [ids] }.
+// → { ok, action: 'created'|'recreated', webhook_id, url, scopes, requested_scopes, scopes_fallback, enabled, deleted: [ids] }.
 // The token is never returned, logged, or stored in the database.
 export const dynamic = 'force-dynamic'
 
-const SCOPES = ['photo.created']
+// Prompt 83: photo.* also delivers tag changes (photo.tag_added, …) so tags edited after import
+// keep syncing. If CompanyCam refuses the wildcard (400/422) the route retries once with the
+// explicit list. `scopes` in the response is what CompanyCam reports it registered;
+// `requested_scopes` is the list we sent.
+const SCOPES = ['photo.*']
+const FALLBACK_SCOPES = ['photo.created', 'photo.tag_added', 'photo.updated']
 
-const webhookOut = w => {
+// scopes = what CompanyCam says it registered (its POST response), falling back to the list we
+// sent only when the response has no scopes array. requested_scopes = the list we sent.
+const webhookOut = (w, scopes) => {
   const s = stripSecrets(w || {})
-  return { webhook_id: s.id != null ? String(s.id) : null, url: s.url || null, scopes: Array.isArray(s.scopes) ? s.scopes : SCOPES, enabled: s.enabled !== false }
+  return {
+    webhook_id: s.id != null ? String(s.id) : null,
+    url: s.url || null,
+    scopes: Array.isArray(s.scopes) ? s.scopes : scopes,
+    requested_scopes: scopes,
+    enabled: s.enabled !== false,
+  }
 }
 
 export async function POST(request) {
@@ -50,13 +63,21 @@ export async function POST(request) {
   }
   const action = matches.length ? 'recreated' : 'created'
 
-  const res = await ccFetch('/webhooks', { method: 'POST', body: { webhook: { url, scopes: SCOPES, token: hookToken.trim() } } })
+  const create = scopes => ccFetch('/webhooks', { method: 'POST', body: { webhook: { url, scopes, token: hookToken.trim() } } })
+  let scopes = SCOPES
+  let res = await create(scopes)
+  const scopesFallback = !res.ok && (res.status === 422 || res.status === 400)
+  if (scopesFallback) {
+    console.info(`[companycam] webhook scopes ${SCOPES.join(',')} refused (${res.status}); retrying with ${FALLBACK_SCOPES.join(',')}`)
+    scopes = FALLBACK_SCOPES
+    res = await create(scopes)
+  }
   if (!res.ok) {
     const lost = deleted.length ? ` The old webhook(s) ${deleted.join(', ')} were already deleted — run Register again.` : ''
     return Response.json({ error: `CompanyCam refused the webhook create: ${res.error}.${lost}`, deleted }, { status: 502 })
   }
 
-  const out = webhookOut(res.data)
-  console.info(`[companycam] webhook ${action} id=${out.webhook_id} deleted=${deleted.length}`)
-  return Response.json({ ok: true, action, ...out, url: out.url || url, deleted })
+  const out = webhookOut(res.data, scopes)
+  console.info(`[companycam] webhook ${action} id=${out.webhook_id} scopes=${out.scopes.join(',')} requested=${scopes.join(',')} deleted=${deleted.length}`)
+  return Response.json({ ok: true, action, ...out, url: out.url || url, scopes_fallback: scopesFallback, deleted })
 }

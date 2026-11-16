@@ -100,7 +100,15 @@ export default function CompanyCamInbox() {
     setHookBusy(false)
     if (!r.ok) { setHookMsg({ ok: false, text: r.data.error || `Error ${r.status}` }); return }
     const d = r.data
-    setHookMsg({ ok: true, text: `Webhook ${d.action} (id ${d.webhook_id}) → ${d.url} · ${(d.scopes || []).join(', ')} · ${d.enabled ? 'enabled' : 'disabled'}${d.deleted?.length ? ` · replaced old webhook(s): ${d.deleted.join(', ')}` : ''}` })
+    const registered = Array.isArray(d.scopes) ? d.scopes.map(String) : []
+    const requested = Array.isArray(d.requested_scopes) ? d.requested_scopes.map(String) : []
+    const sameAsRequested = requested.length === registered.length && requested.every(x => registered.includes(x))
+    const importsCovered = registered.includes('photo.*') || registered.includes('photo.created')
+    setHookMsg({
+      ok: true,
+      text: `Webhook ${d.action} (id ${d.webhook_id}) → ${d.url} · registered scopes: ${registered.join(', ') || 'none reported'}${requested.length && !sameAsRequested ? ` (requested: ${requested.join(', ')})` : ''}${d.scopes_fallback ? ' (CompanyCam refused photo.*, so the explicit list photo.created, photo.tag_added, photo.updated was used — tag removals may not sync)' : ''} · ${d.enabled ? 'enabled' : 'disabled'}${d.deleted?.length ? ` · replaced old webhook(s): ${d.deleted.join(', ')}` : ''}`,
+      warn: importsCovered ? null : `Warning: CompanyCam did not register photo.* or photo.created, so new photos will NOT be imported. Registered scopes: ${registered.join(', ') || 'none'}. Try Register again, or check the webhook in CompanyCam.`,
+    })
   }
 
   if (!ready) return <div style={s.page}><div style={s.wrap}><p style={s.sub}>Loading…</p></div></div>
@@ -120,7 +128,9 @@ export default function CompanyCamInbox() {
           <p style={s.sub}>Receiver URL: <span style={s.code}>{siteUrl('/api/companycam/webhook')}</span></p>
           <p style={{ ...s.sub, marginTop: '6px' }}>Needs COMPANYCAM_API_TOKEN and COMPANYCAM_WEBHOOK_TOKEN set in Vercel. Registering creates the photo.created webhook, or updates the existing one with the current token.</p>
           <div style={{ marginTop: '10px' }}><button type="button" style={s.btn} disabled={hookBusy} onClick={registerHook}>{hookBusy ? 'Working…' : 'Register / update webhook'}</button></div>
+          <p style={{ ...s.sub, marginTop: '6px' }}>Tags sync from CompanyCam automatically. If a tag is added or removed while a photo is still being imported, that change may not show here until the photo or its tags change again in CompanyCam.</p>
           {hookMsg && <div style={hookMsg.ok ? s.ok : s.err}>{hookMsg.text}</div>}
+          {hookMsg?.warn && <div style={s.err}>{hookMsg.warn}</div>}
         </div>
 
         {needs074 && <div style={s.err}>Needs database migration 074 before CompanyCam photos can be stored.</div>}

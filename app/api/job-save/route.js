@@ -33,6 +33,9 @@ export async function POST(request) {
   let updateFields = { ...fields }
   // Archive / Unarchive is Owner-only and goes through /api/jobs/archive.
   delete updateFields.archived
+  // CompanyCam link is set only by /api/companycam/link (checks the project + Change History).
+  delete updateFields.companycam_project_id
+  delete updateFields.companycam_import_state
   let { error } = await adminSupabase.from('jobs').update(updateFields).eq('id', id)
 
   if (error && error.message && error.message.includes('schema cache')) {

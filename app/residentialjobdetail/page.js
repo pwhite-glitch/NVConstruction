@@ -12,6 +12,7 @@ import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, dcAmountInputState,
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
 import { isPreviewActive } from '../../lib/prime-co-review'
 import RfiCommentThread from '../components/RfiCommentThread'
+import CompanyCamLinkBar from '../components/CompanyCamLinkBar'
 import { amountsDiffer, packagedDrawTotal, drawAwaitingBillings, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, budgetContractCheck, signedDcAmount, approvedDcTotal, contractCommittedForItem, committedTotalForLines, unlinkedContracts, contractRevisedValue } from '../../lib/residential-money'
 import { ownerDrawFunding, pctFunded, priorDrawnByLine, buildDrawSchedule, drawFundedAmount, isDrawEditable, round2, canUseOwnerDraws } from '../../lib/owner-draws'
 import ExpectedPayDateEditor from '../components/ExpectedPayDateEditor'
@@ -667,7 +668,7 @@ function ResidentialJobDetailInner() {
     ])
     noteLoad('Photos', e1 || e2)
     const all = [
-      ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: photoDateCentral(p.taken_at || p.created_at), name: p.file_name, internal_only: p.internal_only === true })),
+      ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: photoDateCentral(p.taken_at || p.created_at), name: p.file_name, internal_only: p.internal_only === true, companycam: !!p.companycam_photo_id, by: p.companycam_creator_name || null, ccTags: p.companycam_tags || [] })),
       ...(reports || []).flatMap(r => (Array.isArray(r.photos) ? r.photos : []).filter(p => p?.path).map((p, i) => ({ key: `r${r.id}-${i}`, path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: p.internal_only === true }))),
     ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
     setPhotos(all)
@@ -3330,6 +3331,7 @@ function ResidentialJobDetailInner() {
         {/* ── PHOTOS ── shared job_photos + daily report photos (private bucket, signed links) */}
         {visibleTab === 'photos' && (
           <div style={s.card}>
+            <CompanyCamLinkBar jobId={id} job={job} userRole={userRole} onImported={loadPhotos} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '8px', flexWrap: 'wrap' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Photos ({photos.length})</p>
               <div>
@@ -3351,7 +3353,7 @@ function ResidentialJobDetailInner() {
                   return (
                     <button key={p.key} onClick={() => setLightbox(i)} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid #e5e7eb', padding: 0, background: '#f9fafb', cursor: 'pointer', textAlign: 'left' }}>
                       {thumb ? <img src={thumb} alt={p.caption || p.name || 'Photo'} loading="lazy" style={{ width: '100%', height: '130px', objectFit: 'cover', display: 'block' }} /> : <div style={{ height: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: '#9ca3af' }}>Unavailable</div>}
-                      <div style={{ padding: '6px 8px', fontSize: '11px', color: '#6b7280' }}>{p.internal_only && <span title="Hidden from the owner portal" style={{ background: '#111827', color: '#fde68a', fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', padding: '1px 5px', borderRadius: '3px', marginRight: '4px' }}>Internal</span>}{p.date ? fmtDate(p.date) : ''}{p.fromReport ? ' · Daily report' : ''}{p.caption ? ' · ' + p.caption : ''}</div>
+                      <div style={{ padding: '6px 8px', fontSize: '11px', color: '#6b7280' }}>{p.internal_only && <span title="Hidden from the owner portal" style={{ background: '#111827', color: '#fde68a', fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', padding: '1px 5px', borderRadius: '3px', marginRight: '4px' }}>Internal</span>}{p.date ? fmtDate(p.date) : ''}{p.fromReport ? ' · Daily report' : ''}{p.caption ? ' · ' + p.caption : ''}{p.companycam && <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>CompanyCam{p.by ? ` · ${p.by}` : ''}{p.ccTags?.length ? ` · ${p.ccTags.join(', ')}` : ''}</div>}</div>
                     </button>
                   )
                 })}

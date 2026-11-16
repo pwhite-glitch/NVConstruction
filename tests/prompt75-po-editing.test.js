@@ -307,9 +307,10 @@ describe('source wiring', () => {
     expect(src('lib/change-log.js')).not.toMatch(/CLIENT_LOG_ENTITY_TYPES = new Set\([^)]*purchase_order/)
   })
 
-  test('no migration 067 edits and no 071+ migrations', () => {
+  test('no migration 067 edits; 071+ migrations are only 071 and 074', () => {
     const files = fs.readdirSync(path.join(__dirname, '../migrations'))
-    // Prompt 78 owns the only 071 (unapplied sales-docs bucket cap removal); nothing later.
-    expect(files.filter(f => /^07[1-9]/.test(f))).toEqual(['071_remove_sales_docs_file_cap.sql'])
+    // Prompt 78 owns 071 (unapplied sales-docs bucket cap removal); prompt 82 owns 074
+    // (unapplied CompanyCam). 072 / 073 are reserved by other branches.
+    expect(files.filter(f => /^07[1-9]/.test(f))).toEqual(['071_remove_sales_docs_file_cap.sql', '074_companycam.sql'])
   })
 })

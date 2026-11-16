@@ -11,6 +11,7 @@ import { committedForBudgetLine, laborCostForLine, jobEacSummary, eacBlurAction 
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { safeFileName } from '../../lib/storage-path'
 import { photoDateCentral } from '../../lib/photo-taken-at'
+import CompanyCamLinkBar from '../components/CompanyCamLinkBar'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
 import { canRecordAiaPayment, parseAiaPaymentAmount, aiaPaymentDiffers, aiaPaymentMismatchMessage } from '../../lib/aia-payments'
 import { isPreviewActive, PRIME_CO_APPLIED_NO_DELETE } from '../../lib/prime-co-review'
@@ -3427,7 +3428,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
     ])
     const all = [
-      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at), name: p.file_name, internal_only: p.internal_only === true })),
+      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at), name: p.file_name, internal_only: p.internal_only === true, companycam: !!p.companycam_photo_id, by: p.companycam_creator_name || null, ccTags: p.companycam_tags || [] })),
       ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, tag: p.tag || null, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: p.internal_only === true })))),
     ].sort((a, b) => new Date(b.date) - new Date(a.date))
     setFieldPhotos(all)
@@ -14439,6 +14440,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           const dates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a))
           return (
             <>
+              <CompanyCamLinkBar jobId={id} job={job} userRole={userRole} onImported={loadFieldPhotos} />
               {fieldPhotos.length === 0 ? (
                 <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
                   No field photos yet. Photos taken by the superintendent will appear here once uploaded.
@@ -14461,6 +14463,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             }
                             {p.tag && <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.tag}</div>}
                             {p.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 4px 4px', fontSize: '9px', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
+                            {p.companycam && <div title={p.ccTags?.length ? p.ccTags.join(', ') : undefined} style={{ position: 'absolute', bottom: p.caption ? '18px' : '4px', left: '4px', right: '4px', color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.9)', fontSize: '9px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>CompanyCam{p.by ? ` · ${p.by}` : ''}{p.ccTags?.length ? ` · ${p.ccTags.join(', ')}` : ''}</div>}
                             {p.internal_only && <div title="Hidden from the owner portal" style={{ position: 'absolute', top: p.tag ? '22px' : '4px', left: '4px', background: 'rgba(17,24,39,0.85)', color: '#fde68a', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3' }}>Internal</div>}
                             {canToggleFieldPhoto && (
                               <button

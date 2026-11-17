@@ -3679,7 +3679,7 @@ ${planLinks.map(p => p.url
         /* Sidebar orange accent line */
         .nv-sidebar-shimmer { height: 2px; background: rgba(232,89,12,0.5); margin: 0.5rem 0 0.25rem; border-radius: 2px; }
         /* Mobile more drawer */
-        @media (max-width: 768px) { .rx-more-drawer { display: block !important; } }
+        @media (max-width: 640px) { .rx-more-drawer { display: block !important; } }
 
         /* Costs to Approve: table on wide screens, stacked cards on narrow ones */
         .dcq-row { display: grid; grid-template-columns: 28px minmax(130px,1.3fr) minmax(90px,1fr) minmax(130px,1.6fr) minmax(160px,1.4fr) 100px 86px minmax(90px,1fr) 64px 230px; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #374151; }
@@ -3916,6 +3916,15 @@ ${planLinks.map(p => p.url
                 {badge ? <span style={{ position: 'absolute', top: '10px', right: '16px', background: '#e8590c', color: '#fff', fontSize: '9px', fontWeight: '700', borderRadius: '99px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{badge}</span> : null}
               </button>
             ))}
+            {/* Divisions — same links as the desktop sidebar */}
+            <a href="/sales?division=metal_buildings" onClick={() => setMobileMoreOpen(false)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '14px 8px', minHeight: '44px', boxSizing: 'border-box', color: '#374151', fontSize: '11px', textDecoration: 'none', textAlign: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+              Metal Buildings
+            </a>
+            <a href="/sales?division=commercial_roofing" onClick={() => setMobileMoreOpen(false)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '14px 8px', minHeight: '44px', boxSizing: 'border-box', color: '#374151', fontSize: '11px', textDecoration: 'none', textAlign: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              Commercial Roofing
+            </a>
             <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '14px 8px', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '11px' }}>
               <IconLogout />
               Sign out
@@ -5642,8 +5651,8 @@ ${planLinks.map(p => p.url
             {/* ── JOBS ── */}
             {activeTab === 'jobs' && (
               <>
-                <div style={s.filterRow}>
-                  <input style={{ ...s.filterInput, flex: 1 }} value={jobSearch} onChange={e => setJobSearch(e.target.value)} placeholder="Search by name, number, or location…" />
+                <div style={s.filterRow} className="rx-actions">
+                  <input className="rx-full-sm" style={{ ...s.filterInput, flex: 1 }} value={jobSearch} onChange={e => setJobSearch(e.target.value)} placeholder="Search by name, number, or location…" />
                   <select style={{ ...s.filterSelect, flexShrink: 0 }} value={jobSort} onChange={e => setJobSort(e.target.value)}>
                     <option value="name">Sort: Name</option>
                     <option value="contract">Sort: Contract ↓</option>
@@ -5655,8 +5664,8 @@ ${planLinks.map(p => p.url
                     ))}
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedJobs && !showStarredJobs ? '#fff7ed' : '#ffffff', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && !isResidentialJob(j))).length})</button>
                     <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => !isResidentialJob(j) && inCompletedJobList(j)).length})</button>
@@ -5911,8 +5920,8 @@ ${planLinks.map(p => p.url
             {/* ── RESIDENTIAL JOBS ── */}
             {activeTab === 'residential' && (
               <>
-                <div style={s.filterRow}>
-                  <input style={{ ...s.filterInput, flex: 1 }} value={resJobSearch} onChange={e => setResJobSearch(e.target.value)} placeholder="Search by name, number, owner, or address…" />
+                <div style={s.filterRow} className="rx-actions">
+                  <input className="rx-full-sm" style={{ ...s.filterInput, flex: 1 }} value={resJobSearch} onChange={e => setResJobSearch(e.target.value)} placeholder="Search by name, number, owner, or address…" />
                   <select style={{ ...s.filterSelect, flexShrink: 0 }} value={resJobSort} onChange={e => setResJobSort(e.target.value)}>
                     <option value="name">Sort: Name</option>
                     <option value="contract">Sort: Contract ↓</option>
@@ -5924,8 +5933,8 @@ ${planLinks.map(p => p.url
                     ))}
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#fff7ed' : '#ffffff', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active ({jobs.filter(j => isResidentialJob(j) && inActiveJobList(j)).length})</button>
                     <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#d97706' : '#d1d5db'}`, background: showStarredResJobs ? '#fefce8' : '#ffffff', color: showStarredResJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && isResidentialJob(j))).length})</button>
                     <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedResJobs ? '#dcfce7' : '#ffffff', color: showCompletedResJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => isResidentialJob(j) && inCompletedJobList(j)).length})</button>

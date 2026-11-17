@@ -154,7 +154,8 @@ describe('DEV badge vs Ask AI (item 7)', () => {
     expect(src('app/globals.css')).toMatch(/\.nv-dev-badge \{ bottom: calc\(72px/)
     for (const f of ['app/residentialjobdetail/page.js', 'app/jobdetail/page.js']) {
       const p = src(f)
-      expect(p).toMatch(/position: 'fixed', bottom: '24px', right: '24px', zIndex: 1100/)
+      // prompt87 B4: FAB lifted by the home-indicator inset
+      expect(p).toMatch(/position: 'fixed', bottom: 'calc\(24px \+ env\(safe-area-inset-bottom\)\)', right: '24px', zIndex: 1100/)
       expect(p).toContain("'/api/ask-ai'")
     }
   })

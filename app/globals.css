@@ -151,6 +151,9 @@ textarea:focus {
   -webkit-overflow-scrolling: touch;
 }
 .rx-mobile-nav-select { display: none !important; }
+/* Mobile top bar + drawer backdrop: never shown above 640px */
+.rx-mobile-topbar,
+.rx-drawer-backdrop { display: none; }
 
 @media (max-width: 640px) {
   /* Sidebar: hide on mobile */
@@ -168,10 +171,126 @@ textarea:focus {
     padding-right: env(safe-area-inset-right);
   }
 
-  /* Content: no left margin, pad bottom for nav */
+  /* Content: no left margin, clear the notch, pad bottom for nav */
   .rx-content {
-    padding: 1rem 0.75rem calc(80px + env(safe-area-inset-bottom)) !important;
+    padding: calc(1rem + env(safe-area-inset-top)) 0.75rem calc(80px + env(safe-area-inset-bottom)) !important;
     max-width: 100% !important;
+  }
+
+  /* Page padding for shells WITHOUT a bottom nav (sales / submit / owner / admin) */
+  .rx-page-pad {
+    padding: calc(1rem + env(safe-area-inset-top))
+             calc(0.75rem + env(safe-area-inset-right))
+             calc(1.5rem + env(safe-area-inset-bottom))
+             calc(0.75rem + env(safe-area-inset-left)) !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* The mobile top bar already clears the notch */
+  .rx-mobile-topbar ~ .rx-page-pad { padding-top: 1rem !important; }
+
+  /* App shell with an off-canvas sidebar: top bar above the main column */
+  .rx-app-shell { flex-direction: column !important; }
+
+  /* Mobile top bar (hamburger + title) */
+  .rx-mobile-topbar {
+    display: flex !important;
+    position: sticky;
+    top: 0;
+    z-index: 99; /* below page modals (z 100+), above content */
+    align-items: center;
+    gap: 6px;
+    min-height: calc(44px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) calc(12px + env(safe-area-inset-right)) 0 calc(4px + env(safe-area-inset-left));
+    background: #1a2332;
+    color: #fff;
+    box-sizing: border-box;
+  }
+
+  /* Off-canvas app sidebar (drawer) */
+  .rx-app-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    height: auto !important;
+    width: min(280px, 86vw) !important;
+    max-width: none !important;
+    z-index: 210 !important;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+    padding-top: env(safe-area-inset-top) !important;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)) !important;
+    padding-left: env(safe-area-inset-left) !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+  }
+  .rx-app-sidebar.rx-open {
+    /* none (not translateX(0)) so the open drawer is not the containing
+       block for position:fixed children (the notification panel below) */
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease, visibility 0s;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  .rx-drawer-backdrop.rx-open {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0, 0, 0, 0.45);
+    touch-action: none; /* a drag on the backdrop must not scroll the page (iOS) */
+  }
+  /* Lock page scroll while a drawer is open */
+  body:has(.rx-drawer-backdrop.rx-open) { overflow: hidden; }
+
+  /* Notification dropdown inside an off-canvas drawer (/sales): the drawer is
+     280px wide and scrolls, so pin the panel to the viewport instead of
+     letting it overflow the drawer. Desktop (above 640px) is unaffected. */
+  .rx-app-sidebar .rx-notif-panel {
+    position: fixed !important;
+    top: calc(16px + env(safe-area-inset-top)) !important;
+    bottom: auto !important;
+    left: calc(16px + env(safe-area-inset-left)) !important;
+    right: calc(16px + env(safe-area-inset-right)) !important;
+    width: auto !important;
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  }
+
+  /* Wide tables scroll inside their wrapper instead of widening the page.
+     Opt-in (not a global div:has(> table)) so popovers / sticky headers in
+     other table wrappers are never clipped by a forced overflow. */
+  .rx-table-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  /* Modals / overlays fit the phone and scroll internally */
+  .rx-modal {
+    width: 100% !important;
+    max-width: min(520px, calc(100vw - 24px)) !important;
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px) !important;
+    overflow-y: auto !important;
+    box-sizing: border-box;
+  }
+
+  /* Title + button rows that wrap on phones */
+  .rx-actions {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* Full-width control on phones (e.g. search input) */
+  .rx-full-sm {
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+    box-sizing: border-box;
   }
 
   /* Grid collapse */
@@ -193,7 +312,15 @@ textarea:focus {
   .rx-grid-photos { grid-template-columns: repeat(3, 1fr) !important; }
 
   /* Multi-column form rows */
-  .rx-form-row  { grid-template-columns: 1fr 1fr !important; }
+  .rx-form-row  { grid-template-columns: 1fr !important; }
+  /* Row delete (×) buttons in /field wizard rows: 44x44 on phones only
+     (desktop keeps the 28px grid column) */
+  .rx-row-del {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    font-size: 20px !important;
+    justify-self: end;
+  }
 
   /* Tap targets — 44px minimum height for anything tappable */
   button,

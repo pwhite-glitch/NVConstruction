@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { MbCommissionReport, MbPaymentSettings } from './MbCommissionTabs'
 import { isBeforeTodayCentral } from '../../lib/central-date'
 import NotificationBell from '../components/NotificationBell'
+import MobileTopBar from '../components/MobileTopBar'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ function SalesPageInner() {
 
   // New order modal
   const [showNew,   setShowNew]   = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false) // phone drawer (layout only)
   const [newForm,   setNewForm]   = useState({ division: divisionParam || 'metal_buildings', customer_name: '', customer_company: '', customer_email: '', customer_phone: '', site_address: '', scope_description: '', quoted_amount: '', salesperson_id: '', salesperson_name: '' })
   const [saving,    setSaving]    = useState(false)
   const [saveErr,   setSaveErr]   = useState('')
@@ -277,10 +279,13 @@ function SalesPageInner() {
   })
 
   return (
-    <div style={s.page}>
+    <div style={s.page} className="rx-app-shell">
 
-      {/* ── Sidebar ── */}
-      <aside style={s.sidebar}>
+      <MobileTopBar title="Sales & Orders" open={mobileNavOpen} onToggle={() => setMobileNavOpen(o => !o)} onClose={() => setMobileNavOpen(false)} />
+
+      {/* ── Sidebar ── (off-canvas drawer under 640px; closes when a nav button is tapped) */}
+      <aside style={s.sidebar} className={'rx-app-sidebar' + (mobileNavOpen ? ' rx-open' : '')}
+        onClick={e => { if (e.target.closest('button') && !e.target.closest('[data-drawer-keep]')) setMobileNavOpen(false) }}>
         <div style={s.sidebarTop}>
           <p style={s.brand}>NV Construction</p>
           <p style={s.divLabel}>
@@ -305,22 +310,22 @@ function SalesPageInner() {
           <button style={s.navItem(divisionParam === 'commercial_roofing')} onClick={() => router.push('/sales?division=commercial_roofing')}>Commercial Roofing</button>
         </nav>
         <div style={s.sidebarBot}>
-          <div style={{ marginBottom: '10px' }}>
-            <NotificationBell dark dropUp onOpen={n => { if (n?.link?.startsWith('/')) router.push(n.link) }} />
+          <div style={{ marginBottom: '10px' }} data-drawer-keep>
+            <NotificationBell dark dropUp onOpen={n => { setMobileNavOpen(false); if (n?.link?.startsWith('/')) router.push(n.link) }} />
           </div>
           <button style={s.signOutBtn} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
         </div>
       </aside>
 
       {/* ── Main ── */}
-      <main style={s.main}>
+      <main style={s.main} className="rx-page-pad">
 
         {/* ── Orders tab ── */}
         {tab === 'orders' && (
           <>
             <div style={s.topBar}>
               <h1 style={s.pageTitle}>Sales & Orders</h1>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div className="rx-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <button style={s.viewBtn(view === 'list')}     onClick={() => setView('list')}>List</button>
                 <button style={s.viewBtn(view === 'pipeline')} onClick={() => setView('pipeline')}>Pipeline</button>
                 {canEdit && <button style={s.btn} onClick={() => setShowNew(true)}>+ New Order</button>}
@@ -350,6 +355,7 @@ function SalesPageInner() {
             {/* Filters */}
             <div style={s.filters}>
               <input
+                className="rx-full-sm"
                 style={s.filterInput}
                 placeholder="Search customer, order#, address…"
                 value={search}
@@ -370,7 +376,7 @@ function SalesPageInner() {
             {view === 'list' && (
               loading ? <p style={s.empty}>Loading orders…</p> :
               filteredOrders.length === 0 ? <p style={s.empty}>No orders found.</p> : (
-                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
+                <div className="rx-table-scroll" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
                   <table style={s.table}>
                     <thead>
                       <tr>
@@ -529,7 +535,7 @@ function SalesPageInner() {
 
             {lbLoading ? <p style={s.empty}>Loading…</p> :
              lbData.length === 0 ? <p style={s.empty}>No qualifying sales in the selected period.</p> : (
-              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
+              <div className="rx-table-scroll" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
                 <table style={s.table}>
                   <thead>
                     <tr>
@@ -575,7 +581,7 @@ function SalesPageInner() {
       {/* ── New Order Modal ── */}
       {showNew && (
         <div style={s.overlay} onClick={e => e.target === e.currentTarget && setShowNew(false)}>
-          <div style={s.modal}>
+          <div style={s.modal} className="rx-modal">
             <h2 style={s.modalTitle}>New Sales Order</h2>
 
             <div style={s.fRow}>

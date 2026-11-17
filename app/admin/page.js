@@ -9,6 +9,7 @@ import { openFile, openStorageFile } from '../../lib/open-file'
 import { isPartner } from '../../lib/partners'
 import { jobHrefById } from '../../lib/job-links'
 import BotAccessPanel from './BotAccessPanel'
+import MobileTopBar from '../components/MobileTopBar'
 import { isBotAccount } from '../../lib/bot-rules'
 import { prepareDirectorySave } from '../../lib/company-identity'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
@@ -169,6 +170,7 @@ export default function AdminPortal() {
   const router = useRouter()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false) // phone drawer (layout only)
   const [activeTab, setActiveTab] = useState('calendar')
   const [rolePerms, setRolePerms] = useState(null)
   const [permsLoading, setPermsLoading] = useState(false)
@@ -856,9 +858,11 @@ export default function AdminPortal() {
   ]
 
   return (
-    <div style={s.page}>
-      {/* ── Sidebar ── */}
-      <nav style={s.sidebar}>
+    <div style={s.page} className="rx-app-shell">
+      <MobileTopBar title="Office Admin" open={mobileNavOpen} onToggle={() => setMobileNavOpen(o => !o)} onClose={() => setMobileNavOpen(false)} />
+      {/* ── Sidebar ── (off-canvas drawer under 640px; closes when a nav button is tapped) */}
+      <nav style={s.sidebar} className={'rx-app-sidebar' + (mobileNavOpen ? ' rx-open' : '')}
+        onClick={e => { if (e.target.closest('button')) setMobileNavOpen(false) }}>
         <div style={s.sidebarTop}>
           <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
           <p style={s.sidebarBrand}>NV Construction</p>
@@ -880,7 +884,7 @@ export default function AdminPortal() {
       </nav>
 
       {/* ── Content ── */}
-      <div style={s.content}>
+      <div style={s.content} className="rx-page-pad">
 
         {/* ── CALENDAR ── */}
         {activeTab === 'calendar' && (() => {
@@ -1115,7 +1119,7 @@ export default function AdminPortal() {
                 )}
 
                 {filteredCosts.length === 0 ? <div style={s.emptyMsg}>No direct costs found.</div> : (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
@@ -1331,7 +1335,7 @@ export default function AdminPortal() {
                   </div>
 
                   {paidList.length === 0 ? <div style={s.emptyMsg}>{partialList.length ? 'No billings paid in full yet.' : 'No payments recorded yet.'}</div> : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
@@ -1399,7 +1403,7 @@ export default function AdminPortal() {
                   {partialList.length > 0 && (
                     <div style={{ marginTop: '1.5rem' }}>
                       <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: '800', color: '#b45309', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Partial payments — billing still unpaid ({partialList.length})</p>
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <thead>
                             <tr>
@@ -1477,7 +1481,7 @@ export default function AdminPortal() {
                   {poError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{poError}</div>}
 
                   {poLoading && purchaseOrders.length === 0 ? <div style={s.emptyMsg}>Loading...</div> : poList.length === 0 ? <div style={s.emptyMsg}>No purchase orders found.</div> : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
@@ -1834,7 +1838,7 @@ export default function AdminPortal() {
                 </div>
 
                 {lienList.length === 0 ? <div style={s.emptyMsg}>No approved billing submissions found.</div> : (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
@@ -1899,7 +1903,7 @@ export default function AdminPortal() {
                 ) : !rolePerms ? (
                   <div style={{ color: '#6b7280', padding: '2rem', textAlign: 'center', fontSize: '14px' }}>Could not load permissions.</div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                  <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '820px' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid #e5e7eb' }}>

@@ -4086,7 +4086,7 @@ function ResidentialJobDetailInner() {
         onClick={() => setAiOpen(o => !o)}
         title="AI Job Assistant"
         style={{
-          position: 'fixed', bottom: '24px', right: '24px', zIndex: 1100,
+          position: 'fixed', bottom: 'calc(24px + env(safe-area-inset-bottom))', right: '24px', zIndex: 1100,
           width: '52px', height: '52px', borderRadius: '50%',
           background: aiOpen ? '#1a1a2e' : '#e8590c', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -4099,7 +4099,7 @@ function ResidentialJobDetailInner() {
 
       {aiOpen && (
         <div style={{
-          position: 'fixed', bottom: '88px', right: '24px', zIndex: 1099,
+          position: 'fixed', bottom: 'calc(88px + env(safe-area-inset-bottom))', right: '24px', zIndex: 1099,
           width: 'min(360px, calc(100vw - 32px))', maxHeight: '520px',
           background: '#0f0f1a', border: '1px solid #2a2a3e', borderRadius: '16px',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',

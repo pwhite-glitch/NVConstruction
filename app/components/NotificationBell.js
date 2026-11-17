@@ -74,7 +74,7 @@ export default function NotificationBell({ onOpen, dark = false, dropUp = false 
         {unread > 0 && <span style={{ position: 'absolute', top: '-6px', right: '-6px', minWidth: '18px', height: '18px', padding: '0 4px', borderRadius: '99px', background: '#dc2626', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{unread > 99 ? '99+' : unread}</span>}
       </button>
       {open && (
-        <div style={{ position: 'absolute', ...(dropUp ? { left: 0, bottom: '42px' } : { right: 0, top: '42px' }), width: 'min(340px, calc(100vw - 32px))', maxHeight: '70vh', overflowY: 'auto', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.15)', zIndex: 1000, color: '#111827', textAlign: 'left' }}>
+        <div className="rx-notif-panel" style={{ position: 'absolute', ...(dropUp ? { left: 0, bottom: '42px' } : { right: 0, top: '42px' }), width: 'min(340px, calc(100vw - 32px))', maxHeight: '70vh', overflowY: 'auto', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.15)', zIndex: 1000, color: '#111827', textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #f3f4f6' }}>
             <strong style={{ fontSize: '13px' }}>Notifications</strong>
             {items.some(n => !n.read_at) && <button type="button" onClick={markAll} style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '12px', cursor: 'pointer' }}>Mark all read</button>}

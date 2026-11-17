@@ -120,7 +120,7 @@ const s = {
   updateCard: vis => ({ background: vis ? '#fff' : '#f9fafb', border: `1px solid ${vis ? '#e5e7eb' : '#f3f4f6'}`, borderRadius: '6px', padding: '10px 14px', marginBottom: '8px' }),
   histEntry:  { display: 'flex', gap: '10px', padding: '7px 0', borderBottom: '1px solid #f9fafb', fontSize: '12px', color: '#374151' },
 
-  nextAction: { background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px' },
+  nextAction: { background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '10px 14px', flexWrap: 'wrap' },
   warning:    { background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px 12px', marginBottom: '8px', fontSize: '12px', color: '#dc2626' },
 }
 
@@ -605,7 +605,7 @@ export default function SalesOrderDetailPage() {
             {nextAction && order.stage !== 'completed' && (
               <div style={s.nextAction}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                   <div style={{ fontWeight: '600', fontSize: '13px', color: '#92400e' }}>Next: {nextAction.action}</div>
                   {nextAction.person && <div style={{ fontSize: '12px', color: '#b45309', marginTop: '2px' }}>Responsible: {nextAction.person === 'salesperson' ? (order.salesperson_name || 'Salesperson') : (order.ops_owner_name || 'Ops Owner')}</div>}
                 </div>
@@ -840,7 +840,7 @@ export default function SalesOrderDetailPage() {
 
             {/* Products / line items */}
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+              <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '0.875rem' }}>
                 <p style={{ ...s.sec, margin: 0 }}>Products / Line Items</p>
                 {canEdit && <button style={s.btnSm('green')} onClick={addProduct}>+ Add</button>}
               </div>
@@ -939,7 +939,7 @@ export default function SalesOrderDetailPage() {
         {/* ══ DOCUMENTS ════════════════════════════════════════════════════ */}
         {tab === 'documents' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '1rem' }}>
               <div />
               {canEdit && <button style={s.btn} onClick={() => { setUploadFile(null); setUploadMeta({ category: 'general', visible_to_customer: false }); setModalErr(''); setShowUploadModal(true) }}>+ Upload Document</button>}
             </div>
@@ -1075,7 +1075,7 @@ export default function SalesOrderDetailPage() {
         {/* ══ TASKS ════════════════════════════════════════════════════════ */}
         {tab === 'tasks' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '1rem' }}>
               <div style={{ fontSize: '13px', color: '#6b7280' }}>{tasks.filter(t => t.status !== 'done').length} open task{tasks.filter(t => t.status !== 'done').length !== 1 ? 's' : ''}</div>
               {canEdit && <button style={s.btn} onClick={() => { setModalErr(''); setShowTaskModal(true) }}>+ Add Task</button>}
             </div>
@@ -1107,7 +1107,7 @@ export default function SalesOrderDetailPage() {
         {/* ══ PURCHASING ═══════════════════════════════════════════════════ */}
         {tab === 'purchasing' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '1rem' }}>
               <div>
                 <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Supplier purchase orders for this sales order. Separate from construction-job purchasing.</p>
               </div>

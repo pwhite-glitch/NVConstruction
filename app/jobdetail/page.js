@@ -6530,6 +6530,62 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
     </div>
   )
 
+  // Job-page tab list — shared by the desktop sidebar and the phone <select> (layout only;
+  // same role gates / hideBudget as before).
+  const jobNavGroups = [
+    {
+      group: 'Project',
+      items: [
+        { key: 'overview', label: 'Overview' },
+        { key: 'details', label: 'Details' },
+        { key: 'contacts', label: 'Contacts', badge: jobContacts.length || null },
+        { key: 'meetings', label: 'Meetings', badge: meetings.length || null },
+        { key: 'documents', label: 'Documents', badge: jobDocs.length || null },
+        { key: 'schedule', label: 'Schedule' },
+        { key: 'closeout', label: 'Closeout' },
+        { key: 'warranty', label: 'Warranty', badge: warrantyOrders.filter(o => o.status !== 'resolved').length || null },
+        ...(atLeastPM(userRole) ? [{ key: 'history', label: 'History' }] : []),
+      ],
+    },
+    {
+      group: 'Financials',
+      items: [
+        ...(!hideBudget ? [{ key: 'budget', label: 'Budget' }] : []),
+        { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : null, alert: pendingCOs > 0 },
+        { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : null, alert: pendingBillingCount > 0 },
+        { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
+        { key: 'po', label: 'Purchase Orders', badge: purchaseOrders.filter(p => p.status === 'issued').length > 0 ? purchaseOrders.filter(p => p.status === 'issued').length : null },
+        { key: 'gc', label: 'Gen. Conditions', badge: generalConditions.length > 0 ? generalConditions.length : null },
+        { key: 'prime', label: job?.nv_role === 'sub' ? 'GC Billing' : 'Prime Contract' },
+        { key: 'cashflow', label: 'Cash Flow' },
+        { key: 'retainage', label: 'Retainage' },
+        { key: 'prelim', label: 'Lien Log', badge: prelimNotices.filter(n => n.status === 'active').length > 0 ? prelimNotices.filter(n => n.status === 'active').length : null, alert: prelimNotices.filter(n => n.status === 'active').length > 0 },
+        { key: 'reimb', label: 'Reimbursements', badge: reimbInvoices.filter(i => i.isOverdue).length > 0 ? `${reimbInvoices.filter(i => i.isOverdue).length} overdue` : reimbInvoices.length > 0 ? reimbInvoices.length : null, alert: reimbInvoices.filter(i => i.isOverdue).length > 0 },
+      ],
+    },
+    {
+      group: 'Field',
+      items: [
+        { key: 'field', label: 'Field', badge: fieldRfis.filter(r => r.status === 'open').length > 0 ? `${fieldRfis.filter(r => r.status === 'open').length} RFI` : null, alert: fieldRfis.filter(r => r.status === 'open').length > 0 },
+        { key: 'drawings', label: 'Drawings', badge: drawings.length || null },
+        { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
+        { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
+        { key: 'inspections', label: 'Inspections', badge: jobInspections.filter(i => (i.result || 'pending') === 'pending').length || null },
+        { key: 'photos', label: 'Site Photos', badge: fieldPhotos.length || null },
+        { key: 'orders', label: 'Orders', badge: jobOrders.length || null },
+        { key: 'lookahead', label: 'Lookahead' },
+      ],
+    },
+    {
+      group: 'Team',
+      items: [
+        { key: 'subs', label: 'Companies', badge: subs.length || null },
+        { key: 'contracts', label: 'Contracts', badge: contracts.length || null },
+        ...(isPrincipal(userRole) ? [{ key: 'labor', label: 'Labor', badge: laborAllocations.length || null }] : []),
+      ],
+    },
+  ]
+
   return (
     <div style={s.page}>
       <header style={s.header} className="rx-safe-top">
@@ -6625,59 +6681,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
           {/* Left sidebar nav */}
           <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
-            {[
-              {
-                group: 'Project',
-                items: [
-                  { key: 'overview', label: 'Overview' },
-                  { key: 'details', label: 'Details' },
-                  { key: 'contacts', label: 'Contacts', badge: jobContacts.length || null },
-                  { key: 'meetings', label: 'Meetings', badge: meetings.length || null },
-                  { key: 'documents', label: 'Documents', badge: jobDocs.length || null },
-                  { key: 'schedule', label: 'Schedule' },
-                  { key: 'closeout', label: 'Closeout' },
-                  { key: 'warranty', label: 'Warranty', badge: warrantyOrders.filter(o => o.status !== 'resolved').length || null },
-                  ...(atLeastPM(userRole) ? [{ key: 'history', label: 'History' }] : []),
-                ],
-              },
-              {
-                group: 'Financials',
-                items: [
-                  ...(!hideBudget ? [{ key: 'budget', label: 'Budget' }] : []),
-                  { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : null, alert: pendingCOs > 0 },
-                  { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : null, alert: pendingBillingCount > 0 },
-                  { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
-                  { key: 'po', label: 'Purchase Orders', badge: purchaseOrders.filter(p => p.status === 'issued').length > 0 ? purchaseOrders.filter(p => p.status === 'issued').length : null },
-                  { key: 'gc', label: 'Gen. Conditions', badge: generalConditions.length > 0 ? generalConditions.length : null },
-                  { key: 'prime', label: job?.nv_role === 'sub' ? 'GC Billing' : 'Prime Contract' },
-                  { key: 'cashflow', label: 'Cash Flow' },
-                  { key: 'retainage', label: 'Retainage' },
-                  { key: 'prelim', label: 'Lien Log', badge: prelimNotices.filter(n => n.status === 'active').length > 0 ? prelimNotices.filter(n => n.status === 'active').length : null, alert: prelimNotices.filter(n => n.status === 'active').length > 0 },
-                  { key: 'reimb', label: 'Reimbursements', badge: reimbInvoices.filter(i => i.isOverdue).length > 0 ? `${reimbInvoices.filter(i => i.isOverdue).length} overdue` : reimbInvoices.length > 0 ? reimbInvoices.length : null, alert: reimbInvoices.filter(i => i.isOverdue).length > 0 },
-                ],
-              },
-              {
-                group: 'Field',
-                items: [
-                  { key: 'field', label: 'Field', badge: fieldRfis.filter(r => r.status === 'open').length > 0 ? `${fieldRfis.filter(r => r.status === 'open').length} RFI` : null, alert: fieldRfis.filter(r => r.status === 'open').length > 0 },
-                  { key: 'drawings', label: 'Drawings', badge: drawings.length || null },
-                  { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
-                  { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
-                  { key: 'inspections', label: 'Inspections', badge: jobInspections.filter(i => (i.result || 'pending') === 'pending').length || null },
-                  { key: 'photos', label: 'Site Photos', badge: fieldPhotos.length || null },
-                  { key: 'orders', label: 'Orders', badge: jobOrders.length || null },
-                  { key: 'lookahead', label: 'Lookahead' },
-                ],
-              },
-              {
-                group: 'Team',
-                items: [
-                  { key: 'subs', label: 'Companies', badge: subs.length || null },
-                  { key: 'contracts', label: 'Contracts', badge: contracts.length || null },
-                  ...(isPrincipal(userRole) ? [{ key: 'labor', label: 'Labor', badge: laborAllocations.length || null }] : []),
-                ],
-              },
-            ].map(({ group, items }) => (
+            {jobNavGroups.map(({ group, items }) => (
               <div key={group} style={{ marginBottom: '20px' }}>
                 <div className="rx-sidebar-group">{group}</div>
                 {items.map(({ key, label, badge, alert }) => {
@@ -6704,41 +6708,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         {/* ── MOBILE SECTION NAV (hidden on desktop) ── */}
         <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#111827', fontSize: '16px', marginBottom: '1.25rem' }}>
-          <optgroup label="Project">
-            <option value="overview">Overview</option>
-            <option value="details">Details</option>
-            <option value="contacts">Contacts</option>
-            <option value="documents">Documents</option>
-            <option value="schedule">Schedule</option>
-            <option value="closeout">Closeout</option>
-            <option value="warranty">Warranty</option>
-            {atLeastPM(userRole) && <option value="history">History</option>}
-          </optgroup>
-          <optgroup label="Financials">
-            <option value="budget">Budget</option>
-            <option value="changeorders">Change Orders</option>
-            <option value="billing">Billing</option>
-            <option value="costs">Direct Costs</option>
-            <option value="po">Purchase Orders</option>
-            <option value="prime">Prime Contract</option>
-            <option value="cashflow">Cash Flow</option>
-            <option value="retainage">Retainage</option>
-            <option value="prelim">Lien Log</option>
-            <option value="reimb">Reimbursements</option>
-          </optgroup>
-          <optgroup label="Field">
-            <option value="field">Field Reports</option>
-            <option value="drawings">Drawings</option>
-            <option value="submittals">Submittals</option>
-            <option value="punch">Punch List</option>
-            <option value="photos">Site Photos</option>
-            <option value="lookahead">Lookahead</option>
-          </optgroup>
-          <optgroup label="Team">
-            <option value="subs">Companies</option>
-            <option value="contracts">Contracts</option>
-            {isPrincipal(userRole) && <option value="labor">Labor</option>}
-          </optgroup>
+          {jobNavGroups.map(({ group, items }) => (
+            <optgroup key={group} label={group}>
+              {items.map(({ key, label }) => <option key={key} value={key}>{label}</option>)}
+            </optgroup>
+          ))}
         </select>
 
         {/* ── OVERVIEW TAB ── */}
@@ -8477,9 +8451,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
 
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Subcontracts ({contracts.length})</p>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {contracts.length > 0 && <button style={s.btnSmall} onClick={exportContractsPDF}>Export PDF</button>}
                   {!showAddContract && <button style={s.btnSmallOrange} onClick={() => setShowAddContract(true)}>+ Add subcontract</button>}
                 </div>
@@ -9118,7 +9092,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* Prime Contract Change Orders */}
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Contract Modifications ({primeCOs.length})</p>
                 {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems(); setPrimeCOForm({ ...emptyPrimeCO, sov: [{ ...emptySOVRow }] }); setPrimeCOBillingLink(null) }}>+ Add Modification</button>}
               </div>
@@ -9514,7 +9488,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* Subcontract Change Orders */}
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Subcontract Change Orders ({allCOs.length})</p>
                 {!showAddCO && <button style={s.btnSmallOrange} onClick={() => setShowAddCO(true)}>+ Add CO</button>}
               </div>
@@ -9862,7 +9836,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* ── DRAW REQUESTS ── */}
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div className="rx-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Draw requests ({drawRequests.length})</p>
                 {!showCreateDraw && (
                   <button style={s.btnSmallOrange} onClick={async () => { await loadDirectCosts(); setShowCreateDraw(true) }}>+ New draw</button>
@@ -15836,7 +15810,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
         onClick={() => setAiOpen(o => !o)}
         title="AI Job Assistant"
         style={{
-          position: 'fixed', bottom: '24px', right: '24px', zIndex: 1100,
+          position: 'fixed', bottom: 'calc(24px + env(safe-area-inset-bottom))', right: '24px', zIndex: 1100,
           width: '52px', height: '52px', borderRadius: '50%',
           background: aiOpen ? '#1a1a2e' : '#e8590c', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -15850,7 +15824,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
       {/* Chat panel */}
       {aiOpen && (
         <div style={{
-          position: 'fixed', bottom: '88px', right: '24px', zIndex: 1099,
+          position: 'fixed', bottom: 'calc(88px + env(safe-area-inset-bottom))', right: '24px', zIndex: 1099,
           width: 'min(360px, calc(100vw - 32px))', maxHeight: '520px',
           background: '#0f0f1a', border: '1px solid #2a2a3e', borderRadius: '16px',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',

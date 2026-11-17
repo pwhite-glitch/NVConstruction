@@ -6,6 +6,7 @@ import { isBeforeTodayCentral } from '../../lib/central-date'
 import { coNumberLabel } from '../../lib/co-number'
 import { authFetch } from '../../lib/client-fetch'
 import { ownerResBilling } from '../../lib/owner-res-draws'
+import MobileTopBar from '../components/MobileTopBar'
 
 const s = {
   root: { display: 'flex', minHeight: '100vh', background: '#f4f6f8', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -115,6 +116,7 @@ const OWNER_DRAW_STATUSES = ['open', 'closed', 'submitted', 'approved']
 export default function OwnerPortal() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false) // phone drawer (layout only)
   const [isDevPreview, setIsDevPreview] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
   const [currentUserEmail, setCurrentUserEmail] = useState('')
@@ -365,9 +367,11 @@ export default function OwnerPortal() {
   )
 
   return (
-    <div style={s.root}>
-      {/* Sidebar */}
-      <aside style={s.sidebar}>
+    <div style={s.root} className="rx-app-shell">
+      <MobileTopBar title="Your Projects" open={mobileNavOpen} onToggle={() => setMobileNavOpen(o => !o)} onClose={() => setMobileNavOpen(false)} />
+      {/* Sidebar — off-canvas drawer under 640px; closes when a job / Sign out is tapped */}
+      <aside style={s.sidebar} className={'rx-app-sidebar' + (mobileNavOpen ? ' rx-open' : '')}
+        onClick={e => { if (e.target.closest('button')) setMobileNavOpen(false) }}>
         {isDevPreview && <div style={s.devBanner}>Dev Preview — All Jobs</div>}
         <div style={s.logoWrap}>
           <img src="/logo.png" alt="NV Construction" style={{ height: '30px', objectFit: 'contain' }} />
@@ -398,9 +402,9 @@ export default function OwnerPortal() {
       </aside>
 
       {/* Main */}
-      <main style={s.main}>
+      <main style={s.main} className="rx-page-pad">
         {!job ? (
-          <div style={s.emptyState}>Select a project from the left to get started.</div>
+          <div style={s.emptyState}>Select a project from the menu to get started.</div>
         ) : (
           <>
             {/* Header */}
@@ -523,7 +527,7 @@ export default function OwnerPortal() {
                   <div style={s.card}>
                     <div style={s.cardTitle}>Pay Applications ({aiaApps.length})</div>
                     {payAppsInfo.error ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load pay applications: {payAppsInfo.error}</div> : aiaApps.length === 0 ? <div style={s.emptyMsg}>No pay applications submitted yet.</div> : (
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                         <table style={s.table}>
                           <thead>
                             <tr>
@@ -556,7 +560,7 @@ export default function OwnerPortal() {
                   <div style={s.card}>
                     <div style={s.cardTitle}>Draws ({resDraws.draws.length})</div>
                     {resDraws.error ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load draws: {resDraws.error}</div> : resDraws.draws.length === 0 ? <div style={s.emptyMsg}>No draws submitted yet.</div> : (
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                         <table style={s.table}>
                           <thead>
                             <tr>
@@ -591,7 +595,7 @@ export default function OwnerPortal() {
                   <div style={s.card}>
                     <div style={s.cardTitle}>Draw Requests ({drawRequests.length})</div>
                     {drawRequests.length === 0 ? <div style={s.emptyMsg}>No draw requests submitted yet.</div> : (
-                      <div style={{ overflowX: 'auto' }}>
+                      <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                         <table style={s.table}>
                           <thead>
                             <tr>
@@ -625,7 +629,7 @@ export default function OwnerPortal() {
                     <div style={s.card}>
                       <div style={s.cardTitle}>Contract Modifications ({changeOrders.length})</div>
                       {changeOrders.length === 0 ? <div style={s.emptyMsg}>No contract modifications on this project.</div> : (
-                        <div style={{ overflowX: 'auto' }}>
+                        <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
                           <table style={s.table}>
                             <thead>
                               <tr>

@@ -15,6 +15,7 @@ import { billingPaymentSummary, billingPaidAmount } from '../../lib/billing-paym
 import { billingDraftKey, LEGACY_BILLING_DRAFT_KEY, restoreBillingDraft, applyDraftPcts, draftToPersist, loadOpenDraws, drawAfterLoad } from '../../lib/billing-draft'
 import { signedWaiverTerms, throughLabel, safeSignatureSrc, LEGACY_WAIVER_NOTE } from '../../lib/lien-waiver-terms'
 import { escapeHtml } from '../../lib/email'
+import MobileTopBar from '../components/MobileTopBar'
 
 
 const s = {
@@ -120,6 +121,7 @@ const IconBell     = () => <svg width="15" height="15" fill="none" stroke="curre
 export default function Submit() {
   const router = useRouter()
   const [user, setUser] = useState(null)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false) // phone drawer (layout only)
   const [profile, setProfile] = useState(null)
   const [jobs, setJobs] = useState([])
   const [submissions, setSubmissions] = useState([])
@@ -1073,8 +1075,8 @@ export default function Submit() {
 
   if (!selectedJob) return (
     <div style={{ minHeight: '100vh', background: '#f4f6f8' }}>
-      <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem' }}>
-        <div style={{ maxWidth: '960px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px' }}>
+      <header className="rx-safe-top" style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem' }}>
+        <div style={{ maxWidth: '960px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '60px', flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <img src="/logo.png" alt="NV Construction" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
             <div>
@@ -1144,9 +1146,11 @@ export default function Submit() {
   const navItems = allNavItems.filter(item => item.roles.includes(role))
 
   return (
-    <div style={s.page}>
-      {/* ── Sidebar ── */}
-      <nav style={s.sidebar}>
+    <div style={s.page} className="rx-app-shell">
+      <MobileTopBar title="Sub Portal" open={mobileNavOpen} onToggle={() => setMobileNavOpen(o => !o)} onClose={() => setMobileNavOpen(false)} />
+      {/* ── Sidebar ── (off-canvas drawer under 640px; closes when a nav button is tapped) */}
+      <nav style={s.sidebar} className={'rx-app-sidebar' + (mobileNavOpen ? ' rx-open' : '')}
+        onClick={e => { if (e.target.closest('button')) setMobileNavOpen(false) }}>
         <div style={s.sidebarTop}>
           <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
           <p style={s.sidebarBrand}>NV Construction</p>
@@ -1184,7 +1188,7 @@ export default function Submit() {
       </nav>
 
       {/* ── Content ── */}
-      <div style={s.content}>
+      <div style={s.content} className="rx-page-pad">
         {success && <div style={s.success}>Billing submitted successfully. Your project manager will be notified.</div>}
 
         {/* ── CALENDAR ── */}
@@ -1405,7 +1409,7 @@ export default function Submit() {
                 {sovForm.length > 0 && (
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={s.label}>Schedule of values</label>
-                    <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', overflowX: 'auto' }}>
+                    <div className="rx-table-scroll" style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid #1e1e1e' }}>

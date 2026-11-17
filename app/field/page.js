@@ -77,7 +77,7 @@ const convertedReceipts = new WeakMap()
 const s = {
   page: { minHeight: '100vh', background: '#f4f6f8' },
   header: { background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem' },
-  headerInner: { maxWidth: '760px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px' },
+  headerInner: { maxWidth: '760px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '60px', flexWrap: 'wrap', gap: '8px 12px', padding: '8px 0', boxSizing: 'border-box' },
   logoRow: { display: 'flex', alignItems: 'center', gap: '10px' },
   logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
   logoName: { fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' },
@@ -1280,7 +1280,7 @@ export default function Field() {
 
   return (
     <div style={s.page}>
-      <header style={s.header}>
+      <header style={s.header} className="rx-safe-top">
         <div style={s.headerInner}>
           <div style={s.logoRow}>
             <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
@@ -1289,7 +1289,7 @@ export default function Field() {
               <div style={s.logoSub}>{profile?.full_name || 'Field Portal'}</div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
             {assignedJobs.length > 0 && (
               <button onClick={openLookaheadNav} style={{ ...s.signOut, display: 'flex', alignItems: 'center', gap: '6px', color: activeTab === 'lookahead' ? '#e8590c' : '#374151', borderColor: activeTab === 'lookahead' ? '#fdba74' : '#e5e7eb', fontWeight: 600 }}>
                 <span style={{ display: 'flex', transform: 'scale(0.8)' }}>{IC.lookahead}</span>Lookahead
@@ -1524,7 +1524,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Company" value={row.company} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                                <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" aria-label="Remove row" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} className="rx-row-del" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                             {/* Save preset */}
@@ -1574,7 +1574,7 @@ export default function Field() {
                                   )}
                                   <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                   <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
-                                  <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                  <button type="button" aria-label="Remove row" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} className="rx-row-del" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                                 </div>
                                 <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} placeholder="Work performed..." value={row.work_performed} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, work_performed: e.target.value } : r))} />
                               </div>
@@ -1592,7 +1592,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Equipment name" value={row.name} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                                <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" aria-label="Remove row" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} className="rx-row-del" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                           </div>
@@ -1608,7 +1608,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Material" value={row.description} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Supplier" value={row.supplier} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, supplier: e.target.value } : r))} />
-                                <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" aria-label="Remove row" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} className="rx-row-del" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                           </div>
@@ -1624,7 +1624,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Name" value={row.name} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Company" value={row.company} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Purpose" value={row.purpose} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, purpose: e.target.value } : r))} />
-                                <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" aria-label="Remove row" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} className="rx-row-del" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                           </div>

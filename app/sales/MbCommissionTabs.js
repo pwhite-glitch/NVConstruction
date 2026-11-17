@@ -84,7 +84,7 @@ export function MbCommissionReport({ authHeader, isOwner, staffList }) {
             </>) : <div>Your commission<br /><strong>{formatCents(data.totals.my_commission_cents)}</strong></div>}
             <div style={{ color: '#6b7280' }}>Dates by: {data.date_basis_label}</div>
           </div>
-          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
+          <div className="rx-table-scroll" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={th}>Order</th><th style={th}>Customer</th><th style={th}>Stage</th><th style={th}>Deposit</th>

@@ -13,9 +13,9 @@ import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { fetchJson, jsonInit, readJsonResponse } from '../../lib/fetch-json'
 import { uploadThenSend } from '../../lib/file-upload-client'
-import { isDraftReport, isFinalReport, publishedReports, visibleReports, canEditDraft, duplicateReportMessage, finalReportDates, isReferencedReportPhoto, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
+import { isDraftReport, isFinalReport, publishedReports, visibleReports, canEditDraft, duplicateReportMessage, finalReportDates, isReferencedReportPhoto, revisionLabel, canViewReportVersions, canReopenReport, canReopenFinalReport } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
-import { saveDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
+import { saveDailyReport, reopenDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
 import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
 import { isPreviewActive } from '../../lib/prime-co-review'
 import JobPhotoPicker from '../jobdetail/JobPhotoPicker'
@@ -148,6 +148,7 @@ export default function Field() {
   // Prompt 85: the draft being edited in the wizard (null = new report), and the photo picker.
   const [editingReportId, setEditingReportId] = useState(null)
   const [showPhotoPicker, setShowPhotoPicker] = useState(false)
+  const [reopeningReport, setReopeningReport] = useState(null) // prompt 89: report id being reopened
 
   const [rfis, setRfis] = useState([])
   const [rfiForm, setRfiForm] = useState({ title: '', description: '' })
@@ -1731,6 +1732,15 @@ export default function Field() {
                                   )}
                                   {draft && canEditDraft({ role: profile?.role, userId: user?.id }, r) && (
                                     <button type="button" onClick={e => { e.stopPropagation(); startEditDraft(r) }} style={{ minHeight: '44px', minWidth: '64px', padding: '0 14px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>Edit</button>
+                                  )}
+                                  {/* Prompt 89: Reopen a final — role via canReopenReport; a super only on their own report. */}
+                                  {!draft && canReopenReport(profile?.role) && canReopenFinalReport({ role: profile?.role, userId: user?.id }, r) && !isPreviewActive() && (
+                                    <button type="button" disabled={reopeningReport === r.id} onClick={async e => {
+                                      e.stopPropagation()
+                                      if (!window.confirm(REOPEN_CONFIRM)) return
+                                      setReopeningReport(r.id)
+                                      try { await reopenDailyReport(authFetch, r.id); await loadDailyReports(); await checkTodayReport() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
+                                    }} style={{ minHeight: '44px', minWidth: '64px', padding: '0 14px', background: '#fff', color: '#e8590c', border: '1px solid #e8590c', borderRadius: '8px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', opacity: reopeningReport === r.id ? 0.6 : 1 }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
                                   )}
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>

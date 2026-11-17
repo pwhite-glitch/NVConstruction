@@ -2,7 +2,8 @@
  * Prompt 85 — Daily reports: pick existing job photos (CompanyCam + gallery) and drafts
  * until "Finalize – 100% complete". Peyton's decisions (11/16) apply:
  *   1. Drafts visible to author + Owner / admin / PM; excluded from owner portal, owner
- *      photos, weather-day counts / log.   2. Owner / admin / PM can reopen a final report.
+ *      photos, weather-day counts / log.   2. Owner / admin / PM can reopen a final report
+ *      (prompt 89: a Super too, on an assigned job, only a report they wrote).
  *   3. Office reports use the same Save draft / Finalize flow.   4. Picker lists ALL job
  *      photos with a CompanyCam filter; attach by reference; unlink never deletes files.
  * All DB access is the in-memory mock; nothing live; migration 075 is NOT applied.
@@ -100,7 +101,7 @@ describe('1) pure helpers', () => {
     for (const role of ['principal', 'admin', 'pm']) expect(P.visibleReports(rows, { role, userId: 'x' })).toHaveLength(5)
     expect(P.visibleReports(rows, { role: 'owner', userId: 'o' }).map(r => r.id)).toEqual(['f', 'legacy', 'nul'])
     expect(P.canReopenReport('pm')).toBe(true)
-    expect(P.canReopenReport('super')).toBe(false)
+    expect(P.canReopenReport('super')).toBe(true) // prompt 89
     expect(P.canReopenReport('apm')).toBe(false)
     expect(P.canEditDraft({ role: 'super', userId: 'super2' }, rows[3])).toBe(false)
     expect(P.canEditDraft({ role: 'pm', userId: 'pm1' }, rows[3])).toBe(true)
@@ -291,11 +292,12 @@ describe('3) finalize + reopen', () => {
     expect(deliveries()[0].super_id).toBe('super1') // the report's author logged them
   })
 
-  test('reopen: only Owner / admin / PM; clears finalize stamps, records reopen; re-finalize does not duplicate deliveries', async () => {
+  test('reopen: Owner / admin / PM (super only own — prompt 89); clears finalize stamps, records reopen; re-finalize does not duplicate deliveries', async () => {
     seed({ daily_reports: [draft()] }); as('super', 'super1')
     await fin('d1')
     expect(deliveries()).toHaveLength(1)
-    expect((await reo('d1')).status).toBe(403) // super
+    as('super', 'super2') // prompt 89: a super on the job, but not the author
+    expect((await reo('d1')).status).toBe(403)
     as('apm', 'apm1')
     expect((await reo('d1')).status).toBe(403)
     as('pm', 'pm1')

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { denyJob, isJobLimited } from '../../../lib/roles'
-import { isDraftReport, canEditDraft, canReopenReport } from '../../../lib/daily-report-payload'
+import { isDraftReport, canEditDraft, canSeeAllDrafts } from '../../../lib/daily-report-payload'
 import { canRemoveReportPhotoFile, canRemoveGalleryPhotoFile, thumbOf, PHOTO_BUCKET } from '../../../lib/report-photo-links'
 
 const adminSupabase = createClient(
@@ -69,9 +69,10 @@ export async function POST(request) {
     if (!report) return Response.json({ error: 'Report not found.' }, { status: 404 })
     if (report.job_id !== jobId) return Response.json({ error: 'Forbidden' }, { status: 403 })
     if (isDraftReport(report) && !canEditDraft(auth, report)) return Response.json({ error: 'This draft belongs to someone else.' }, { status: 403 })
-    // A FINAL report is locked: only Owner / admin / PM may change its photos (supers / APMs
-    // cannot reopen, so they cannot edit a final either). Nothing is changed on 403.
-    if (!isDraftReport(report) && !canReopenReport(role)) return Response.json({ error: 'This report is finalized. Only an Owner, admin or PM can change its photos.' }, { status: 403 })
+    // A FINAL report is locked: only Owner / admin / PM may change its photos. Supers / APMs
+    // cannot edit a final (a super must reopen their own report first — prompt 89). Nothing is
+    // changed on 403.
+    if (!isDraftReport(report) && !canSeeAllDrafts(role)) return Response.json({ error: 'This report is finalized. Only an Owner, admin or PM can change its photos.' }, { status: 403 })
     const current = Array.isArray(report.photos) ? report.photos : []
     const element = current.find(p => p?.path === path) || null
     if (element) {

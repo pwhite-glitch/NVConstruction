@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../../lib/server-auth'
 import { denyUnlessOnJob } from '../../../../lib/roles'
-import { isDraftReport, canReopenReport, has076 } from '../../../../lib/daily-report-payload'
+import { isDraftReport, canReopenReport, canSeeAllDrafts, has076 } from '../../../../lib/daily-report-payload'
 import { isMissingColumnError } from '../../../../lib/missing-column-retry'
-import { loadReport, REOPEN_ROLE_MESSAGE, REOPEN_MIGRATION_MESSAGE, REOPEN_076_MESSAGE } from '../../../../lib/daily-report-server'
+import { loadReport, REOPEN_ROLE_MESSAGE, REOPEN_AUTHOR_MESSAGE, REOPEN_MIGRATION_MESSAGE, REOPEN_076_MESSAGE } from '../../../../lib/daily-report-server'
 import { logChange } from '../../../../lib/change-log'
 
 const adminSupabase = createClient(
@@ -12,7 +12,8 @@ const adminSupabase = createClient(
 )
 
 // POST { id } — reopen a FINAL daily report (prompt 85, Peyton's decision 2; history prompt 86).
-// Who: Owner (principal) / admin any job; PM on the job. Supers and APMs cannot reopen (403).
+// Who: Owner (principal) / admin any job; PM on the job. Super (prompt 89) on an assigned job,
+// and only a final they wrote (403 otherwise). APMs cannot reopen (403).
 // Effect: status back to 'draft', reopened_at / reopened_by stamped, finalized_at /
 // finalized_by CLEARED (migration 075's CHECK keeps draft rows free of finalize stamps).
 // The report drops out of the owner portal, owner photos and weather-day counts until it is
@@ -35,6 +36,9 @@ export async function POST(request) {
   if (response) return response
   const denied = await denyUnlessOnJob(adminSupabase, auth, report.job_id)
   if (denied) return denied
+  // Prompt 89 addendum: a super reopens only their own report (same author check as editing),
+  // so a reopened draft is never left that nobody on site can edit.
+  if (!canSeeAllDrafts(auth.role) && report.super_id !== auth.userId) return Response.json({ error: REOPEN_AUTHOR_MESSAGE }, { status: 403 })
   if (isDraftReport(report)) return Response.json({ error: 'This report is already a draft.' }, { status: 409 })
   // Row without a status column → 075 itself is missing (and so is 076).
   if (!Object.prototype.hasOwnProperty.call(report, 'status')) return Response.json({ error: REOPEN_MIGRATION_MESSAGE, migration_required: '075' }, { status: 409 })

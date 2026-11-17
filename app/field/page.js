@@ -13,9 +13,11 @@ import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { fetchJson, jsonInit, readJsonResponse } from '../../lib/fetch-json'
 import { uploadThenSend } from '../../lib/file-upload-client'
-import { isDraftReport, isFinalReport, publishedReports, visibleReports, canEditDraft, duplicateReportMessage, finalReportDates, isReferencedReportPhoto } from '../../lib/daily-report-payload'
+import { isDraftReport, isFinalReport, publishedReports, visibleReports, canEditDraft, duplicateReportMessage, finalReportDates, isReferencedReportPhoto, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
-import { saveDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, DRAFT_BADGE } from '../../lib/daily-report-client'
+import { saveDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
+import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
+import { isPreviewActive } from '../../lib/prime-co-review'
 import JobPhotoPicker from '../jobdetail/JobPhotoPicker'
 import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, signedDcAmount, dcAmountInputState, dcCreditInputState } from '../../lib/dc-amount'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
@@ -142,6 +144,7 @@ export default function Field() {
   const savedReportIdRef = useRef(null)
   const [dailySuccess, setDailySuccess] = useState(false) // false | 'draft' | 'final'
   const [expandedReport, setExpandedReport] = useState(null)
+  const [versionsReportId, setVersionsReportId] = useState(null) // prompt 86: earlier versions (PM using the field app)
   // Prompt 85: the draft being edited in the wizard (null = new report), and the photo picker.
   const [editingReportId, setEditingReportId] = useState(null)
   const [showPhotoPicker, setShowPhotoPicker] = useState(false)
@@ -1708,6 +1711,7 @@ export default function Field() {
                     {dailyReports.length > 0 && (
                       <>
                         <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>Past reports ({dailyReports.length})</p>
+                        {versionsReportId && <ReportVersionsModal reportId={versionsReportId} fetchFn={authFetch} onClose={() => setVersionsReportId(null)} />}
                         {dailyReports.map(r => {
                           const accent = r.weather_delay ? '#ff6b6b' : r.issues ? '#e8590c' : '#4ade80'
                           const crewCount = r.crew_count ?? r.crew_log?.filter(c => c.name || c.company).length ?? 0
@@ -1721,6 +1725,10 @@ export default function Field() {
                                   <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                                   {r.weather_delay && <span style={{ fontSize: '10px', color: '#dc2626', fontWeight: '700', letterSpacing: '0.5px' }}>DELAY</span>}
                                   {draft && <span style={DRAFT_BADGE}>Draft</span>}
+                                  {revisionLabel(r) && <span style={REVISED_BADGE}>{revisionLabel(r)}</span>}
+                                  {canViewReportVersions(profile?.role) && Number(r.revision_count) > 0 && !isPreviewActive() && (
+                                    <button type="button" onClick={e => { e.stopPropagation(); setVersionsReportId(r.id) }} style={{ minHeight: '44px', padding: '0 12px', background: '#fff', color: '#1e3a8a', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>View earlier version</button>
+                                  )}
                                   {draft && canEditDraft({ role: profile?.role, userId: user?.id }, r) && (
                                     <button type="button" onClick={e => { e.stopPropagation(); startEditDraft(r) }} style={{ minHeight: '44px', minWidth: '64px', padding: '0 14px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>Edit</button>
                                   )}

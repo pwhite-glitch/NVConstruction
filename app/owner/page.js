@@ -743,10 +743,11 @@ export default function OwnerPortal() {
                             <div style={{ aspectRatio: '4/3' }}>
                               <img src={p.thumb_url || p.url} alt={p.caption || p.name || 'Progress photo'} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                             </div>
-                            {(p.caption || p.date) && (
+                            {(p.caption || p.date || p.revised) && (
                               <div style={{ padding: '6px 8px', fontSize: '11px', color: '#374151', lineHeight: 1.35 }}>
                                 {p.caption && <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
                                 {p.date && <div style={{ color: '#6b7280' }}>{fmtDate(p.date)}</div>}
+                                {p.revised && <div style={{ color: '#6b7280', fontSize: '11px' }}>{p.revised}</div>}
                               </div>
                             )}
                           </a>

@@ -33,9 +33,10 @@ import { fetchJson, jsonInit } from '../../lib/fetch-json'
 import { uploadThenSend, putToSignedUrl, forgetUpload } from '../../lib/file-upload-client'
 import { AI_PARSE_MAX_BYTES, AI_PARSE_LIMIT_PRECHECK_MESSAGE } from '../../lib/ai-parse-limits'
 import DailyReportForm from '../jobdetail/DailyReportForm'
-import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates } from '../../lib/daily-report-payload'
+import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
-import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE } from '../../lib/daily-report-client'
+import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
+import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
 import NewPOForm from '../jobdetail/NewPOForm'
 import EditPOForm from '../jobdetail/EditPOForm'
 import PaymentTypeSelector from '../jobdetail/PaymentTypeSelector' // eslint-disable-line no-unused-vars -- used inside the shared PO forms
@@ -172,6 +173,7 @@ function ResidentialJobDetailInner() {
   const [editingDailyReport, setEditingDailyReport] = useState(null) // a draft open in DailyReportForm (prompt 85)
   const [fieldUserId, setFieldUserId] = useState(null)
   const [reopeningReport, setReopeningReport] = useState(null)
+  const [versionsReportId, setVersionsReportId] = useState(null) // prompt 86: earlier versions modal
   const [photoUrls, setPhotoUrls] = useState({})
   const [lightbox, setLightbox] = useState(null) // index into photos
   const [deletingPhoto, setDeletingPhoto] = useState(null)
@@ -3977,6 +3979,10 @@ function ResidentialJobDetailInner() {
                       <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <span>{fmtDate(r.report_date)}{Array.isArray(r.photos) && r.photos.length ? ` · ${r.photos.length} photo${r.photos.length !== 1 ? 's' : ''}` : ''}</span>
                         {isDraftReport(r) && <span style={DRAFT_BADGE} title="Draft — not final; hidden from the owner portal">Draft</span>}
+                        {revisionLabel(r) && <span style={REVISED_BADGE} title="This report was reopened and finalized again">{revisionLabel(r)}</span>}
+                        {canViewReportVersions(userRole) && Number(r.revision_count) > 0 && !inPreview && (
+                          <button type="button" style={s.btnSmGray} onClick={e => { e.stopPropagation(); setVersionsReportId(r.id) }}>View earlier version</button>
+                        )}
                         {isOffice && isDraftReport(r) && canEditDraft({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
                           <button type="button" style={s.btnSmGray} onClick={() => { setDailyReportSaved(false); setEditingDailyReport(r); setShowNewDailyReport(true) }}>Edit draft</button>
                         )}
@@ -3990,6 +3996,7 @@ function ResidentialJobDetailInner() {
                       </div>
                       {r.work_performed && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.work_performed}</div>}
                       {r.issues && <div style={{ color: '#b91c1c', whiteSpace: 'pre-wrap' }}>Issues: {r.issues}</div>}
+                      {versionsReportId === r.id && <ReportVersionsModal reportId={r.id} fetchFn={authFetch} onClose={() => setVersionsReportId(null)} />}
                     </div>
                   ))}
                 </div>

@@ -258,7 +258,7 @@ describe('3) finalize + reopen', () => {
   const reopen = require('../app/api/daily-reports/reopen/route')
   const fin = id => call(finalize.POST, '/api/daily-reports/finalize', 'POST', { id })
   const reo = id => call(reopen.POST, '/api/daily-reports/reopen', 'POST', { id })
-  const draft = (extra = {}) => ({ id: 'd1', job_id: 'J1', super_id: 'super1', report_date: '2026-11-09', work_performed: 'Framed', status: 'draft', finalized_at: null, finalized_by: null, materials_delivered: studs, ...extra })
+  const draft = (extra = {}) => ({ id: 'd1', job_id: 'J1', super_id: 'super1', report_date: '2026-11-09', work_performed: 'Framed', status: 'draft', finalized_at: null, finalized_by: null, materials_delivered: studs, revision_count: 0 /* post-076 row (prompt 86) */, ...extra })
 
   test('author finalizes: stamped, deliveries once; repeat → already_final, no duplicate deliveries', async () => {
     seed({ daily_reports: [draft()] }); as('super', 'super1')

@@ -67,7 +67,7 @@ const deliveries = () => mockState.db.deliveries || []
 const fin = id => call(finalize.POST, '/api/daily-reports/finalize', 'POST', { id })
 const reo = id => call(reopen.POST, '/api/daily-reports/reopen', 'POST', { id })
 const patch = body => call(route.PATCH, '/api/daily-reports', 'PATCH', body)
-const draft = (extra = {}) => ({ id: 'd1', job_id: 'J1', super_id: 'super1', report_date: '2026-11-09', work_performed: 'Framed', status: 'draft', finalized_at: null, finalized_by: null, deliveries_created_at: null, materials_delivered: [studs], ...extra })
+const draft = (extra = {}) => ({ id: 'd1', job_id: 'J1', super_id: 'super1', report_date: '2026-11-09', work_performed: 'Framed', status: 'draft', finalized_at: null, finalized_by: null, deliveries_created_at: null, materials_delivered: [studs], revision_count: 0 /* post-076 row (prompt 86) */, ...extra })
 // What the pre-075 field insert / office POST wrote (no daily_report_id).
 const legacyDelivery = (m, extra = {}) => ({ id: `old-${m.description}`, job_id: 'J1', super_id: 'super1', material: m.description, vendor: m.supplier, quantity: m.quantity, status: 'received', received_date: '2026-11-09', source: 'daily_report', ...extra })
 

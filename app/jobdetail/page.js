@@ -67,9 +67,10 @@ import { writeWithMissingColumnRetry, isMissingColumnError } from '../../lib/mis
 import { g703Row, screenStored, storedBalanceByKey, storedInstalledError, hasStoredColumns } from '../../lib/aia-g703'
 import { findDirectoryEntry, coiBadgeModel, confirmCoiForCompany } from '../../lib/coi-warning'
 import DailyReportForm from './DailyReportForm'
-import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates } from '../../lib/daily-report-payload'
+import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
-import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE } from '../../lib/daily-report-client'
+import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
+import ReportVersionsModal from './ReportVersionsModal'
 
 const s = {
   // ── Layout ──
@@ -394,6 +395,7 @@ function JobDetailInner() {
   const [editingDailyReport, setEditingDailyReport] = useState(null) // a draft open in DailyReportForm (prompt 85)
   const [fieldUserId, setFieldUserId] = useState(null)
   const [reopeningReport, setReopeningReport] = useState(null)
+  const [versionsReportId, setVersionsReportId] = useState(null) // prompt 86: earlier versions modal
   const [respondingRfi, setRespondingRfi] = useState(null)
   const [rfiResponse, setRfiResponse] = useState('')
   const [savingRfiResponse, setSavingRfiResponse] = useState(false)
@@ -10786,6 +10788,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                       {isDraftReport(r) && <span style={DRAFT_BADGE} title="Draft — not final; hidden from the owner portal and weather-day counts">Draft</span>}
+                      {revisionLabel(r) && <span style={REVISED_BADGE} title="This report was reopened and finalized again">{revisionLabel(r)}</span>}
+                      {canViewReportVersions(userRole) && Number(r.revision_count) > 0 && !inPreview && (
+                        <button type="button" style={s.btnSmall} onClick={e => { e.stopPropagation(); setVersionsReportId(r.id) }}>View earlier version</button>
+                      )}
                       {isDraftReport(r) && canEditDraft({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
                         <button type="button" style={s.btnSmall} onClick={e => { e.stopPropagation(); setDailyReportSaved(false); setEditingDailyReport(r); setShowNewDailyReport(true); setFieldSubTab('reports') }}>Edit draft</button>
                       )}
@@ -10802,6 +10808,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     <span style={{ color: '#6b7280' }}>{expandedFieldReport === r.id ? '▲' : '▼'}</span>
                   </div>
+                  {versionsReportId === r.id && <ReportVersionsModal reportId={r.id} fetchFn={authFetch} onClose={() => setVersionsReportId(null)} />}
                   {expandedFieldReport === r.id && (
                     <div style={s.billingEntryExpanded}>
                       {/* Weather */}

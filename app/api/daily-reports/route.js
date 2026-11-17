@@ -4,10 +4,11 @@ import { denyUnlessOnJob } from '../../../lib/roles'
 import {
   validateDailyReportInput, buildDailyReportRow, buildDraftPatch, wantsFinalize,
   draftStatusFields, finalStatusFields, isDraftReport, MIGRATION_075_MESSAGE,
-  mergeDraftBody, pickDraftPatch,
+  mergeDraftBody, pickDraftPatch, changedFields,
 } from '../../../lib/daily-report-payload'
 import { loadReport, createDeliveriesOnce, mayManageReport, FINALIZED_MESSAGE, NOT_AUTHOR_MESSAGE } from '../../../lib/daily-report-server'
 import { isMissingColumnError } from '../../../lib/missing-column-retry'
+import { logChange } from '../../../lib/change-log'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -30,6 +31,9 @@ const adminSupabase = createClient(
 //   PATCH { id, ...fields } — edit a draft. Author, or Owner / admin / PM on the job.
 //     Partial: only the keys sent change; omitted fields keep their stored values.
 //     404 missing · 403 not on the job / not allowed · 409 already final. No deliveries.
+//     A REOPENED report (reopened_at set — it was final before, prompt 86) logs each changed
+//     content field to change_log (entity_type 'daily_report', old / new). Never-finalized
+//     drafts are not logged.
 // Finalize an existing draft: POST /api/daily-reports/finalize. Reopen: /reopen.
 // → { ok, report, warning? }
 export async function POST(request) {
@@ -90,5 +94,14 @@ export async function PATCH(request) {
   const { data: rows, error } = await adminSupabase.from('daily_reports').update(patch).eq('id', report.id).eq('status', 'draft').select()
   if (error) return Response.json({ error: `Could not save daily report: ${error.message}` }, { status: 500 })
   if (!rows || rows.length === 0) return Response.json({ error: FINALIZED_MESSAGE }, { status: 409 })
+  if (report.reopened_at) {
+    for (const c of changedFields(report, patch)) {
+      await logChange({
+        job_id: report.job_id, entity_type: 'daily_report', entity_id: report.id, field_name: c.field,
+        old_value: c.old_value, new_value: c.new_value, changed_by: auth.userId,
+        note: `Edited reopened report for ${rows[0].report_date}`,
+      })
+    }
+  }
   return Response.json({ ok: true, report: rows[0] })
 }

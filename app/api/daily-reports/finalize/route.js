@@ -3,6 +3,7 @@ import { requirePM } from '../../../../lib/server-auth'
 import { denyUnlessOnJob } from '../../../../lib/roles'
 import { isDraftReport, finalStatusFields } from '../../../../lib/daily-report-payload'
 import { loadReport, createDeliveriesOnce, mayManageReport, NOT_AUTHOR_MESSAGE } from '../../../../lib/daily-report-server'
+import { logChange } from '../../../../lib/change-log'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -17,6 +18,8 @@ const adminSupabase = createClient(
 // Who: the draft's author, or Owner / admin / PM, on the job (requirePM + denyUnlessOnJob).
 // Already final → { ok, report, already_final: true } for those same people (no deliveries).
 // work_performed must not be blank. No email / notify.
+// Re-finalize after a reopen (prompt 86): logged to change_log (status draft → final).
+// first_finalized_* and revision_count belong to migration 076's trigger — never written here.
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
@@ -46,6 +49,13 @@ export async function POST(request) {
     return Response.json({ ok: true, report: again.report, already_final: true })
   }
   const finalReport = rows[0]
+  if (report.reopened_at) {
+    await logChange({
+      job_id: report.job_id, entity_type: 'daily_report', entity_id: report.id, field_name: 'status',
+      old_value: 'draft', new_value: 'final', changed_by: auth.userId,
+      note: `Re-finalized the report for ${finalReport.report_date} (rev ${finalReport.revision_count ?? '?'})`,
+    })
+  }
   const d = await createDeliveriesOnce(adminSupabase, finalReport, auth.userId, now)
   return Response.json({ ok: true, report: finalReport, ...(d.warning ? { warning: d.warning } : {}) })
 }

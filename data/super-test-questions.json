@@ -1,0 +1,1362 @@
+[
+  {
+    "id": "q01",
+    "category": "braums",
+    "topic": "owner-furnished-scope",
+    "store": null,
+    "question": "Which of these does Braum's furnish for us to install?",
+    "choices": [
+      "Ansul system",
+      "AAON rooftop units",
+      "Grease interceptor",
+      "Fire alarm"
+    ],
+    "correct_index": 1,
+    "explanation": "RTUs and curbs (AAON) are Braum's-furnished and GC-installed. Ansul, the grease trap and fire alarm are ours to furnish and install.",
+    "source": "super-test/approved-sample-and-rules.md sample #1; overview.md §4",
+    "sample": true
+  },
+  {
+    "id": "q02",
+    "category": "braums",
+    "topic": "deliveries",
+    "store": null,
+    "question": "What comes on Hotshot #1 from the Braum's OKC warehouse?",
+    "choices": [
+      "Tile, vinyl, rubber base",
+      "Drive-thru windows, ice machine condensers, line sets, MDP",
+      "Menu boards and signage",
+      "Hoods and stainless equipment"
+    ],
+    "correct_index": 1,
+    "explanation": "Hotshot #1 brings the drive-thru windows, ice-machine condensers, line sets and the MDP. Hotshot #2 is the finishes (tile, vinyl, base, millwork and so on).",
+    "source": "super-test/approved-sample-and-rules.md sample #2; overview.md §4 Hotshot deliveries",
+    "sample": true
+  },
+  {
+    "id": "q03",
+    "category": "braums",
+    "topic": "plan-conflicts",
+    "store": "Conway #7551",
+    "question": "On Conway the plumbing sheet shows a 1,500-gal grease interceptor but the civil shows 1,000 gal. What do you do?",
+    "choices": [
+      "Install 1,000 since civil governs",
+      "Install whatever shows up",
+      "Stop and get it confirmed with Peyton/architect before ordering or setting",
+      "Split the difference"
+    ],
+    "correct_index": 2,
+    "explanation": "Two sheets disagree on a major item, so get the size confirmed in writing before anything is ordered or set. Conway's P-002 Rev 3 shows GT-1500 while its civil still shows 1,000 gal.",
+    "source": "super-test/approved-sample-and-rules.md sample #3; conway-7551.md Plan-set findings",
+    "sample": true
+  },
+  {
+    "id": "q04",
+    "category": "braums",
+    "topic": "geotech-earthwork",
+    "store": null,
+    "question": "The geotech report says strip at least 12\" of topsoil, but the dirt sub only planned 6\". What do you do?",
+    "choices": [
+      "Go with 6\"",
+      "Strip 12\" per geotech and tell Peyton right away so cost gets handled",
+      "Strip 6\" and add select fill",
+      "Ask the testing lab after the pad is built"
+    ],
+    "correct_index": 1,
+    "explanation": "The geotech governs the pad, so strip what it requires. Tell Peyton right away so the extra work is handled before it's done, not after.",
+    "source": "super-test/approved-sample-and-rules.md sample #4; littlerock-7543.md Geotech",
+    "sample": true
+  },
+  {
+    "id": "q05",
+    "category": "braums",
+    "topic": "plan-conflicts",
+    "store": "Russellville #7545",
+    "question": "On Russellville the civil inside the Rev1 building set shows underground 30\" HDPE detention, but the 4-30-26 civil shows a pond. Which do you build?",
+    "choices": [
+      "HDPE",
+      "Pond per 4-30-26 civil",
+      "Both",
+      "Cheaper one"
+    ],
+    "correct_index": 1,
+    "explanation": "The latest issued civil governs. The 4-30-26 civil shows a detention pond and no underground system.",
+    "source": "super-test/approved-sample-and-rules.md sample #5; russellville-7545.md Specific to this store",
+    "sample": true
+  },
+  {
+    "id": "q06",
+    "category": "braums",
+    "topic": "paving-concrete",
+    "store": null,
+    "question": "Per the Crafton paving spec, a panel with a random crack:",
+    "choices": [
+      "Seal with Dow 888",
+      "Patch",
+      "Leave if under 1/8\"",
+      "Remove and replace"
+    ],
+    "correct_index": 3,
+    "explanation": "Crafton's standard says randomly cracked panels must be removed and replaced. Sealing or patching isn't allowed.",
+    "source": "super-test/approved-sample-and-rules.md sample #6; overview.md §11 Paving",
+    "sample": true
+  },
+  {
+    "id": "q07",
+    "category": "braums",
+    "topic": "sequencing",
+    "store": null,
+    "question": "When should irrigation sleeves go in?",
+    "choices": [
+      "After paving",
+      "As soon as dirt work is done",
+      "During landscaping",
+      "Before slab pour only"
+    ],
+    "correct_index": 1,
+    "explanation": "The Support Manual's lessons learned say install irrigation sleeves as soon as dirt work is done, before paving makes it hard.",
+    "source": "super-test/approved-sample-and-rules.md sample #7; overview.md §6",
+    "sample": true
+  },
+  {
+    "id": "q08",
+    "category": "general",
+    "topic": "safety-fall",
+    "store": null,
+    "question": "OSHA fall protection height in construction?",
+    "choices": [
+      "4 ft",
+      "6 ft",
+      "10 ft",
+      "15 ft"
+    ],
+    "correct_index": 1,
+    "explanation": "In construction, OSHA requires fall protection at 6 feet or more above a lower level.",
+    "source": "super-test/approved-sample-and-rules.md sample #8; general practice (OSHA 1926.501)",
+    "sample": true
+  },
+  {
+    "id": "q09",
+    "category": "general",
+    "topic": "safety-excavation",
+    "store": null,
+    "question": "Trench depth requiring a protective system unless stable rock?",
+    "choices": [
+      "3 ft",
+      "4 ft",
+      "5 ft",
+      "8 ft"
+    ],
+    "correct_index": 2,
+    "explanation": "Trenches 5 feet deep or more need a protective system (sloping, shoring or a trench box) unless they're entirely in stable rock.",
+    "source": "super-test/approved-sample-and-rules.md sample #9; general practice (OSHA 1926.652)",
+    "sample": true
+  },
+  {
+    "id": "q10",
+    "category": "general",
+    "topic": "safety-ladders",
+    "store": null,
+    "question": "Extension ladder must extend above the landing:",
+    "choices": [
+      "1 ft",
+      "2 ft",
+      "3 ft",
+      "4 ft"
+    ],
+    "correct_index": 2,
+    "explanation": "A ladder used to reach an upper landing must extend at least 3 feet above it so workers have something to hold getting on and off.",
+    "source": "super-test/approved-sample-and-rules.md sample #10; general practice (OSHA 1926.1053)",
+    "sample": true
+  },
+  {
+    "id": "q11",
+    "category": "braums",
+    "topic": "owner-furnished-scope",
+    "store": null,
+    "question": "The walk-in cooler/freezer and the refrigeration condensers for a Braum's arrive. Per the responsibility matrix, how is that split?",
+    "choices": [
+      "NV buys and installs them",
+      "Braum's furnishes and installs them with its own crew",
+      "Braum's furnishes them and NV (GC) installs them",
+      "The refrigeration sub buys them off the spec"
+    ],
+    "correct_index": 2,
+    "explanation": "On the G-002 matrix the walk-in cooler/freezer and refrigeration condensers are Braum's-furnished, GC-installed, so we receive, protect and install them.",
+    "source": "overview.md §4 Braum's furnishes, GC installs",
+    "sample": false
+  },
+  {
+    "id": "q12",
+    "category": "braums",
+    "topic": "owner-furnished-scope",
+    "store": null,
+    "question": "Which of these is NV's to furnish AND install on a Braum's store?",
+    "choices": [
+      "Exterior signage",
+      "Ansul system and fire alarm",
+      "POS and seating",
+      "Kitchen hoods"
+    ],
+    "correct_index": 1,
+    "explanation": "Ansul, the grease trap, sprinkler and fire alarm are GC furnish-and-install. Hoods, POS, seating and signage are Braum's furnish-and-install.",
+    "source": "overview.md §4 GC furnishes and installs",
+    "sample": false
+  },
+  {
+    "id": "q13",
+    "category": "braums",
+    "topic": "owner-furnished-scope",
+    "store": null,
+    "question": "Braum's crews show up to set the hoods and the stainless foodservice equipment. Whose scope is that?",
+    "choices": [
+      "The millwork sub sets it",
+      "Braum's furnishes it and our MEP subs set it",
+      "NV furnishes and installs it",
+      "Braum's furnishes and installs it"
+    ],
+    "correct_index": 3,
+    "explanation": "Hoods and all foodservice/stainless equipment are Braum's furnish-and-install. Our job is to have the space, rough-ins and access ready.",
+    "source": "overview.md §4 Braum's furnishes and installs",
+    "sample": false
+  },
+  {
+    "id": "q14",
+    "category": "braums",
+    "topic": "owner-furnished-scope",
+    "store": null,
+    "question": "Who buys the floor tile, rubber base and wallpaper on a Braum's job?",
+    "choices": [
+      "The flooring sub buys them on his own PO",
+      "Braum's furnishes and installs them",
+      "Braum's furnishes them and NV installs them",
+      "NV buys them from the finish schedule"
+    ],
+    "correct_index": 2,
+    "explanation": "Flooring/tile, rubber base and wallpaper are Braum's-furnished, GC-installed. They come from the OKC warehouse, so don't let a sub order them.",
+    "source": "overview.md §4 Braum's furnishes, GC installs",
+    "sample": false
+  },
+  {
+    "id": "q15",
+    "category": "braums",
+    "topic": "owner-furnished-scope",
+    "store": null,
+    "question": "On a Braum's store, the parking lot light poles and the automatic front doors are:",
+    "choices": [
+      "Furnished by the city",
+      "Furnished and installed by NV (GC)",
+      "Furnished by Braum's, installed by NV",
+      "Furnished and installed by Braum's"
+    ],
+    "correct_index": 1,
+    "explanation": "Light poles and auto front doors are on the GC furnish-and-install list, so they're ours to buy, schedule and install.",
+    "source": "overview.md §4 GC furnishes and installs",
+    "sample": false
+  },
+  {
+    "id": "q16",
+    "category": "braums",
+    "topic": "deliveries",
+    "store": null,
+    "question": "Hotshot #2 is coming from the Braum's OKC warehouse. What should you be ready to receive and store?",
+    "choices": [
+      "The finishes package: tile, vinyl, grout, millwork, stall doors and rubber base",
+      "AAON rooftop units and curbs, which come from the manufacturer, not Hotshot #2",
+      "Drive-thru windows, ice-machine condensers, line sets and the MDP from Hotshot #1",
+      "Hoods and stainless equipment, which Braum's own crews set, not Hotshot #2"
+    ],
+    "correct_index": 0,
+    "explanation": "Hotshot #2 is the finishes package. Plan dry, secure storage for it; Hotshot #1 is the windows, condensers, line sets and MDP.",
+    "source": "overview.md §4 Hotshot deliveries",
+    "sample": false
+  },
+  {
+    "id": "q17",
+    "category": "braums",
+    "topic": "submittals",
+    "store": null,
+    "question": "Per the NV Support Manual, which of these need shop drawings on a Braum's job?",
+    "choices": [
+      "Porta potty, dumpster and temp facilities, which aren't in the shop-drawing list",
+      "Rubber base, paint and toilet accessories, which don't need shop drawings",
+      "Metal canopy, NABCO door install and glass storefront, per the Support Manual",
+      "Toilet accessories only, with no canopy, doors or storefront drawings"
+    ],
+    "correct_index": 2,
+    "explanation": "The Support Manual lists the metal canopy, NABCO door install and glass storefront as required shop drawings, so don't let those trades build before theirs are approved.",
+    "source": "overview.md §3 Required shop drawings",
+    "sample": false
+  },
+  {
+    "id": "q18",
+    "category": "braums",
+    "topic": "scheduling",
+    "store": null,
+    "question": "You've just mobilized on a new Braum's. Which item needs tracking from day one because of its long lead time?",
+    "choices": [
+      "Rebar",
+      "Porta potties",
+      "The AAON rooftop units",
+      "Rubber base"
+    ],
+    "correct_index": 2,
+    "explanation": "AAON RTUs are a long-lead item on the Braum's schedule template (along with NABCO doors and interior lighting), so they can drive the dry-in-to-start-up dates.",
+    "source": "overview.md §5 Long-lead items",
+    "sample": false
+  },
+  {
+    "id": "q19",
+    "category": "braums",
+    "topic": "sequencing",
+    "store": null,
+    "question": "In the standard Braum's schedule template, what comes right after the footings?",
+    "choices": [
+      "Roofing",
+      "Fire final",
+      "The tension (PT) slab",
+      "Paving"
+    ],
+    "correct_index": 2,
+    "explanation": "The template runs mobilize, then footings, then the tension slab about four weeks later.",
+    "source": "overview.md §5 Sequence",
+    "sample": false
+  },
+  {
+    "id": "q20",
+    "category": "braums",
+    "topic": "sequencing",
+    "store": null,
+    "question": "The fire final just passed on a Braum's store. Per the standard schedule, what's the next step before CO and turnover?",
+    "choices": [
+      "Order the RTUs",
+      "Final walkthrough with Koty Foran (Braum's)",
+      "Start irrigation sleeves",
+      "Pour the tension slab"
+    ],
+    "correct_index": 1,
+    "explanation": "The template goes fire final, then a final walkthrough with Koty, then CO and turnover.",
+    "source": "overview.md §5 Sequence",
+    "sample": false
+  },
+  {
+    "id": "q21",
+    "category": "braums",
+    "topic": "braums-team",
+    "store": null,
+    "question": "You have a question about the post-tensioned slab design on a Braum's store. Which firm designs it on every set?",
+    "choices": [
+      "Crafton Engineering",
+      "Tanner Consulting",
+      "Stresscon",
+      "Reprise Design"
+    ],
+    "correct_index": 2,
+    "explanation": "Every Braum's set has a PT slab designed by Stresscon. Reprise is the architect, Tanner the landscape designer and Crafton a civil engineer.",
+    "source": "overview.md §2 Prototypes",
+    "sample": false
+  },
+  {
+    "id": "q22",
+    "category": "braums",
+    "topic": "framing-trusses",
+    "store": null,
+    "question": "The HVAC sub wants to cut an exhaust fan opening through a roof truss. What does the Kimley-Horn truss review require?",
+    "choices": [
+      "Openings go between trusses; don't cut a truss to make them",
+      "Let the roofer decide whether that truss can be cut in the field",
+      "Cut through the truss if the exhaust opening looks small enough",
+      "Cut the truss and add blocking to frame the exhaust-fan opening"
+    ],
+    "correct_index": 0,
+    "explanation": "Mechanical openings (exhaust fan, RTU, condenser) go between trusses, and openings over 2 ft o.c. need a prefab girder truss. Never field-cut a truss.",
+    "source": "overview.md §6 Truss review",
+    "sample": false
+  },
+  {
+    "id": "q23",
+    "category": "braums",
+    "topic": "framing-trusses",
+    "store": null,
+    "question": "Checking the layout before trusses are ordered, you see the girder truss lands right where the electrical MDP cabinet goes. What do you do?",
+    "choices": [
+      "Ignore it and let the electrician work around the girder truss",
+      "Cut the girder truss around the cabinet later in the field",
+      "Move the MDP wherever it fits after the trusses arrive",
+      "Flag it to Peyton and the engineer before the trusses are set"
+    ],
+    "correct_index": 3,
+    "explanation": "This exact conflict happened on Clarksville, and the girder truss moved back to clear the MDP cabinet. Catch it before the trusses are built.",
+    "source": "overview.md §6 Lessons learned",
+    "sample": false
+  },
+  {
+    "id": "q24",
+    "category": "braums",
+    "topic": "field-standards",
+    "store": null,
+    "question": "The canopy erector asks how high the canopy columns go. Per the Braum's lessons learned:",
+    "choices": [
+      "Whatever the canopy shop drawing default is",
+      "All the way to the top plate",
+      "They stop at the soffit",
+      "The framer decides in the field"
+    ],
+    "correct_index": 1,
+    "explanation": "The Support Manual says canopy columns go all the way to the top plate. Make sure the erector has that before fabrication.",
+    "source": "overview.md §6 Lessons learned",
+    "sample": false
+  },
+  {
+    "id": "q25",
+    "category": "braums",
+    "topic": "field-standards",
+    "store": null,
+    "question": "The canopy footings pour in two weeks. What do the lessons learned say about the canopy anchor bolts?",
+    "choices": [
+      "Drill and epoxy the anchor bolts after the footings are poured",
+      "The concrete sub buys the anchor bolts at the supply house later",
+      "Confirm they're in the canopy bid and on site before the pour",
+      "Canopy anchor bolts aren't needed on a Braum's store"
+    ],
+    "correct_index": 2,
+    "explanation": "Canopy anchor bolts must be in the canopy bid and mailed to the site. Check they're there before you form and pour.",
+    "source": "overview.md §6 Lessons learned",
+    "sample": false
+  },
+  {
+    "id": "q26",
+    "category": "braums",
+    "topic": "sequencing",
+    "store": null,
+    "question": "When does the dumpster gate post go in on a Braum's?",
+    "choices": [
+      "After the final walkthrough",
+      "After paving is striped",
+      "Whenever the fence sub shows up",
+      "With the canopy"
+    ],
+    "correct_index": 3,
+    "explanation": "The lessons learned say install the dumpster gate post with the canopy.",
+    "source": "overview.md §6 Lessons learned",
+    "sample": false
+  },
+  {
+    "id": "q27",
+    "category": "braums",
+    "topic": "field-standards",
+    "store": null,
+    "question": "Which items do the Braum's lessons learned say to keep in the job trailer?",
+    "choices": [
+      "Ceiling tile and grid for the dining room and restrooms",
+      "J-bolts, bollards, 6x6 column bases/hangers and angle iron",
+      "Paint, caulk and leftover finish materials from the warehouse",
+      "Spare glass and extra storefront parts for the mural"
+    ],
+    "correct_index": 1,
+    "explanation": "Keep J-bolts, bollards, 6x6 column bases/hangers and the angle iron (curb at the fridge-box unloading area) in the trailer so they don't walk off or get lost.",
+    "source": "overview.md §6 Lessons learned",
+    "sample": false
+  },
+  {
+    "id": "q28",
+    "category": "braums",
+    "topic": "field-standards",
+    "store": null,
+    "question": "The storefront sub lays out the glass mural and the two drive-thru-side windows sit higher than drive-thru window #2. Per the lessons learned:",
+    "choices": [
+      "Delete the two drive-thru-side windows from the mural layout",
+      "Leave the two higher windows as drawn on the storefront layout",
+      "Lower those two windows to the height of window #2, because of the glass mirror",
+      "Raise window #2 to match the two higher drive-thru-side windows, and leave the mural as laid out"
+    ],
+    "correct_index": 2,
+    "explanation": "The lessons learned say lower the 2 drive-thru-side windows of the glass mural to the height of window #2, because of the glass mirror.",
+    "source": "overview.md §6 Lessons learned",
+    "sample": false
+  },
+  {
+    "id": "q29",
+    "category": "braums",
+    "topic": "rfis",
+    "store": null,
+    "question": "A sub finds a discrepancy between two MEP sheets before bid day, and nobody has resolved it. Per the general note in every Braum's MEP set, what's the smart move?",
+    "choices": [
+      "Get an RFI answered before bid day",
+      "Build whichever sheet the sub likes",
+      "Assume the lesser scope and sort it out later",
+      "Wait for the inspector to decide"
+    ],
+    "correct_index": 0,
+    "explanation": "The MEP general note says an unresolved discrepancy means including the most work, with no extra compensation later. That's why RFIs go in before bid day.",
+    "source": "overview.md §11 MEP general note",
+    "sample": false
+  },
+  {
+    "id": "q30",
+    "category": "braums",
+    "topic": "rfis",
+    "store": "Little Rock #7543",
+    "question": "On Little Rock, the geotech report names the site as Lot BR-1B but the civil calls it Lot BR-4R. What's the right move?",
+    "choices": [
+      "Send an RFI so the record confirms the geotech covers this site",
+      "Use whichever lot number the dirt sub prefers in the field",
+      "Order a new set of borings yourself without sending an RFI",
+      "Ignore the lot-name mismatch; it's just a label on the two reports"
+    ],
+    "correct_index": 0,
+    "explanation": "A lot mismatch between the geotech and the civil is a listed conflict to RFI. Get it confirmed in writing rather than assume.",
+    "source": "littlerock-7543.md Conflicts to RFI",
+    "sample": false
+  },
+  {
+    "id": "q31",
+    "category": "braums",
+    "topic": "plan-conflicts",
+    "store": "Longview #7530",
+    "question": "Every other Braum's set shows an 8\" dumpster pad, but the 7530 G-004 sheet shows 6\". The concrete sub is about to form it. What do you do?",
+    "choices": [
+      "Pour 8\" like the other stores and don't mention the conflict",
+      "Pour 7\" to split the difference between the 6\" and 8\" callouts",
+      "Pour 6\" because that's what this one G-004 sheet shows, and ignore the other sets",
+      "Get it confirmed with Peyton/the architect before forming or ordering"
+    ],
+    "correct_index": 3,
+    "explanation": "A store sheet that differs from every other set is a conflict to confirm before you build. Don't pick one yourself.",
+    "source": "longview-7530.md Specific to this store",
+    "sample": false
+  },
+  {
+    "id": "q32",
+    "category": "braums",
+    "topic": "geotech-earthwork",
+    "store": null,
+    "question": "The structural PT2 sheet says \"GEOTECHNICAL REPORT: T.B.D.\" and leaves the select-fill depth blank. The dirt sub is ready to build the pad. What do you do?",
+    "choices": [
+      "Get the select-fill depth confirmed from the geotech before building the pad",
+      "Use the select-fill depth from the last Braum's store you built, without checking this report",
+      "Let the dirt sub pick a select-fill depth that looks right to him",
+      "Skip select fill and build the pad on the existing subgrade as-is"
+    ],
+    "correct_index": 0,
+    "explanation": "On several stores the foundation design wasn't tied to a geotech report at permit, which is a CO and redesign risk. Get the depth confirmed before the pad goes in.",
+    "source": "overview.md §11 Geotech referenced on the structural sheets",
+    "sample": false
+  },
+  {
+    "id": "q33",
+    "category": "braums",
+    "topic": "geotech-earthwork",
+    "store": "Little Rock #7543",
+    "question": "The geotech warns of possible perched water and says earthwork is best June–September. Your dirt work is slipping into November. What's the best move?",
+    "choices": [
+      "Plan for dewatering and tell Peyton early so it's scheduled",
+      "Stop all work until next June without telling anyone",
+      "Add water to the subgrade to help compaction",
+      "Keep going and hope it stays dry"
+    ],
+    "correct_index": 0,
+    "explanation": "The Little Rock geotech says to plan on dewatering outside the June–September window. Raise it early so it's planned, not a surprise.",
+    "source": "littlerock-7543.md Geotech",
+    "sample": false
+  },
+  {
+    "id": "q34",
+    "category": "braums",
+    "topic": "geotech-earthwork",
+    "store": "Little Rock #7543",
+    "question": "The geotech defines trench rock as material a CAT 330B with rock teeth can't remove. The utility sub hits hard ground in a deep trench and wants to call it rock. What do you do?",
+    "choices": [
+      "Check the geotech definition, document it, and tell Peyton before any rock claim",
+      "Accept the sub's word and let him bill the hard ground as trench rock without checking the geotech definition",
+      "Refuse the rock claim without looking at the material in the trench",
+      "Have him switch to a smaller machine and still call it rock"
+    ],
+    "correct_index": 0,
+    "explanation": "Rock is defined by the equipment that can't remove it. Verify against that definition and document it before anything is agreed.",
+    "source": "littlerock-7543.md Geotech",
+    "sample": false
+  },
+  {
+    "id": "q35",
+    "category": "braums",
+    "topic": "paving-concrete",
+    "store": "Little Rock #7543",
+    "question": "The Little Rock E-101 says to keep parking lot reinforcement 24\" from the drive-thru loop sensor. The paving crew is setting rebar in the drive-thru lane. What do you check?",
+    "choices": [
+      "That there's no rebar anywhere in the whole drive-thru lane",
+      "That the rebar is held back from the loop sensor as E-101 shows",
+      "That the rebar is doubled around the sensor to protect it",
+      "Nothing; the loop-sensor installer will deal with the rebar later"
+    ],
+    "correct_index": 1,
+    "explanation": "The electrical sheet calls for a clear zone between the reinforcement and the drive-thru loop sensor. Check it before the pour, because it can't be fixed after.",
+    "source": "littlerock-7543.md Specific to this store",
+    "sample": false
+  },
+  {
+    "id": "q36",
+    "category": "braums",
+    "topic": "store-differences",
+    "store": "Little Rock #7543",
+    "question": "You're moving from Russellville, where the mop basin is recessed into the floor, to Little Rock. Before the slab pour on Little Rock, what do you check?",
+    "choices": [
+      "Check with the mop sink vendor only after the slab is poured",
+      "Little Rock's plumbing sheets; the mop basin is surface-mounted",
+      "Nothing; every Braum's mop basin is recessed the same way as Russellville",
+      "That Little Rock gets the same recessed basin as Russellville"
+    ],
+    "correct_index": 1,
+    "explanation": "Little Rock's mop basin is surface-mounted while Russellville's is recessed. Don't carry one store's details to the next without checking.",
+    "source": "littlerock-7543.md M/P; russellville-7545.md A-104/P",
+    "sample": false
+  },
+  {
+    "id": "q37",
+    "category": "braums",
+    "topic": "store-differences",
+    "store": "Little Rock #7543",
+    "question": "Hotshot #2 brings Little Rock's LVT and it's Daltile Elixen (Exotic Teak), not the Van Gogh Merbau you've installed on other Braum's stores. What do you do?",
+    "choices": [
+      "Have the flooring sub buy Van Gogh Merbau instead of the Daltile",
+      "Check Little Rock's A-103; this store is specified with Daltile Elixen",
+      "Reject the Daltile shipment and send the Hotshot material back to the OKC warehouse",
+      "Install the Daltile in the back rooms only, not the dining area"
+    ],
+    "correct_index": 1,
+    "explanation": "Little Rock is the only store not on Van Gogh Merbau. Check the store's own finish plan before rejecting owner-furnished material.",
+    "source": "overview.md §11 LVT; littlerock-7543.md A-103",
+    "sample": false
+  },
+  {
+    "id": "q38",
+    "category": "braums",
+    "topic": "store-differences",
+    "store": "Little Rock #7543",
+    "question": "Your electrician did the tower on Longview #7516 with neon perimeter lighting and plans the same on Little Rock. What do you tell him?",
+    "choices": [
+      "Skip the tower lighting on Little Rock altogether",
+      "Let Braum's signage crew handle the tower lighting later",
+      "Neon is standard on Braum's towers, so go ahead and install it the same way as Longview",
+      "Check Little Rock's A-201; it shows LED pink perimeter lighting, not neon"
+    ],
+    "correct_index": 3,
+    "explanation": "7516 shows neon but Little Rock shows LED pink. Build each store from its own elevations.",
+    "source": "littlerock-7543.md A-201; overview.md §11 Tower lighting",
+    "sample": false
+  },
+  {
+    "id": "q39",
+    "category": "braums",
+    "topic": "utilities",
+    "store": "Conway #7551",
+    "question": "The Conway civil says to remove the existing 8\" waterline \"after new line is in service.\" The utility sub wants to demo the old line first to save a trip. What do you do?",
+    "choices": [
+      "No. The new line has to be in service first, as the civil says",
+      "Let him demo the existing line first so he can save a trip",
+      "Demo half of the old line now and the rest after the new one is live",
+      "Have the city decide on the day whether the old line can come out first"
+    ],
+    "correct_index": 0,
+    "explanation": "The civil sequence keeps water service running: new line in service, then remove the old one.",
+    "source": "conway-7551.md Civil",
+    "sample": false
+  },
+  {
+    "id": "q40",
+    "category": "braums",
+    "topic": "utilities",
+    "store": "Longview #7516",
+    "question": "The civil shows Delek Logistics pipelines crossing or bounding the site, with a pipeline easement. Before any digging near them, what do you do?",
+    "choices": [
+      "Dig carefully with the excavator since the civil shows the lines",
+      "Nothing else is needed if the plans already show the pipeline depth",
+      "Hand dig near the easement without calling in a locate",
+      "Call 811 and coordinate with the pipeline owner before excavating"
+    ],
+    "correct_index": 3,
+    "explanation": "Pipelines in an easement need locates and coordination with the operator before anyone digs. Plan depths aren't enough.",
+    "source": "longview-7516-eastman.md Specific to this store; general practice (811)",
+    "sample": false
+  },
+  {
+    "id": "q41",
+    "category": "braums",
+    "topic": "site-landscape",
+    "store": "Longview #7516",
+    "question": "The landscape plan says a 1:1 slope is \"NOT SUITABLE FOR TREE PLANTING – CONCRETE SLOPE WALL.\" The landscaper wants to plant trees there anyway. You:",
+    "choices": [
+      "Let him plant trees on the 1:1 slope even though the plan says it's not suitable",
+      "Lay sod on the 1:1 slope and skip both the wall and the trees",
+      "Build the concrete slope wall per L1; no trees on that slope",
+      "Plant the trees on that slope and skip the concrete wall"
+    ],
+    "correct_index": 2,
+    "explanation": "L1 calls that slope a concrete slope wall, not a planting area. Build what the sheet shows.",
+    "source": "longview-7516-eastman.md Specific to this store",
+    "sample": false
+  },
+  {
+    "id": "q42",
+    "category": "braums",
+    "topic": "utilities",
+    "store": "Russellville #7545",
+    "question": "While sawcutting for the ARDOT driveway on Russellville, your sub chips an existing ARDOT structure. Per the civil:",
+    "choices": [
+      "Leave the damaged ARDOT structure; it's their problem to fix later",
+      "Sawcut along neat lines and repair any damage as directed by ARDOT",
+      "Wait for the final inspection to bring up the damage to the ARDOT structure",
+      "Patch the chipped structure with whatever repair material is on site"
+    ],
+    "correct_index": 1,
+    "explanation": "The civil says sawcut ARDOT structures along neat lines and repair any damage as directed by ARDOT. Report it and get ARDOT's direction.",
+    "source": "russellville-7545.md ARDOT right-of-way work",
+    "sample": false
+  },
+  {
+    "id": "q43",
+    "category": "braums",
+    "topic": "paving-concrete",
+    "store": "Anna #7488",
+    "question": "The Anna civil (Kimley-Horn) is ready for paving. What does it require from the contractor before the paving is laid out?",
+    "choices": [
+      "A light-pole photometric study, but no pavement jointing plan",
+      "A pavement jointing plan, with panels no larger than 15'×15'",
+      "A paint-color submittal for the parking-lot striping only",
+      "Nothing beyond the civil sheets already in the job folder"
+    ],
+    "correct_index": 1,
+    "explanation": "The Anna civil requires the contractor to submit a pavement jointing plan. Get it approved before forming.",
+    "source": "anna-7488.md C-200/C-201 paving",
+    "sample": false
+  },
+  {
+    "id": "q44",
+    "category": "braums",
+    "topic": "paving-concrete",
+    "store": "Anna #7488",
+    "question": "On Anna the fire lane paving is a different mix and rebar spacing than the standard-duty section. The batch ticket for the fire lane pour shows the standard mix. What do you do?",
+    "choices": [
+      "Add more rebar and still pour the standard-duty mix in the fire lane",
+      "Stop and check C-600; the fire lane uses a stronger mix and tighter rebar",
+      "Pour it anyway, since both sections are shown as 6-inch paving on the civil",
+      "Pour the standard mix now and test the pavement later"
+    ],
+    "correct_index": 1,
+    "explanation": "C-600 calls out a stronger mix and tighter rebar for the fire lane than standard-duty. Don't place the wrong mix.",
+    "source": "anna-7488.md C-600 pavement",
+    "sample": false
+  },
+  {
+    "id": "q45",
+    "category": "braums",
+    "topic": "paving-concrete",
+    "store": null,
+    "question": "The paving sub wants to use a different joint sealant than Dow 888 because his supplier has it in stock. Under the Crafton paving spec:",
+    "choices": [
+      "Fine if it's the same color",
+      "Fine if it's a polyurethane",
+      "No. The spec says Dow 888 with \"NO ALTERNATES\"",
+      "Fine if the sub warrants it"
+    ],
+    "correct_index": 2,
+    "explanation": "Crafton's paving standard says Dow 888 sealant with no alternates. A substitute needs written approval, and the spec says none.",
+    "source": "overview.md §11 Paving",
+    "sample": false
+  },
+  {
+    "id": "q46",
+    "category": "braums",
+    "topic": "plan-revisions",
+    "store": "Conway #7551",
+    "question": "Conway Rev 3 reissued the full electrical set with new sheet numbers (E-101A…E-700). Your electrician is still working off sheets numbered E-001… What do you do?",
+    "choices": [
+      "Get him on the current Rev 3 set and pull the old sheets",
+      "Have him mix both sets",
+      "Let him finish from the old sheets",
+      "Wait for the inspector to catch it"
+    ],
+    "correct_index": 0,
+    "explanation": "Rev 3 replaced the whole electrical set, so the old-numbered sheets are superseded. Everyone builds from the current revision.",
+    "source": "conway-7551.md Revision history",
+    "sample": false
+  },
+  {
+    "id": "q47",
+    "category": "braums",
+    "topic": "store-differences",
+    "store": null,
+    "question": "Your electrician's last Braum's had the older 18 kW water heater. The new store is a \"new generation\" set (like Conway Rev3, Russellville or Little Rock). How should he wire WH-1?",
+    "choices": [
+      "Leave the water-heater circuit for Braum's crews to figure out",
+      "Wire it the same way as the last store's 18 kW water heater, without checking this set",
+      "Whatever amperage the water heater's shipping box happens to say",
+      "Per this job's electrical and plumbing sheets; newer sets use a 24 kW WH-1"
+    ],
+    "correct_index": 3,
+    "explanation": "The generation split changes WH-1 (24 kW on the new sets vs 18 kW on the old), so the circuit differs. Build from this store's sheets.",
+    "source": "overview.md §11 generation split",
+    "sample": false
+  },
+  {
+    "id": "q48",
+    "category": "braums",
+    "topic": "plan-revisions",
+    "store": "Longview #7468",
+    "question": "The only civil set in the job folder is marked as an interim-review set, not for construction. The dirt sub wants to start grading from it. You:",
+    "choices": [
+      "Grade only the parking lot from the interim set, not the building pad",
+      "Let him start grading; an interim-review set is close enough to build from",
+      "Hold off on grading and get the issued-for-construction civil first",
+      "Use the landscape plan for site grades instead of waiting on an issued civil"
+    ],
+    "correct_index": 2,
+    "explanation": "Never build from a set marked not for construction. Get the issued civil first.",
+    "source": "longview-7468-westloop.md Civil",
+    "sample": false
+  },
+  {
+    "id": "q49",
+    "category": "braums",
+    "topic": "inspections",
+    "store": "Longview #7468",
+    "question": "The city's Final Approved Plan Report says \"Notes … must be addressed in field.\" What do you do with it?",
+    "choices": [
+      "Only read the city notes if a later inspection actually fails",
+      "File the report and assume the architect is responsible for every city note in it",
+      "Hand it to the PM and don't follow up on the field notes yourself",
+      "Read the city's review notes and handle each one in the field before inspections"
+    ],
+    "correct_index": 3,
+    "explanation": "The city told us those notes are ours to handle in the field, so the inspector will look for them.",
+    "source": "longview-7468-westloop.md Plan-set findings",
+    "sample": false
+  },
+  {
+    "id": "q50",
+    "category": "braums",
+    "topic": "plan-conflicts",
+    "store": "Longview #7530",
+    "question": "The 7530 drainage sheet says detention is not proposed, but the SWPPP boilerplate still mentions a pond. What do you build?",
+    "choices": [
+      "Build half a pond to split the difference between the two documents",
+      "Ask the dirt sub to decide whether the site gets a pond",
+      "Follow the civil drainage plan (no detention) and get the SWPPP wording confirmed",
+      "Build a detention pond anyway so the SWPPP boilerplate is matched, and ignore the civil"
+    ],
+    "correct_index": 2,
+    "explanation": "The civil drainage design governs what gets built. The SWPPP text is boilerplate that should be confirmed or corrected.",
+    "source": "longview-7530.md Drainage",
+    "sample": false
+  },
+  {
+    "id": "q51",
+    "category": "braums",
+    "topic": "sub-coordination",
+    "store": "Tyler",
+    "question": "On the Tyler job, J2 is moving the existing fire vault and double check and tying in the fire line. Who disconnects and reconnects inside the building?",
+    "choices": [
+      "The sprinkler contractor",
+      "Braum's",
+      "The electrician",
+      "J2"
+    ],
+    "correct_index": 0,
+    "explanation": "J2's proposal says the sprinkler contractor must disconnect and reconnect inside the building, so schedule them together.",
+    "source": "tyler-relocation.md J2 Construction Services",
+    "sample": false
+  },
+  {
+    "id": "q52",
+    "category": "braums",
+    "topic": "safety-fire",
+    "store": "Tyler",
+    "question": "On Tyler the fire line will be out of service while the vault is moved, and J2's scope excludes fire watch. What do you need to do?",
+    "choices": [
+      "Nothing; J2 handles fire watch even though their proposal excludes it",
+      "Nothing; the building is still standing, so a fire watch isn't needed",
+      "Plan a fire watch with Peyton before the line goes out of service",
+      "Tell the store about the fire-line shutdown after the work is already done"
+    ],
+    "correct_index": 2,
+    "explanation": "An impaired fire system needs a fire watch, and J2 excluded it. Someone has to cover it before the shutdown.",
+    "source": "tyler-relocation.md J2 Excludes; general practice",
+    "sample": false
+  },
+  {
+    "id": "q53",
+    "category": "braums",
+    "topic": "sub-coordination",
+    "store": "Tyler",
+    "question": "KFI is relocating the pylon sign on Tyler. Their scope excludes stone removal at the base and the underground circuit. Before KFI shows up:",
+    "choices": [
+      "Make sure another crew is covering the stone removal and the underground circuit",
+      "Remove the stone and pull the circuit after the sign has already been reset",
+      "KFI will handle the stone and the circuit anyway, even though they excluded them",
+      "Leave the stone on and let KFI try to work around the base"
+    ],
+    "correct_index": 0,
+    "explanation": "Exclusions are scope gaps. Cover them with another crew before the sub mobilizes, or KFI shows up to a sign it can't move.",
+    "source": "tyler-relocation.md KFI Signs",
+    "sample": false
+  },
+  {
+    "id": "q54",
+    "category": "braums",
+    "topic": "change-management",
+    "store": "Atoka",
+    "question": "On Atoka, NV is the concrete sub. The GC asks your crew to haul in gravel base. Per NV's proposal:",
+    "choices": [
+      "Gravel is excluded, so flag it to Peyton before doing the extra work",
+      "Do the gravel work now and only mention it at the end of the job",
+      "Do it because hauling gravel is just part of the concrete scope on this job",
+      "Refuse the request and leave the site without telling Peyton"
+    ],
+    "correct_index": 0,
+    "explanation": "The proposal excludes surveying, dirt work, underground utilities and gravel. Extra work gets agreed through Peyton first.",
+    "source": "atoka-ok.md Concrete bid",
+    "sample": false
+  },
+  {
+    "id": "q55",
+    "category": "braums",
+    "topic": "geotech-earthwork",
+    "store": null,
+    "question": "The testing lab says an area of the building pad is unsuitable soil. What do you do?",
+    "choices": [
+      "Stop, document the lab/geotech recommendation, and tell Peyton before undercutting",
+      "Proof-roll the same area again until the lab finally passes it",
+      "Cover the unsuitable area with select fill and keep moving without telling Peyton or the lab",
+      "Leave the unsuitable soil for the slab sub to deal with later"
+    ],
+    "correct_index": 0,
+    "explanation": "Unsuitable soil and undercut are a recurring Braum's change. Document it and get it handled through Peyton before the work is done.",
+    "source": "overview.md §7 Recurring scope problems #1",
+    "sample": false
+  },
+  {
+    "id": "q56",
+    "category": "braums",
+    "topic": "change-management",
+    "store": null,
+    "question": "Mid-job, the city's utility reviewer requires the sanitary sewer to be upsized with a new manhole. What do you do?",
+    "choices": [
+      "Get the revised design in writing, tell Peyton, and don't install the old size",
+      "Install the original size because that's what's on the bid plans, and ignore the city",
+      "Wait until the final inspection to deal with the city's sewer comment",
+      "Upsize the sewer on your own and don't tell Peyton or the city"
+    ],
+    "correct_index": 0,
+    "explanation": "City utility comments are a recurring source of Braum's changes (7516 upsized its sewer to 8\" with a manhole). Get it documented before building.",
+    "source": "overview.md §7 #3 City utility comments",
+    "sample": false
+  },
+  {
+    "id": "q57",
+    "category": "braums",
+    "topic": "submittals",
+    "store": "Longview #7516",
+    "question": "Fire protection is a deferred submittal on the building set. The sprinkler sub wants to start rough-in next week. What do you check first?",
+    "choices": [
+      "That the ceiling grid is already in before any sprinkler rough-in starts",
+      "That the deferred fire protection submittal is approved before work starts",
+      "That the fire alarm system is completely finished before sprinkler rough-in",
+      "Nothing; the building permit already covers a deferred fire-protection submittal"
+    ],
+    "correct_index": 1,
+    "explanation": "A deferred submittal still has to be approved before that work is built, or it can fail inspection.",
+    "source": "longview-7516-eastman.md G-001 deferred submittals",
+    "sample": false
+  },
+  {
+    "id": "q58",
+    "category": "braums",
+    "topic": "inspections",
+    "store": "Little Rock #7543",
+    "question": "The plumber sets the floor sink with the indirect waste pipe running down into it. The Little Rock plumbing sheet calls for a 2\" air gap at the floor sink. What do you do?",
+    "choices": [
+      "Wait for the health inspector to decide whether the air gap matters",
+      "Leave it as set; the floor sink drains fine without an air gap",
+      "Have him correct it so the required 2-inch air gap is in place",
+      "Caulk the gap so the waste pipe looks tight in the floor sink"
+    ],
+    "correct_index": 2,
+    "explanation": "The sheet calls for an air gap at the floor sink, so a pipe into the sink is wrong. Fix it before inspection.",
+    "source": "littlerock-7543.md M/P",
+    "sample": false
+  },
+  {
+    "id": "q59",
+    "category": "braums",
+    "topic": "site-protection",
+    "store": "Anna #7488",
+    "question": "The Anna demo plan says the existing fire hydrant and power pole remain. The demo sub's excavator is working right next to them. What do you do?",
+    "choices": [
+      "Protect them and make sure the operator knows they stay",
+      "Nothing unless he hits one",
+      "Let him remove them; they're in the way",
+      "Have the city move them"
+    ],
+    "correct_index": 0,
+    "explanation": "Items marked to remain are ours to protect. Damage turns into delay and repair work.",
+    "source": "anna-7488.md C-100 demo",
+    "sample": false
+  },
+  {
+    "id": "q60",
+    "category": "general",
+    "topic": "daily-reports",
+    "store": null,
+    "question": "It rained out today. Which is the best daily report entry?",
+    "choices": [
+      "Just the word \"Rain,\" with no start/stop times, crews sent home, missed work, or photos",
+      "Nothing in today's report, because no work happened once it started raining",
+      "Rain start and stop times, crews sent home, work that couldn't happen, and photos",
+      "A short note in next week's report, after you've forgotten the times"
+    ],
+    "correct_index": 2,
+    "explanation": "Specific, same-day weather records back up weather-day time extensions and delay claims.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q61",
+    "category": "general",
+    "topic": "daily-reports",
+    "store": null,
+    "question": "Why should weather impacts go in the daily report the same day they happen?",
+    "choices": [
+      "They don't matter if you still expect the job to finish on time",
+      "Only the PM's notes count, so the daily report can be written later",
+      "They're the record that backs up time extensions and delay disputes later",
+      "The owner never reads daily reports, so a same-day written record isn't needed"
+    ],
+    "correct_index": 2,
+    "explanation": "Daily reports written at the time are the evidence for weather days and disputes. Memories months later aren't.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q62",
+    "category": "general",
+    "topic": "inspections",
+    "store": null,
+    "question": "Before you call for a city inspection, what should you do?",
+    "choices": [
+      "Let the sub call the inspector whenever he says he's ready, without walking it yourself",
+      "Wait for the inspector to show up, find the problems, and tell you what's wrong",
+      "Walk it yourself and confirm the work is complete and matches the plans",
+      "Call the city and hope it passes without walking the work first"
+    ],
+    "correct_index": 2,
+    "explanation": "A pre-inspection walk catches problems before they become failed inspections and lost days.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q63",
+    "category": "general",
+    "topic": "inspections",
+    "store": null,
+    "question": "The inspector fails the underground plumbing. What's next?",
+    "choices": [
+      "Correct the items and get it re-inspected and passed before covering",
+      "Backfill the underground and plan to fix the failed items later",
+      "Pour the slab over the failed work and argue with the inspector later",
+      "Call a different inspector and hope they pass the same work"
+    ],
+    "correct_index": 0,
+    "explanation": "Failed work stays exposed until it's corrected and passes re-inspection.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q64",
+    "category": "general",
+    "topic": "inspections",
+    "store": null,
+    "question": "The concrete crew wants to pour over the underground plumbing before its inspection, to make the schedule. You:",
+    "choices": [
+      "Hold the pour until the inspection passes",
+      "Pour half",
+      "Take photos and pour",
+      "Let them pour; it's probably fine"
+    ],
+    "correct_index": 0,
+    "explanation": "Covering uninspected work can force tear-out. Hold until it passes.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q65",
+    "category": "general",
+    "topic": "scheduling",
+    "store": null,
+    "question": "What's a two-week lookahead mainly used for?",
+    "choices": [
+      "Replacing the master schedule with a new baseline every two weeks",
+      "Lining up subs, deliveries and inspections for the next two weeks",
+      "Tracking last month's completed work for the closeout book",
+      "Billing the owner for work already in place this period"
+    ],
+    "correct_index": 1,
+    "explanation": "A short-interval lookahead turns the master schedule into what each crew needs to do, and when, over the next two weeks.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q66",
+    "category": "general",
+    "topic": "scheduling",
+    "store": null,
+    "question": "An activity on the critical path slips 3 days. What happens to the finish date if nothing changes?",
+    "choices": [
+      "It moves earlier",
+      "Only the next activity is affected",
+      "It slips about 3 days unless you recover the time",
+      "Nothing; there's float"
+    ],
+    "correct_index": 2,
+    "explanation": "Critical-path activities have no float, so any delay pushes the finish unless you recover it.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q67",
+    "category": "general",
+    "topic": "change-management",
+    "store": null,
+    "question": "The owner's rep tells you on site to have a sub add work that isn't in the plans. What do you do?",
+    "choices": [
+      "Get it in writing and route it through the PM before the work starts",
+      "Ignore the owner's rep and don't mention it to the PM",
+      "Do the added work now and sort out the paperwork at closeout",
+      "Tell the sub to go ahead on the verbal direction alone, with no written change"
+    ],
+    "correct_index": 0,
+    "explanation": "Verbal scope changes need documentation and PM approval first, or they turn into unpaid work and disputes.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q68",
+    "category": "general",
+    "topic": "rfis",
+    "store": null,
+    "question": "Two sheets conflict and you're not sure what to build. What's the best RFI?",
+    "choices": [
+      "A phone call to the architect with no written RFI or record",
+      "Just writing \"Plans are wrong, please fix,\" with no sheet references, photos, or proposed answer",
+      "Wait, then build whichever conflicting detail is easier in the field",
+      "One that cites both sheets, includes photos if helpful, and proposes a solution"
+    ],
+    "correct_index": 3,
+    "explanation": "A clear RFI with references and a proposed answer gets a faster, documented response.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q69",
+    "category": "general",
+    "topic": "safety-general",
+    "store": null,
+    "question": "You see a worker on site without a hard hat or safety glasses where they're required. What do you do?",
+    "choices": [
+      "Write it down for the PM later",
+      "Ignore it if he's a sub's worker",
+      "Stop and correct it right away",
+      "Mention it at next week's toolbox talk"
+    ],
+    "correct_index": 2,
+    "explanation": "PPE problems get fixed on the spot. The super owns site safety for everyone, including subs' crews.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q70",
+    "category": "general",
+    "topic": "safety-excavation",
+    "store": null,
+    "question": "When does OSHA require a competent person to inspect an open trench?",
+    "choices": [
+      "Daily before work, and after rain or other events that add hazards",
+      "Once when the trench is first dug, and not again after that",
+      "Weekly, or whenever the superintendent happens to be back on site",
+      "Only after a cave-in or some other accident has already happened on the site"
+    ],
+    "correct_index": 0,
+    "explanation": "Excavations are inspected by a competent person daily before work starts and after rain or anything else that changes conditions.",
+    "source": "general practice (OSHA 1926.651(k))",
+    "sample": false
+  },
+  {
+    "id": "q71",
+    "category": "general",
+    "topic": "safety-excavation",
+    "store": null,
+    "question": "How far back from the trench edge must spoil piles and equipment be kept?",
+    "choices": [
+      "Right at the edge is fine if it's compacted",
+      "At least 2 feet",
+      "6 inches",
+      "It doesn't matter in clay"
+    ],
+    "correct_index": 1,
+    "explanation": "OSHA requires spoil and equipment to be kept at least 2 feet from the edge of an excavation, or retained.",
+    "source": "general practice (OSHA 1926.651(j)(2))",
+    "sample": false
+  },
+  {
+    "id": "q72",
+    "category": "general",
+    "topic": "safety-excavation",
+    "store": null,
+    "question": "A trench is 4 feet deep or more. What does OSHA require for getting in and out?",
+    "choices": [
+      "A ladder, ramp or other way out within 25 feet of lateral travel",
+      "Climbing out on the shoring or trench box is good enough for OSHA",
+      "Nothing at all as long as the trench is still under 5 feet deep",
+      "A rope only, with no ladder or ramp in the trench"
+    ],
+    "correct_index": 0,
+    "explanation": "Trenches 4 feet or deeper need a means of egress within 25 feet of lateral travel for workers.",
+    "source": "general practice (OSHA 1926.651(c)(2))",
+    "sample": false
+  },
+  {
+    "id": "q73",
+    "category": "general",
+    "topic": "safety-electrical",
+    "store": null,
+    "question": "What's the right setup for extension cords and temporary power on a jobsite?",
+    "choices": [
+      "Taped-up cords are fine",
+      "GFCI only when it's raining",
+      "Any cord, as long as it reaches",
+      "GFCI-protected and inspected for damage"
+    ],
+    "correct_index": 3,
+    "explanation": "Construction temporary power needs GFCI protection, and damaged cords come out of service.",
+    "source": "general practice (OSHA 1926.404)",
+    "sample": false
+  },
+  {
+    "id": "q74",
+    "category": "general",
+    "topic": "safety-fire",
+    "store": null,
+    "question": "A sub is about to weld near combustible material. What should happen first?",
+    "choices": [
+      "Spray the area with water once and start welding right away",
+      "Nothing extra is required if the welding is happening outdoors",
+      "Move or shield the combustibles, have an extinguisher, and set a fire watch",
+      "Weld as fast as possible so the heat doesn't have time to spread to the combustibles"
+    ],
+    "correct_index": 2,
+    "explanation": "Hot work needs combustibles cleared or protected, an extinguisher on hand and someone watching for fire.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q75",
+    "category": "general",
+    "topic": "quality",
+    "store": null,
+    "question": "Before a slab pour, which check matters most?",
+    "choices": [
+      "That the pump truck is clean, even if the rebar and barrier aren't checked",
+      "That the finish crew is on time, with no check of embeds or the vapor barrier",
+      "That the sub has lunch lined up before anyone checks the forms",
+      "Under-slab inspected, rebar/PT and embeds per plan, vapor barrier intact"
+    ],
+    "correct_index": 3,
+    "explanation": "Once concrete is placed, what's under and in it can't be fixed cheaply, so check it before the trucks come.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q76",
+    "category": "general",
+    "topic": "safety-general",
+    "store": null,
+    "question": "A worker has a near miss: a dropped tool barely misses someone below. What do you do?",
+    "choices": [
+      "Joke about it and get everyone back to work with no follow-up",
+      "Report it, find out why it happened and fix the cause",
+      "Fire the worker on the spot and leave it at that, with no review of the cause",
+      "Nothing, because nobody got hurt this time"
+    ],
+    "correct_index": 1,
+    "explanation": "Near misses show you hazards before someone gets hurt. Fix the cause.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q77",
+    "category": "general",
+    "topic": "safety-general",
+    "store": null,
+    "question": "A worker is injured on site. What comes first?",
+    "choices": [
+      "Get them care, secure the scene, then notify the PM/safety and document it",
+      "Have them keep working if they can still walk on their own",
+      "Wait until the end of the day to tell anyone about the injury",
+      "Finish the pour first, then deal with the injured worker after the truck leaves"
+    ],
+    "correct_index": 0,
+    "explanation": "Care first, then secure the area, notify right away and document it while it's fresh.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q78",
+    "category": "general",
+    "topic": "utilities",
+    "store": null,
+    "question": "Before any digging on a site, what has to happen?",
+    "choices": [
+      "Call 811 and wait for utilities to be located and marked",
+      "Dig slowly and hope you can see any utilities in time",
+      "Look for manhole covers and then start digging around them",
+      "Ask the neighbor whether they remember any buried lines on the site"
+    ],
+    "correct_index": 0,
+    "explanation": "Locates come first. Digging without them risks strikes, injuries and outages.",
+    "source": "general practice (811)",
+    "sample": false
+  },
+  {
+    "id": "q79",
+    "category": "general",
+    "topic": "submittals",
+    "store": null,
+    "question": "A sub shows up with a different product than the approved submittal. What do you do?",
+    "choices": [
+      "Install it anyway because it looks the same as the approved product",
+      "Install it now and tell the PM about the substitution later",
+      "Don't install it until the substitution is approved in writing",
+      "Let the city inspector decide on the spot whether the substitute is fine"
+    ],
+    "correct_index": 2,
+    "explanation": "Only approved products get installed. Substitutions go back through the PM for approval.",
+    "source": "general practice",
+    "sample": false
+  },
+  {
+    "id": "q80",
+    "category": "general",
+    "topic": "deliveries",
+    "store": null,
+    "question": "A delivery shows up with a damaged crate. What should you do before signing?",
+    "choices": [
+      "Sign the ticket and throw it away so there's no record of the damage",
+      "Refuse to look at the crate or the packing list at all",
+      "Sign the ticket now and try to sort out the damage later",
+      "Check it against the packing list and note the damage on the ticket"
+    ],
+    "correct_index": 3,
+    "explanation": "Damage noted on the ticket at delivery is what makes a claim possible. A clean signature makes it hard.",
+    "source": "general practice",
+    "sample": false
+  }
+]

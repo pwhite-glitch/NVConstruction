@@ -299,6 +299,8 @@ textarea:focus {
   .rx-stats     { grid-template-columns: 1fr 1fr !important; }
   .rx-row       { grid-template-columns: 1fr !important; gap: 0.25rem !important; }
   .rx-main      { padding-left: 0.75rem !important; padding-right: 0.75rem !important; padding-top: 1.25rem !important; }
+  /* Full-bleed band inside .rx-main (sticky Weekly Test header / submit bar): match its 0.75rem phone gutter */
+  .rx-bleed     { margin-left: -0.75rem !important; margin-right: -0.75rem !important; padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
   .rx-card      { padding: 1rem !important; }
   .rx-card-body { padding: 1rem !important; }
 

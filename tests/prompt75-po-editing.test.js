@@ -307,11 +307,12 @@ describe('source wiring', () => {
     expect(src('lib/change-log.js')).not.toMatch(/CLIENT_LOG_ENTITY_TYPES = new Set\([^)]*purchase_order/)
   })
 
-  test('no migration 067 edits; 071+ migrations are only 071, 074, 075 and 076', () => {
+  test('no migration 067 edits; 071+ migrations are only 071, 074, 075, 076 and 077', () => {
     const files = fs.readdirSync(path.join(__dirname, '../migrations'))
     // Prompt 78 owns 071 (unapplied sales-docs bucket cap removal); prompt 82 owns 074
     // (CompanyCam); prompt 85 owns 075 (unapplied daily report drafts). 072 / 073 are
     // reserved by other branches. Prompt 86 owns 076 (unapplied daily report versions).
-    expect(files.filter(f => /^07[1-9]/.test(f))).toEqual(['071_remove_sales_docs_file_cap.sql', '074_companycam.sql', '075_daily_report_drafts.sql', '076_daily_report_versions.sql'])
+    // Prompt 88 owns 077 (unapplied weekly super test).
+    expect(files.filter(f => /^07[1-9]/.test(f))).toEqual(['071_remove_sales_docs_file_cap.sql', '074_companycam.sql', '075_daily_report_drafts.sql', '076_daily_report_versions.sql', '077_super_weekly_test.sql'])
   })
 })

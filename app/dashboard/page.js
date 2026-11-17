@@ -36,6 +36,8 @@ import { estimatorSubFromSearch, estimateHrefFromPipeline } from '../../lib/esti
 import { jobHref, jobHrefById, isResidentialJob } from '../../lib/job-links'
 import { ownerDrawFunding, pctFunded } from '../../lib/owner-draws'
 import CashOutlookCard from '../components/CashOutlookCard'
+import SuperTestAdmin from '../components/SuperTestAdmin'
+import { SUPER_TEST_ADMIN_ROLES } from '../../lib/super-test'
 import JobNumberHint from '../components/JobNumberHint'
 import { useJobNumbers, confirmJobNumberFree } from '../../lib/use-job-numbers'
 import { jobNumberSaveError } from '../../lib/job-numbers'
@@ -3624,6 +3626,8 @@ ${planLinks.map(p => p.url
         { tab: 'directory', label: 'Companies', icon: <IconUsers />, badge: dirBadge },
         ...(isPrincipal(profile?.role) ? [{ tab: 'nv-directory', label: 'NV Team',   icon: <IconBuilding /> }] : []),
         ...(isPrincipal(profile?.role) ? [{ tab: 'employees',    label: 'Employees', icon: <IconUsers /> }]    : []),
+        // Weekly super test admin (prompt 88): roles from SUPER_TEST_ADMIN_ROLES (lib/super-test.js).
+        ...(SUPER_TEST_ADMIN_ROLES.includes(profile?.role) ? [{ tab: 'super-test', label: 'Super Test', icon: <IconClipboard /> }] : []),
       ]
     },
     ...(can('tab.vehicles', ['principal', 'pm', 'apm'].includes(profile?.role)) ? [{
@@ -9176,6 +9180,8 @@ ${planLinks.map(p => p.url
                 </>
               )
             })()}
+
+            {activeTab === 'super-test' && SUPER_TEST_ADMIN_ROLES.includes(profile?.role) && <SuperTestAdmin />}
 
             {activeTab === 'permissions' && isPrincipal(profile?.role) && (
               <div>

@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
@@ -7,6 +7,7 @@ import { vehicleLogLabel } from '../../lib/vehicle-log-types'
 import { fieldTarget, fieldTabFromParam } from '../../lib/notification-labels'
 import NotificationBell from '../components/NotificationBell'
 import FieldInspections from './FieldInspections'
+import SuperWeeklyTest from './SuperWeeklyTest'
 import { openFile } from '../../lib/open-file'
 import { resolveTakenAt, insertWithGpsFallback, photoDateCentral } from '../../lib/photo-taken-at'
 import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
@@ -125,6 +126,8 @@ export default function Field() {
   const [selectedJobId, setSelectedJobId] = useState('')
   const [activeTab, setActiveTab] = useState('')
   const [pendingTab, setPendingTab] = useState('') // tab to open once a project is picked (header Lookahead link)
+  // Weekly super test (prompt 88): { status, score?, total? } | { forbidden } | { setup } | null
+  const [superTestPeek, setSuperTestPeek] = useState(null)
   const [coverUrls, setCoverUrls] = useState({})
   const [jobSearch, setJobSearch] = useState('')
 
@@ -309,6 +312,7 @@ export default function Field() {
       if (pWeek && /^\d{4}-\d{2}-\d{2}$/.test(pWeek)) setLookaheadWeekStart(mondayOf(pWeek))
       const linkedJob = jobs.find(j => j.id === pJob) || (pTab && jobs.length === 1 ? jobs[0] : null)
       if (linkedJob) { setSelectedJobId(linkedJob.id); if (pTab) setActiveTab(pTab) }
+      else if (pTab === 'supertest') setActiveTab(pTab) // not tied to a job
       else if (pTab) setPendingTab(pTab)
       await loadAssignedVehicles(session.user.id)
       await loadMyTools(session.user.id)
@@ -322,6 +326,36 @@ export default function Field() {
   }, [])
 
   useEffect(() => { if (selectedJobId) checkTodayReport() }, [selectedJobId])
+
+  // Weekly test tile badge: one side-effect-free peek on load, supers only (not APMs).
+  const isSuperTaker = profile?.role === 'super'
+  useEffect(() => {
+    if (!isSuperTaker) return
+    let live = true
+    fetchJson(authFetch, '/api/super-test/current?peek=1').then(r => {
+      if (!live) return
+      if (r.status === 403) setSuperTestPeek({ forbidden: true })
+      else if (r.ok && r.data?.migration_required) setSuperTestPeek({ setup: true })
+      else if (r.ok) setSuperTestPeek(r.data)
+    })
+    return () => { live = false }
+  }, [isSuperTaker])
+  const onSuperTestSummary = useCallback(sum => setSuperTestPeek(p => ({ ...(p || {}), ...sum })), [])
+  const superTestOpen = isSuperTaker && activeTab === 'supertest'
+  const superTestDone = superTestPeek?.status === 'submitted'
+  const superTestPending = !!superTestPeek && !superTestPeek.forbidden && !superTestPeek.setup && superTestPeek.status !== 'no_questions' && !superTestDone
+  const superTestTile = { key: 'supertest', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>, label: 'Weekly Test', alert: superTestPending, alertLabel: 'Not taken', successLabel: superTestDone && superTestPeek.total ? `✓ ${superTestPeek.score}/${superTestPeek.total}` : null }
+  const superTestCard = isSuperTaker && (
+    <button type="button" onClick={() => setActiveTab('supertest')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', minHeight: '48px', padding: '10px 14px', marginBottom: '1rem', background: '#fff', border: `1px solid ${superTestPending ? '#fdba74' : '#e5e7eb'}`, borderRadius: '10px', cursor: 'pointer', textAlign: 'left', fontSize: '15px', color: '#111827', boxSizing: 'border-box' }}>
+      <span style={{ fontWeight: 700, minWidth: 0 }}>
+        Weekly Test{' — '}
+        <span style={{ fontWeight: 600, color: superTestPending ? '#c2410c' : superTestDone ? '#15803d' : '#6b7280' }}>
+          {superTestDone ? `Score ${superTestPeek.score}/${superTestPeek.total} · Review` : superTestPending ? 'not taken yet' : 'open'}
+        </span>
+      </span>
+      <span aria-hidden="true" style={{ color: '#9ca3af', fontWeight: 700 }}>›</span>
+    </button>
+  )
 
   // Keep the project, tab and lookahead week in the URL so the view can be bookmarked
   useEffect(() => {
@@ -1303,12 +1337,25 @@ export default function Field() {
       </header>
 
       <main style={s.main} className="rx-main">
-        {assignedJobs.length === 0 ? (
-          <div style={s.empty}>You have not been assigned to any jobs yet.<br />Contact NV Construction to get started.</div>
+        {superTestOpen ? (
+          // Weekly Test: works with or without a selected job; loads no per-job data.
+          <>
+            <div className="rx-bleed" style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#f9fafb', borderBottom: '1px solid #f3f4f6', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', minHeight: '52px' }}>
+              <button style={{ minHeight: '44px', padding: '0 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => setActiveTab('')}>{IC.arrowL} Back</button>
+              <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Weekly Test</span>
+            </div>
+            <SuperWeeklyTest userId={user?.id} onSummary={onSuperTestSummary} />
+          </>
+        ) : assignedJobs.length === 0 ? (
+          <>
+            {superTestCard}
+            <div style={s.empty}>You have not been assigned to any jobs yet.<br />Contact NV Construction to get started.</div>
+          </>
         ) : (
           <>
             {!selectedJobId && (
               <>
+                {superTestCard}
                 <div style={{ marginBottom: '1.25rem' }}>
                   <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#111827' }}>Your Projects</h2>
                   {pendingTab === 'lookahead' && (
@@ -1377,6 +1424,7 @@ export default function Field() {
                       { key: 'vehicles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, label: 'My Vehicle', count: assignedVehicles.length || null },
                       { key: 'tools', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>, label: 'My Tools', count: myTools.length || null },
                       { key: 'lookahead', icon: IC.lookahead, label: '2-Week Lookahead', count: lookaheadActivities.length || null },
+                      ...(isSuperTaker ? [superTestTile] : []),
                       ...(profile?.full_name?.toLowerCase() === 'landon moore' ? [{ key: 'maintenance', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41"/><path d="M3 12h1M20 12h1M12 3v1M12 20v1M5.63 5.63l1.41 1.41M16.95 16.95l1.41 1.41M5.63 18.37l1.41-1.41M16.95 7.05l1.41-1.41"/></svg>, label: 'Maintenance Report', count: maintenanceReports.length || null }] : []),
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#ffffff', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1419,7 +1467,7 @@ export default function Field() {
                   <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#f9fafb', borderBottom: '1px solid #f3f4f6', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
                     <button style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => setActiveTab('')}>{IC.arrowL} Back</button>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', inspections: 'Inspections', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools', lookahead: '2-Week Lookahead', maintenance: 'Maintenance Report' }[activeTab]}
+                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', inspections: 'Inspections', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools', lookahead: '2-Week Lookahead', maintenance: 'Maintenance Report', supertest: 'Weekly Test' }[activeTab]}
                     </span>
                   </div>
                 )}
@@ -3273,7 +3321,7 @@ export default function Field() {
       </main>
 
       {/* FLOATING CAMERA BUTTON */}
-      {selectedJobId && !lightbox && (
+      {selectedJobId && !lightbox && !superTestOpen && (
         <div style={{ position: 'fixed', bottom: 'calc(24px + env(safe-area-inset-bottom))', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
           {fabOpen && (
             <div style={{ background: '#1c1c1c', border: '1px solid #d1d5db', borderRadius: '14px', padding: '14px', width: '280px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>

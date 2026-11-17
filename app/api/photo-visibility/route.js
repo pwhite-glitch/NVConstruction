@@ -4,6 +4,7 @@ import { denyJob } from '../../../lib/roles'
 import { isMissingColumnError } from '../../../lib/missing-column-retry'
 import { MIGRATION_070_TOGGLE_MESSAGE, setReportPhotoInternal } from '../../../lib/photo-visibility'
 import { isDraftReport, canEditDraft, isReferencedReportPhoto } from '../../../lib/daily-report-payload'
+import { logChange } from '../../../lib/change-log'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -23,31 +24,29 @@ const forbidden = () => Response.json({ error: 'Forbidden' }, { status: 403 })
 //     row (the owner portal reads that row's current flag); if that row was deleted, the
 //     element becomes a report-only photo and its own flag is set.
 // A DRAFT report (prompt 85) can only be changed by its author or Owner / admin / PM → 403.
+//
+// Bulk (prompt 90, job Photos tab "Select"): POST { job_id, paths: [...], internal_only }
+//   Gallery (job_photos) rows only. Same role gate as above. 1..BULK_VISIBILITY_MAX distinct
+//   paths (more → 400). ONE update scoped .eq('job_id').in('storage_path', paths) — a path on
+//   another job simply matches nothing — and ONE change_log entry with the count.
+//   → { ok, internal_only, updated, requested }
+// The single-path shape above is unchanged.
+export const BULK_VISIBILITY_MAX = 200
+
 export async function POST(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
 
   const body = await request.json().catch(() => null)
+  if (body && Array.isArray(body.paths)) return bulkVisibility(auth, body)
   const { path, jobId, fromReport, reportId } = body || {}
   const internalOnly = body?.internal_only
   if (!path || typeof path !== 'string' || !jobId) return Response.json({ error: 'path and jobId required' }, { status: 400 })
   if (typeof internalOnly !== 'boolean') return Response.json({ error: 'internal_only must be true or false' }, { status: 400 })
   if (fromReport && !reportId) return Response.json({ error: 'reportId required for a daily-report photo' }, { status: 400 })
 
-  const role = auth.role
-  const isPmOrAdmin = role === 'principal' || role === 'pm' || role === 'admin'
-  const isSuper = role === 'super'
-  if (!isPmOrAdmin && !isSuper) return forbidden()
-
-  if (isPmOrAdmin) {
-    const denied = await denyJob(adminSupabase, auth, jobId)
-    if (denied) return denied
-  }
-  if (isSuper) {
-    const { data: assign, error } = await adminSupabase.from('pm_job_assignments').select('id').eq('job_id', jobId).eq('user_id', auth.userId).maybeSingle()
-    if (error) return Response.json({ error: error.message }, { status: 500 })
-    if (!assign) return forbidden()
-  }
+  const gateDenied = await denyVisibilityChange(auth, jobId)
+  if (gateDenied) return gateDenied
 
   if (fromReport) {
     // '*' so status / super_id (migration 075) are read when present; missing status = final.
@@ -94,4 +93,59 @@ async function setGalleryInternal(path, jobId, internalOnly) {
     return Response.json({ error: upErr.message }, { status: 500 })
   }
   return Response.json({ ok: true, internal_only: internalOnly })
+}
+
+// The role / job gate shared by the single and bulk shapes → a ready error Response, or null.
+async function denyVisibilityChange(auth, jobId) {
+  const role = auth.role
+  const isPmOrAdmin = role === 'principal' || role === 'pm' || role === 'admin'
+  const isSuper = role === 'super'
+  if (!isPmOrAdmin && !isSuper) return forbidden()
+
+  if (isPmOrAdmin) {
+    const denied = await denyJob(adminSupabase, auth, jobId)
+    if (denied) return denied
+  }
+  if (isSuper) {
+    const { data: assign, error } = await adminSupabase.from('pm_job_assignments').select('id').eq('job_id', jobId).eq('user_id', auth.userId).maybeSingle()
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!assign) return forbidden()
+  }
+  return null
+}
+
+async function bulkVisibility(auth, body) {
+  const jobId = typeof body.job_id === 'string' && body.job_id ? body.job_id : (typeof body.jobId === 'string' && body.jobId ? body.jobId : null)
+  const internalOnly = body.internal_only
+  if (!jobId) return Response.json({ error: 'job_id required' }, { status: 400 })
+  if (typeof internalOnly !== 'boolean') return Response.json({ error: 'internal_only must be true or false' }, { status: 400 })
+  if (!body.paths.every(p => typeof p === 'string' && p)) return Response.json({ error: 'paths must be non-empty strings' }, { status: 400 })
+  const paths = [...new Set(body.paths)]
+  if (!paths.length) return Response.json({ error: 'paths required' }, { status: 400 })
+  if (paths.length > BULK_VISIBILITY_MAX) return Response.json({ error: `At most ${BULK_VISIBILITY_MAX} photos at a time.` }, { status: 400 })
+
+  const gateDenied = await denyVisibilityChange(auth, jobId)
+  if (gateDenied) return gateDenied
+
+  const { data: rows, error: upErr } = await adminSupabase.from('job_photos')
+    .update({ internal_only: internalOnly })
+    .eq('job_id', jobId)
+    .in('storage_path', paths)
+    .select('id')
+  if (upErr) {
+    if (isMissingColumnError(upErr)) return Response.json({ error: MIGRATION_070_TOGGLE_MESSAGE, migration_required: '070' }, { status: 503 })
+    return Response.json({ error: upErr.message }, { status: 500 })
+  }
+  const updated = Array.isArray(rows) ? rows.length : 0
+  await logChange({
+    job_id: jobId,
+    entity_type: 'job',
+    entity_id: jobId,
+    field_name: 'photo_visibility',
+    old_value: null,
+    new_value: internalOnly ? 'hidden from owner' : 'shown to owner',
+    changed_by: auth.userId,
+    note: `${updated} photo${updated === 1 ? '' : 's'} ${internalOnly ? 'hidden from' : 'shown to'} the owner (bulk${updated !== paths.length ? `, ${paths.length} selected` : ''})`,
+  })
+  return Response.json({ ok: true, internal_only: internalOnly, updated, requested: paths.length })
 }

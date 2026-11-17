@@ -15,6 +15,7 @@ import { fetchJson, jsonInit, readJsonResponse } from '../../lib/fetch-json'
 import { uploadThenSend } from '../../lib/file-upload-client'
 import { isDraftReport, isFinalReport, publishedReports, visibleReports, canEditDraft, duplicateReportMessage, finalReportDates, isReferencedReportPhoto, revisionLabel, canViewReportVersions, canReopenReport, canReopenFinalReport } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
+import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
 import { saveDailyReport, reopenDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
 import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
 import { isPreviewActive } from '../../lib/prime-co-review'
@@ -513,7 +514,8 @@ export default function Field() {
   }
 
   async function loadPhotoGallery() {
-    const { data, error: photoErr } = await supabase.from('job_photos').select('*').eq('job_id', selectedJobId).order('taken_at', { ascending: false })
+    // Every row, in DB-side pages of 1,000 (prompt 90: a plain select stopped at 1,000).
+    const { data, error: photoErr } = await fetchAllJobPhotos(supabase, selectedJobId)
     if (photoErr) console.error('job_photos query error:', photoErr.message)
     setStandalonePhotos(data || [])
     // Always refetch so Internal badges / photos changed from the job pages are current.

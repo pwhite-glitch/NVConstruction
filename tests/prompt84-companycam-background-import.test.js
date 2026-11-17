@@ -351,7 +351,7 @@ describe('5) POST background start / stop / resume; GET state; Owner list', () =
     expect(r.body).toMatchObject({ imported: 2, done: false, state: { background: true, status: 'queued', cursor: 'c2' } })
     expect(job1().companycam_import_state).toMatchObject({ background: true, status: 'queued', started_by: 'pm1', updated_by: 'pm1', start_date: null, end_date: null, imported: 2, page_done_ids: [] })
     expect(typeof job1().companycam_import_state.started_at).toBe('string')
-    for (const p of mockState.db.job_photos) expect(p.internal_only).toBe(true)
+    for (const p of mockState.db.job_photos) expect(p.internal_only).toBe(false) // prompt 90: owner-visible (was true)
     // 409 while fresh 'running'
     job1().companycam_import_state = { ...job1().companycam_import_state, status: 'running', updated_at: new Date().toISOString() }
     expect((await imp({ background: true })).status).toBe(409)

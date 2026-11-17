@@ -17,9 +17,11 @@
 //       (prompt 78; lets a test declare a large object without allocating it). info() falls back
 //       to mockState.files; an object in neither fails closed (not found).
 //   mockState.failInfo = { bucket: 'message' } → .info() errors for that bucket
+//   mockState.maxRows = { table: n } → a select returns at most n rows per request, like
+//       PostgREST's db-max-rows (1,000 on Supabase); .range() still applies first (prompt 90)
 //   mockState.storageCalls = [{ bucket, op, path }] → signing / info / download calls (kept apart
 //       from mockState.calls so older assertions on calls are unchanged)
-const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, pauseWrite: null, triggers: {}, calls: [], files: {}, failUpload: {}, failWrite: {}, strictUpload: false, defaults: {}, unique: {}, fileMeta: {}, failInfo: {}, storageCalls: [] }
+const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, pauseWrite: null, triggers: {}, calls: [], files: {}, failUpload: {}, failWrite: {}, strictUpload: false, defaults: {}, unique: {}, fileMeta: {}, failInfo: {}, storageCalls: [], maxRows: {} }
 
 // 'col->>key' reads a jsonb key as text (PostgREST JSON filter); anything else is a dotted path.
 const get = (r, path) => {
@@ -124,6 +126,7 @@ function query(table) {
     const count = out.length
     if (rng) out = out.slice(rng[0], rng[1] + 1)
     if (lim != null) out = out.slice(0, lim)
+    if (mockState.maxRows?.[table] > 0) out = out.slice(0, mockState.maxRows[table])
     if (head) return { data: null, count, error: null }
     return { data: out.map(r => embed(table, r, cols)), count: countMode ? count : undefined, error: null }
   }
@@ -276,5 +279,6 @@ module.exports = {
     mockState.fileMeta = {}
     mockState.failInfo = {}
     mockState.storageCalls = []
+    mockState.maxRows = {}
   },
 }

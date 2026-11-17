@@ -10,6 +10,7 @@ import {
 // Owner-only inbox of CompanyCam photos that did not land in a job gallery (project not
 // linked, or the import failed). GET lists; POST assigns a photo to a job (optionally
 // linking the project) or dismisses it. Nothing is ever deleted in CompanyCam.
+// An assigned photo lands owner-visible (CC_IMPORT_INTERNAL_ONLY via importCcPhotoToJob, prompt 90).
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 

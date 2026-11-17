@@ -26,7 +26,8 @@ import { runCcImportBatch, casImportState, importStateOf, baseFromState, IMPORT_
 // GET ?job_id= → { companycam_project_id, state } for the bar's ~20 s refresh.
 // Auth: Owner or PM, and on the job. A second request while the state is 'running' and fresh
 // (< 90 s) → 409. A relink / unlink mid-batch → 409 'project changed'.
-// Imported rows are internal_only. No Change History (photos are not job fields).
+// New rows are owner-visible (internal_only = CC_IMPORT_INTERNAL_ONLY, lib/companycam.js, prompt 90);
+// rows that already exist keep their internal_only. No Change History (photos are not job fields).
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 

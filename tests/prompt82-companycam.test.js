@@ -4,7 +4,7 @@
  *   1. Pure: signature check, normalize, project-id parse, URL guard, range / cap helpers.
  *   2. Webhook route: env / signature / JSON / id gates, linked import, duplicates, unmatched,
  *      CompanyCam errors, pre-074, SSRF.
- *   3. importCcPhotoToJob: pre-070/074 internal_only column → no visible row.
+ *   3. importCcPhotoToJob: pre-070/074 internal_only column → no row (prompt 90: new rows are owner-visible).
  *   4. Link, import, unmatched, register-webhook routes; job-save strip.
  *   5. Source checks: migration 074, numbering.
  * All DB access is the in-memory mock and all CompanyCam calls are a stubbed fetch. Nothing live.
@@ -256,7 +256,8 @@ describe('2) webhook route', () => {
     expect((await webhook.GET()).status).toBe(405)
   })
 
-  test('linked project → one internal job_photos row with CompanyCam fields + storage at the cc path', async () => {
+  // prompt 90: CompanyCam imports are owner-visible (internal_only false) — was internal_only true.
+  test('linked project → one owner-visible job_photos row with CompanyCam fields + storage at the cc path', async () => {
     global.fetch = ccWorld({ photos: { 555: ccPhoto(555) } })
     const r = await deliver(created(555))
     expect(r).toEqual({ status: 200, body: { ok: true, status: 'imported' } })
@@ -264,7 +265,7 @@ describe('2) webhook route', () => {
     expect(mockState.db.job_photos[0]).toMatchObject({
       job_id: 'J1', super_id: null, storage_path: 'J1/gallery/cc-555.jpg', file_name: 'companycam-555.jpg',
       taken_at: new Date(1762000000 * 1000).toISOString(), companycam_photo_id: '555', companycam_creator_name: 'Sam Field',
-      companycam_tags: ['Concrete', 'Footing'], caption: 'Footings poured', internal_only: true,
+      companycam_tags: ['Concrete', 'Footing'], caption: 'Footings poured', internal_only: false,
     })
     expect(Object.keys(mockState.files).sort()).toEqual([`${BUCKET}/J1/gallery/cc-555.jpg`, `${BUCKET}/J1/gallery/cc-555_thumb.jpg`])
     expect(mockState.files[`${BUCKET}/J1/gallery/cc-555.jpg`].toString()).toBe('IMG:/555/o.jpg')
@@ -272,9 +273,9 @@ describe('2) webhook route', () => {
     const apiCall = global.fetch.mock.calls.find(c => String(c[0]).includes('/photos/555'))
     expect(apiCall[1].headers.Authorization).toBe(`Bearer ${API_TOKEN}`)
     expect(fetchedUrls().some(u => u.includes(API_TOKEN))).toBe(false)
-    // Owner portal list never shows it.
+    // Owner portal list shows it (prompt 90; before: never shown).
     const { ownerPhotoList } = require('../lib/owner-photos')
-    expect(ownerPhotoList({ jobId: 'J1', jobPhotos: mockState.db.job_photos, reports: [] })).toEqual([])
+    expect(ownerPhotoList({ jobId: 'J1', jobPhotos: mockState.db.job_photos, reports: [] }).map(p => p.path)).toEqual(['J1/gallery/cc-555.jpg'])
   })
 
   test('flat payload (payload = photo) works too', async () => {
@@ -398,7 +399,7 @@ describe('2) webhook route', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('3) importCcPhotoToJob — never an owner-visible row', () => {
+describe('3) importCcPhotoToJob — missing columns write no row', () => {
   test('missing internal_only column → no row, objects removed, migration message', async () => {
     global.fetch = ccWorld()
     mockState.missingCols.job_photos = ['internal_only']
@@ -608,7 +609,7 @@ describe('4b) import route (Addendum A: range + resumable batches)', () => {
     expect(pages.mock.calls[1][0].searchParams.get('start_date')).toBe(null)
     expect(mockState.db.jobs[0].companycam_import_state).toMatchObject({ status: 'done', imported: 3, cursor: null })
     expect(mockState.db.job_photos.map(p => p.companycam_photo_id).sort()).toEqual(['1', '2', '4', '5'])
-    for (const p of mockState.db.job_photos.filter(p => p.id !== 'old')) expect(p.internal_only).toBe(true)
+    for (const p of mockState.db.job_photos.filter(p => p.id !== 'old')) expect(p.internal_only).toBe(false) // prompt 90 (was true)
     expect(mockState.db.change_log).toEqual([])
   })
 
@@ -795,7 +796,7 @@ describe('4c) unmatched route', () => {
     expect(mockState.db.jobs.find(j => j.id === 'J2').companycam_project_id).toBe('901')
     expect(mockState.db.change_log).toHaveLength(1)
     expect(mockState.db.change_log[0]).toMatchObject({ job_id: 'J2', field_name: 'companycam_project_id', new_value: '901 (Conway Clinic)', changed_by: 'principal1' })
-    expect(mockState.db.job_photos.map(p => [p.job_id, p.companycam_photo_id, p.internal_only]).sort()).toEqual([['J2', '701', true], ['J2', '702', true]])
+    expect(mockState.db.job_photos.map(p => [p.job_id, p.companycam_photo_id, p.internal_only]).sort()).toEqual([['J2', '701', false], ['J2', '702', false]]) // prompt 90 (was true)
     const ib1 = mockState.db.companycam_photo_inbox.find(x => x.id === 'ib1')
     expect(ib1).toMatchObject({ status: 'imported', job_id: 'J2', resolved_by: 'principal1' })
     expect(ib1.job_photo_id).toBe(mockState.db.job_photos.find(p => p.companycam_photo_id === '701').id)

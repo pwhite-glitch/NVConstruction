@@ -7,6 +7,8 @@ import { verifyCompanyCamSignature, processCcPhoto, syncCcPhotoTags, MAX_WEBHOOK
 // unverified body. CompanyCam retries anything but 200, and disables a webhook after 25
 // errors, so only answer non-200 where a retry can help.
 // Next 14.1 has no after(): the import runs synchronously and is idempotent.
+// photo.created rows land owner-visible (CC_IMPORT_INTERNAL_ONLY, prompt 90); photo.updated / tag
+// events never touch internal_only, so an office "Hide from owner" sticks.
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 

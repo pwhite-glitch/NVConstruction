@@ -131,7 +131,7 @@ export default function CompanyCamInbox() {
         <div style={{ marginBottom: '1rem' }}>
           <a href="/dashboard" style={s.link}>← Dashboard</a>
           <p style={{ ...s.h1, marginTop: '8px' }}>Unmatched CompanyCam photos</p>
-          <p style={s.sub}>Photos from CompanyCam projects not linked to a portal job (or whose import failed). Assigned photos go in the job's Photos as internal only.</p>
+          <p style={s.sub}>Photos from CompanyCam projects not linked to a portal job (or whose import failed). Assigned photos go in the job's Photos and the owner can see them (use Hide from owner on the job's Photos tab to hide one).</p>
         </div>
 
         <div style={s.card}>

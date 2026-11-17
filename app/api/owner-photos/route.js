@@ -4,6 +4,7 @@ import { ownerJobDenied } from '../../../lib/owner-access'
 import { ownerPhotoList, signOwnerPhotos, thumbPath, PHOTO_BUCKET } from '../../../lib/owner-photos'
 import { parseOwnerPaging, pageOwnerPhotos } from '../../../lib/photo-visibility'
 import { publishedReports } from '../../../lib/daily-report-payload'
+import { fetchAllJobPhotos, fetchJobPhotosByPaths, mergeJobPhotoRows } from '../../../lib/job-photo-pages'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -26,15 +27,25 @@ export async function GET(request) {
   try {
     // select('*'): no hard dependency on optional columns (tag / 068, internal_only / 070,
     // latitude / longitude / 066) — a column that isn't there is simply absent.
+    // job_photos is read in DB-side pages of 1,000 (prompt 90: one plain select stopped at
+    // PostgREST's 1,000-row cap), internal_only rows filtered in the query.
     const [gal, rep] = await Promise.all([
-      adminSupabase.from('job_photos').select('*').eq('job_id', jobId),
+      fetchAllJobPhotos(adminSupabase, jobId, { visibleOnly: true }),
       // '*' so status (migration 075) is read when present; drafts are dropped below
       // (publishedReports) and again inside ownerPhotoList. Missing status = final.
       adminSupabase.from('daily_reports').select('*').eq('job_id', jobId),
     ])
     if (gal.error) return Response.json({ error: gal.error.message }, { status: 500 })
     if (rep.error) return Response.json({ error: rep.error.message }, { status: 500 })
-    const page = pageOwnerPhotos(ownerPhotoList({ jobId, jobPhotos: gal.data || [], reports: publishedReports(rep.data || []) }), { limit, offset })
+    const reports = publishedReports(rep.data || [])
+    // Every path a published report uses is looked up by exact path (internal rows included),
+    // so a shared photo is judged by its own row — never hidden just because the paged read
+    // filtered or missed it, and a path an office hid in the gallery stays hidden. Fail closed:
+    // a referenced path with no row at all is still hidden (reportPhotoInternal).
+    const refPaths = reports.flatMap(r => (Array.isArray(r?.photos) ? r.photos : []).map(p => p?.path))
+    const refs = await fetchJobPhotosByPaths(adminSupabase, jobId, refPaths)
+    if (refs.error) return Response.json({ error: refs.error.message }, { status: 500 })
+    const page = pageOwnerPhotos(ownerPhotoList({ jobId, jobPhotos: mergeJobPhotoRows(gal.data, refs.data), reports }), { limit, offset })
     const meta = { total: page.total, limit: page.limit, offset: page.offset, has_more: page.has_more }
     const noStore = { headers: { 'Cache-Control': 'no-store' } }
     if (!page.photos.length) return Response.json({ photos: [], ...meta }, noStore)

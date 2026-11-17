@@ -35,6 +35,7 @@ import { AI_PARSE_MAX_BYTES, AI_PARSE_LIMIT_PRECHECK_MESSAGE } from '../../lib/a
 import DailyReportForm from '../jobdetail/DailyReportForm'
 import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
+import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
 import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
 import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
 import NewPOForm from '../jobdetail/NewPOForm'
@@ -671,7 +672,8 @@ function ResidentialJobDetailInner() {
   async function loadPhotos() {
     const [{ data: standalone, error: e1 }, { data: reports, error: e2 }] = await Promise.all([
       // select('*'): internal_only (migration 070) is read when present, absent before it.
-      supabase.from('job_photos').select('*').eq('job_id', id).order('taken_at', { ascending: false }),
+      // Every row, in DB-side pages of 1,000 (prompt 90: a plain select stopped at 1,000).
+      fetchAllJobPhotos(supabase, id),
       // '*' so status (075) is read when present; only FINAL reports' photos are listed here
       // (prompt 85) — a draft's photos show inside the draft.
       supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),

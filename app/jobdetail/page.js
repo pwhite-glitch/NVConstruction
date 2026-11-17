@@ -69,6 +69,8 @@ import { findDirectoryEntry, coiBadgeModel, confirmCoiForCompany } from '../../l
 import DailyReportForm from './DailyReportForm'
 import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
+import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
+import { isBulkSelectable, selectablePaths, chunkPaths, toggleInSet, toggleDay, shortDayLabel } from '../../lib/photo-bulk-select'
 import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
 import ReportVersionsModal from './ReportVersionsModal'
 
@@ -615,6 +617,10 @@ function JobDetailInner() {
   const [fieldLightbox, setFieldLightbox] = useState(null)
   const [deletingFieldPhoto, setDeletingFieldPhoto] = useState(null)
   const [togglingFieldPhoto, setTogglingFieldPhoto] = useState(null)
+  // Bulk Show / Hide (prompt 90): Select mode on the Site Photos tab.
+  const [fpSelectMode, setFpSelectMode] = useState(false)
+  const [fpSelected, setFpSelected] = useState(() => new Set())
+  const [fpBulkSaving, setFpBulkSaving] = useState(false)
 
   // NV Subcontracts (when NV is acting as sub on a job)
   const [nvSubcontracts, setNvSubcontracts] = useState([])
@@ -3447,7 +3453,8 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
   async function loadFieldPhotos() {
     const [{ data: standalone }, { data: reports }] = await Promise.all([
-      supabase.from('job_photos').select('*').eq('job_id', id).order('taken_at', { ascending: false }),
+      // Every row, in DB-side pages of 1,000 (prompt 90: a plain select stopped at 1,000).
+      fetchAllJobPhotos(supabase, id),
       // '*' so status (075) is read when present. Site Photos shows FINAL reports' photos only
       // (prompt 85); a draft's photos show inside the draft on the Field tab.
       supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),
@@ -3482,6 +3489,31 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       setFieldLightbox(null)
     } finally {
       setTogglingFieldPhoto(null)
+    }
+  }
+
+  // Bulk Show / Hide (prompt 90): gallery photos only, sent in chunks of ≤ 200 paths
+  // (/api/photo-visibility bulk shape). Updated locally on success; reload on any failure.
+  function exitFieldPhotoSelect() { setFpSelectMode(false); setFpSelected(new Set()) }
+  async function bulkSetFieldPhotoVisibility(internalOnly) {
+    const paths = [...fpSelected]
+    if (!paths.length || fpBulkSaving) return
+    setFpBulkSaving(true)
+    const done = new Set()
+    try {
+      for (const chunk of chunkPaths(paths)) {
+        const res = await authFetch('/api/photo-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, paths: chunk, internal_only: internalOnly }) })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`)
+        chunk.forEach(p => done.add(p))
+      }
+      setFieldPhotos(list => list.map(p => (!p.fromReport && done.has(p.path) ? { ...p, internal_only: internalOnly } : p)))
+      exitFieldPhotoSelect()
+    } catch (err) {
+      alert((internalOnly ? 'Hide from owner' : 'Show to owner') + ' failed: ' + err.message + (done.size ? ` (${done.size} of ${paths.length} were saved)` : ''))
+      await loadFieldPhotos()
+    } finally {
+      setFpBulkSaving(false)
     }
   }
 
@@ -14466,16 +14498,41 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               ) : (
                 <>
-                  <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 1.25rem' }}>{fieldPhotos.length} photo{fieldPhotos.length !== 1 ? 's' : ''} — gallery uploads + daily reports</p>
-                  {dates.map(date => (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', margin: '0 0 1.25rem' }}>
+                    <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>{fieldPhotos.length} photo{fieldPhotos.length !== 1 ? 's' : ''} — gallery uploads + daily reports</p>
+                    {canToggleFieldPhoto && (
+                      <button type="button" onClick={() => (fpSelectMode ? exitFieldPhotoSelect() : setFpSelectMode(true))} disabled={fpBulkSaving}
+                        style={{ minHeight: '44px', minWidth: '44px', padding: '0 16px', background: fpSelectMode ? '#111827' : '#ffffff', color: fpSelectMode ? '#ffffff' : '#111827', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+                        {fpSelectMode ? 'Done' : 'Select'}
+                      </button>
+                    )}
+                  </div>
+                  {fpSelectMode && <p style={{ fontSize: '12px', color: '#6b7280', margin: '-0.75rem 0 1rem' }}>Tap photos to select them. Daily-report-only photos keep their own Hide / Show button.</p>}
+                  {dates.map(date => {
+                    const daySelectable = selectablePaths(byDate[date])
+                    const dayAllSelected = daySelectable.length > 0 && daySelectable.every(p => fpSelected.has(p))
+                    return (
                     <div key={date} style={{ marginBottom: '1.5rem' }}>
-                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
-                        {date !== 'Unknown' ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Unknown Date'}
-                        <span style={{ color: '#374151', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
-                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', margin: '0 0 10px' }}>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 }}>
+                          {date !== 'Unknown' ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Unknown Date'}
+                          <span style={{ color: '#374151', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
+                        </p>
+                        {fpSelectMode && daySelectable.length > 0 && (
+                          <button type="button" onClick={() => setFpSelected(prev => toggleDay(prev, byDate[date]))} disabled={fpBulkSaving}
+                            style={{ minHeight: '44px', padding: '0 12px', background: 'none', border: '1px solid #d1d5db', borderRadius: '8px', color: '#1d4ed8', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+                            {dayAllSelected ? `Clear ${shortDayLabel(date)}` : `Select all from ${shortDayLabel(date)}`}
+                          </button>
+                        )}
+                      </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }} className="rx-grid-photos">
-                        {byDate[date].map((p, i) => (
-                          <div key={i} style={{ aspectRatio: '1', background: '#f9fafb', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => setFieldLightbox({ photos: fieldPhotos, index: fieldPhotos.indexOf(p) })}>
+                        {byDate[date].map((p, i) => {
+                          const selectable = fpSelectMode && isBulkSelectable(p)
+                          const selected = selectable && fpSelected.has(p.path)
+                          return (
+                          <div key={i} role={selectable ? 'checkbox' : undefined} aria-checked={selectable ? selected : undefined}
+                            style={{ aspectRatio: '1', background: '#f9fafb', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: fpSelectMode && !selectable ? 'default' : 'pointer', outline: selected ? '3px solid #2563eb' : 'none', outlineOffset: '-3px', opacity: fpSelectMode && !selectable ? 0.45 : 1 }}
+                            onClick={() => { if (fpSelectMode) { if (selectable && !fpBulkSaving) setFpSelected(prev => toggleInSet(prev, p.path)); return } setFieldLightbox({ photos: fieldPhotos, index: fieldPhotos.indexOf(p) }) }}>
                             {(fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path])
                               ? <img src={fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = fieldPhotoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
                               : <div style={{ width: '100%', height: '100%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151', fontSize: '10px' }}>...</div>
@@ -14484,7 +14541,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {p.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 4px 4px', fontSize: '9px', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
                             {p.companycam && <div title={p.ccTags?.length ? p.ccTags.join(', ') : undefined} style={{ position: 'absolute', bottom: p.caption ? '18px' : '4px', left: '4px', right: '4px', color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.9)', fontSize: '9px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>CompanyCam{p.by ? ` · ${p.by}` : ''}{p.ccTags?.length ? ` · ${p.ccTags.join(', ')}` : ''}</div>}
                             {p.internal_only && <div title="Hidden from the owner portal" style={{ position: 'absolute', top: p.tag ? '22px' : '4px', left: '4px', background: 'rgba(17,24,39,0.85)', color: '#fde68a', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3' }}>Internal</div>}
-                            {canToggleFieldPhoto && (
+                            {selectable && (
+                              <div aria-hidden="true" style={{ position: 'absolute', top: '4px', right: '4px', width: '26px', height: '26px', borderRadius: '50%', border: '2px solid #ffffff', background: selected ? '#2563eb' : 'rgba(0,0,0,0.45)', color: '#ffffff', fontSize: '15px', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>{selected ? '✓' : ''}</div>
+                            )}
+                            {canToggleFieldPhoto && !fpSelectMode && (
                               <button
                                 type="button"
                                 title={p.internal_only ? 'Show to owner' : 'Hide from owner'}
@@ -14494,17 +14554,38 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {togglingFieldPhoto === p.path ? '…' : p.internal_only ? 'Show to owner' : 'Hide from owner'}
                               </button>
                             )}
+                            {!fpSelectMode && (
                             <button
                               type="button"
                               onClick={e => { e.stopPropagation(); deleteFieldPhoto(p) }}
                               style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingFieldPhoto === p.path ? '#888' : '#dc2626', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
                               {deletingFieldPhoto === p.path ? '…' : '✕'}
                             </button>
+                            )}
                           </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
+                  {fpSelectMode && (
+                    <div style={{ position: 'sticky', bottom: 0, zIndex: 20, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', padding: '10px 12px', paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', background: '#ffffff', borderTop: '1px solid #e5e7eb', boxShadow: '0 -4px 12px rgba(0,0,0,0.08)', margin: '0 -4px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827', flex: '1 1 100%' }}>{fpSelected.size} selected</span>
+                      <button type="button" disabled={!fpSelected.size || fpBulkSaving} onClick={() => bulkSetFieldPhotoVisibility(false)}
+                        style={{ flex: '1 1 0', minHeight: '44px', padding: '0 10px', background: '#065f46', color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', opacity: !fpSelected.size || fpBulkSaving ? 0.5 : 1 }}>
+                        {fpBulkSaving ? 'Saving…' : 'Show to owner'}
+                      </button>
+                      <button type="button" disabled={!fpSelected.size || fpBulkSaving} onClick={() => bulkSetFieldPhotoVisibility(true)}
+                        style={{ flex: '1 1 0', minHeight: '44px', padding: '0 10px', background: '#111827', color: '#fde68a', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', opacity: !fpSelected.size || fpBulkSaving ? 0.5 : 1 }}>
+                        {fpBulkSaving ? 'Saving…' : 'Hide from owner'}
+                      </button>
+                      <button type="button" disabled={fpBulkSaving} onClick={exitFieldPhotoSelect}
+                        style={{ flex: '0 0 auto', minHeight: '44px', minWidth: '44px', padding: '0 14px', background: '#ffffff', color: '#111827', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </>

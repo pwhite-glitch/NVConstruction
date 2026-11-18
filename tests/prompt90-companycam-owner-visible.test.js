@@ -224,7 +224,9 @@ describe('A2) an existing row keeps its internal_only (an office hide sticks)', 
 
   test('no backfill: nothing in the change flips existing rows', () => {
     const files = fs.readdirSync(path.join(root, 'migrations'))
-    expect(files.filter(f => /^0(7[7-9]|[89]\d)_/.test(f))).toEqual([]) // no new migration
+    // No new migration from prompt 90. (Prompt 91 later added the only 078: daily report
+    // delete / final-read RLS — PROPOSED, unapplied, unrelated to CompanyCam.)
+    expect(files.filter(f => /^0(7[7-9]|[89]\d)_/.test(f) && f !== '078_daily_report_delete_rls.sql')).toEqual([])
     expect(read('lib/companycam.js')).not.toMatch(/update\(\{\s*internal_only/)
   })
 

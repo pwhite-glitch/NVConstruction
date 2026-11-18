@@ -6,7 +6,11 @@ import {
   draftStatusFields, finalStatusFields, isDraftReport, MIGRATION_075_MESSAGE,
   mergeDraftBody, pickDraftPatch, changedFields,
 } from '../../../lib/daily-report-payload'
-import { loadReport, createDeliveriesOnce, mayManageReport, FINALIZED_MESSAGE, NOT_AUTHOR_MESSAGE } from '../../../lib/daily-report-server'
+import {
+  loadReport, createDeliveriesOnce, mayManageReport, FINALIZED_MESSAGE, NOT_AUTHOR_MESSAGE,
+  canDeleteReport, DELETE_AUTHOR_MESSAGE, unlinkReportDeliveries,
+} from '../../../lib/daily-report-server'
+import { removeReportOnlyPhotoFiles } from '../../../lib/report-photo-links'
 import { isMissingColumnError } from '../../../lib/missing-column-retry'
 import { logChange } from '../../../lib/change-log'
 
@@ -35,6 +39,7 @@ const adminSupabase = createClient(
 //     content field to change_log (entity_type 'daily_report', old / new). Never-finalized
 //     drafts are not logged.
 // Finalize an existing draft: POST /api/daily-reports/finalize. Reopen: /reopen.
+// Prompt 91: DELETE { id } — permanent, logged delete (see DELETE below).
 // → { ok, report, warning? }
 export async function POST(request) {
   const auth = await requirePM(request)
@@ -104,4 +109,90 @@ export async function PATCH(request) {
     }
   }
   return Response.json({ ok: true, report: rows[0] })
+}
+
+// DELETE { id } (JSON body) or ?id= — permanently delete a daily report, draft or final
+// (prompt 91; Peyton 11/18: "Delete permanently, no recovery").
+// Who (canDeleteReport): Owner (principal) / admin any job; PM / APM any report on a job they
+// are on; Super only a report they wrote, on a job they are on (403 DELETE_AUTHOR_MESSAGE).
+// Subs, owner clients, sales and anyone else: 403 (requirePM).
+// 401 no token · 404 unknown id (also a second delete of the same id) · 403 not allowed.
+// Order:
+//   1. change_log entry FIRST (entity_type 'daily_report', field_name 'deleted', old_value =
+//      the whole row as JSON). If it cannot be written, nothing is deleted (500) — the
+//      snapshot is the only record left after a hard delete.
+//   2. Deliveries are KEPT: daily_report_id is cleared on rows linked to this report (no FK).
+//      Legacy deliveries (daily_report_id NULL, matched by received_date) are untouched.
+//   3. The row is hard-deleted with the service role (no soft-delete column). Its
+//      daily_report_versions rows go with it (migration 076: ON DELETE CASCADE).
+//      Weather-delay days are counted live from daily_reports (lib/contract-time.js
+//      weatherDelayCount / weatherDelayRows — no stored count), so they drop at once on the
+//      job page, the weather-day log PDF and the owner view.
+//   4. Storage objects of photos uploaded directly to the report (no job_photo_id) are removed
+//      best effort (same rule as /api/delete-photo); a storage error is logged, not returned.
+//      job_photos rows and their files are never touched.
+// If step 2 or 3 fails after the log entry, a second entry records that the report was kept.
+// → { ok, id, deliveries_kept, files_removed, files_kept, warning? }
+export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
+
+  let id = new URL(request.url).searchParams.get('id')
+  if (!id) {
+    let body = null
+    try {
+      const text = await request.text()
+      body = text ? JSON.parse(text) : null
+    } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
+    id = body && typeof body === 'object' && !Array.isArray(body) ? body.id : null
+  }
+
+  const { report, response } = await loadReport(adminSupabase, id)
+  if (response) return response
+  const denied = await denyUnlessOnJob(adminSupabase, auth, report.job_id)
+  if (denied) return denied
+  if (!canDeleteReport(auth, report)) return Response.json({ error: DELETE_AUTHOR_MESSAGE }, { status: 403 })
+
+  const logged = await logChange({
+    job_id: report.job_id, entity_type: 'daily_report', entity_id: report.id, field_name: 'deleted',
+    old_value: JSON.stringify(report), new_value: null, changed_by: auth.userId,
+    note: `Deleted daily report for ${report.report_date}`,
+  })
+  if (logged && logged.ok === false) return Response.json({ error: `Could not record the deletion in the change history, so nothing was deleted. ${logged.error || ''}`.trim() }, { status: 500 })
+  const logKept = msg => logChange({
+    job_id: report.job_id, entity_type: 'daily_report', entity_id: report.id, field_name: 'delete_failed',
+    old_value: null, new_value: null, changed_by: auth.userId,
+    note: `Delete of the daily report for ${report.report_date} did not complete; the report was kept. ${msg}`.trim(),
+  })
+
+  // Legacy deliveries (no daily_report_id; select('*') so a pre-075 table works) — kept and
+  // untouched, only counted for the response. Counted BEFORE the unlink, or the rows just
+  // unlinked (now daily_report_id NULL, same date) would be counted twice.
+  const legacy = await adminSupabase.from('deliveries').select('*').eq('job_id', report.job_id).eq('source', 'daily_report').eq('received_date', report.report_date)
+  const legacyCount = !legacy.error && Array.isArray(legacy.data) ? legacy.data.filter(d => d && d.daily_report_id == null).length : 0
+
+  const unlink = await unlinkReportDeliveries(adminSupabase, report)
+  if (unlink.error) {
+    await logKept(unlink.error.message)
+    return Response.json({ error: `Could not detach this report's deliveries, so nothing was deleted. ${unlink.error.message}` }, { status: 500 })
+  }
+
+  const { data: gone, error } = await adminSupabase.from('daily_reports').delete().eq('id', report.id).select('id')
+  if (error) {
+    await logKept(error.message)
+    return Response.json({ error: `Could not delete the daily report: ${error.message}` }, { status: 500 })
+  }
+  if (!gone || gone.length === 0) return Response.json({ error: 'Daily report not found.' }, { status: 404 })
+
+  // Best effort, after the row is gone: a storage error never fails the delete.
+  let files = { removed: [], kept: [], errors: [] }
+  try { files = await removeReportOnlyPhotoFiles(adminSupabase, report) } catch (e) { files.errors.push(e?.message || String(e)) }
+  if (files.errors.length) console.error('[daily-reports DELETE] photo storage removal failed', report.id, files.errors)
+
+  return Response.json({
+    ok: true, id: report.id,
+    deliveries_kept: unlink.unlinked + legacyCount,
+    files_removed: files.removed.length, files_kept: files.kept.length,
+    ...(files.errors.length ? { warning: 'The report was deleted, but some of its photo files could not be removed from storage.' } : {}),
+  })
 }

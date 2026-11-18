@@ -13,10 +13,10 @@ import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { fetchJson, jsonInit, readJsonResponse } from '../../lib/fetch-json'
 import { uploadThenSend } from '../../lib/file-upload-client'
-import { isDraftReport, isFinalReport, publishedReports, visibleReports, canEditDraft, duplicateReportMessage, finalReportDates, isReferencedReportPhoto, revisionLabel, canViewReportVersions, canReopenReport, canReopenFinalReport } from '../../lib/daily-report-payload'
+import { isDraftReport, isFinalReport, publishedReports, visibleReports, canEditDraft, duplicateReportMessage, finalReportDates, isReferencedReportPhoto, revisionLabel, canViewReportVersions, canReopenReport, canReopenFinalReport, canDeleteReport } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
 import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
-import { saveDailyReport, reopenDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
+import { saveDailyReport, reopenDailyReport, FINALIZE_LABEL, FINALIZE_CONFIRM, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE, deleteDailyReport, deleteReportConfirm, countReportDeliveries, DELETE_BUTTON } from '../../lib/daily-report-client'
 import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
 import { isPreviewActive } from '../../lib/prime-co-review'
 import JobPhotoPicker from '../jobdetail/JobPhotoPicker'
@@ -150,6 +150,7 @@ export default function Field() {
   const [editingReportId, setEditingReportId] = useState(null)
   const [showPhotoPicker, setShowPhotoPicker] = useState(false)
   const [reopeningReport, setReopeningReport] = useState(null) // prompt 89: report id being reopened
+  const [deletingReport, setDeletingReport] = useState(null) // prompt 91: report id being deleted
 
   const [rfis, setRfis] = useState([])
   const [rfiForm, setRfiForm] = useState({ title: '', description: '' })
@@ -1156,6 +1157,31 @@ export default function Field() {
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  // Prompt 91: permanently delete a report (draft or final) through DELETE /api/daily-reports.
+  // Shown only where canDeleteReport is true (a super: their own reports). The confirm names the
+  // date and, when the report logged deliveries, says they are kept. If the report open in the
+  // wizard is the one deleted, the form is cleared. API refusals show the server's text.
+  async function deleteReport(r) {
+    if (!r?.id || deletingReport) return
+    setDeletingReport(r.id)
+    try {
+      const n = await countReportDeliveries(supabase, r)
+      if (!window.confirm(deleteReportConfirm(r, n))) return
+      const res = await deleteDailyReport(authFetch, r.id)
+      if (editingReportId === r.id || savedReportIdRef.current === r.id) { resetDailyWizard(); setDailySuccess(false) }
+      if (expandedReport === r.id) setExpandedReport(null)
+      if (versionsReportId === r.id) setVersionsReportId(null)
+      await loadDailyReports()
+      await checkTodayReport()
+      if (res?.warning) alert(res.warning)
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setDeletingReport(null)
+    }
+  }
+  const myReportAuth = () => ({ role: profile?.role, userId: user?.id })
+
   // Save draft (finalize=false) or "Finalize – 100% complete" (finalize=true). All writes go
   // through /api/daily-reports (lib/daily-report-client) — never a browser insert — so the
   // server sets super_id, checks the job, and creates deliveries once, on finalize only.
@@ -1436,7 +1462,15 @@ export default function Field() {
                       {editingReportId && (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '8px 12px', marginBottom: '1rem', fontSize: '13px', color: '#92400e' }}>
                           <span><span style={DRAFT_BADGE}>Draft</span> Editing your draft for {new Date(dailyForm.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                          <button type="button" onClick={resetDailyWizard} disabled={submittingDaily} style={{ minHeight: '44px', padding: '0 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', fontWeight: 700, color: '#374151', cursor: 'pointer' }}>Start a new report</button>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button type="button" onClick={resetDailyWizard} disabled={submittingDaily} style={{ minHeight: '44px', padding: '0 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', fontWeight: 700, color: '#374151', cursor: 'pointer' }}>Start a new report</button>
+                            {(() => {
+                              const open = dailyReports.find(x => x.id === editingReportId)
+                              return open && canDeleteReport(myReportAuth(), open) && !isPreviewActive() ? (
+                                <button type="button" onClick={() => deleteReport(open)} disabled={submittingDaily || deletingReport === open.id} style={{ ...DELETE_BUTTON, opacity: deletingReport === open.id ? 0.6 : 1 }}>{deletingReport === open.id ? 'Deleting…' : 'Delete'}</button>
+                              ) : null
+                            })()}
+                          </div>
                         </div>
                       )}
                       {/* Progress bar */}
@@ -1743,6 +1777,10 @@ export default function Field() {
                                       setReopeningReport(r.id)
                                       try { await reopenDailyReport(authFetch, r.id); await loadDailyReports(); await checkTodayReport() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
                                     }} style={{ minHeight: '44px', minWidth: '64px', padding: '0 14px', background: '#fff', color: '#e8590c', border: '1px solid #e8590c', borderRadius: '8px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', opacity: reopeningReport === r.id ? 0.6 : 1 }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
+                                  )}
+                                  {/* Prompt 91: Delete (draft or final) — a super only their own report. */}
+                                  {canDeleteReport(myReportAuth(), r) && !isPreviewActive() && (
+                                    <button type="button" disabled={deletingReport === r.id} onClick={e => { e.stopPropagation(); deleteReport(r) }} style={{ ...DELETE_BUTTON, opacity: deletingReport === r.id ? 0.6 : 1 }}>{deletingReport === r.id ? 'Deleting…' : 'Delete'}</button>
                                   )}
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>

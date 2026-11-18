@@ -33,10 +33,10 @@ import { fetchJson, jsonInit } from '../../lib/fetch-json'
 import { uploadThenSend, putToSignedUrl, forgetUpload } from '../../lib/file-upload-client'
 import { AI_PARSE_MAX_BYTES, AI_PARSE_LIMIT_PRECHECK_MESSAGE } from '../../lib/ai-parse-limits'
 import DailyReportForm from '../jobdetail/DailyReportForm'
-import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
+import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions, canDeleteReport } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
 import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
-import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
+import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE, deleteDailyReport, deleteReportConfirm, countReportDeliveries, DELETE_BUTTON } from '../../lib/daily-report-client'
 import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
 import NewPOForm from '../jobdetail/NewPOForm'
 import EditPOForm from '../jobdetail/EditPOForm'
@@ -174,6 +174,7 @@ function ResidentialJobDetailInner() {
   const [editingDailyReport, setEditingDailyReport] = useState(null) // a draft open in DailyReportForm (prompt 85)
   const [fieldUserId, setFieldUserId] = useState(null)
   const [reopeningReport, setReopeningReport] = useState(null)
+  const [deletingReport, setDeletingReport] = useState(null) // prompt 91: report id being deleted
   const [versionsReportId, setVersionsReportId] = useState(null) // prompt 86: earlier versions modal
   const [photoUrls, setPhotoUrls] = useState({})
   const [lightbox, setLightbox] = useState(null) // index into photos
@@ -3994,6 +3995,21 @@ function ResidentialJobDetailInner() {
                             setReopeningReport(r.id)
                             try { await reopenDailyReport(authFetch, r.id); await loadFieldData() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
                           }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
+                        )}
+                        {/* Prompt 91: permanent, logged delete (draft or final). Office any report; a super only their own. */}
+                        {canDeleteReport({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
+                          <button type="button" style={{ ...DELETE_BUTTON, opacity: deletingReport === r.id ? 0.6 : 1 }} disabled={deletingReport === r.id} onClick={async () => {
+                            setDeletingReport(r.id)
+                            try {
+                              const n = await countReportDeliveries(supabase, r)
+                              if (!window.confirm(deleteReportConfirm(r, n))) return
+                              const res = await deleteDailyReport(authFetch, r.id)
+                              if (editingDailyReport?.id === r.id) { setShowNewDailyReport(false); setEditingDailyReport(null) }
+                              if (versionsReportId === r.id) setVersionsReportId(null)
+                              await loadFieldData()
+                              if (res?.warning) alert(res.warning)
+                            } catch (err) { alert(err.message) } finally { setDeletingReport(null) }
+                          }}>{deletingReport === r.id ? 'Deleting…' : 'Delete'}</button>
                         )}
                       </div>
                       {r.work_performed && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.work_performed}</div>}

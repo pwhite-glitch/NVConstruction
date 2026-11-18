@@ -67,11 +67,11 @@ import { writeWithMissingColumnRetry, isMissingColumnError } from '../../lib/mis
 import { g703Row, screenStored, storedBalanceByKey, storedInstalledError, hasStoredColumns } from '../../lib/aia-g703'
 import { findDirectoryEntry, coiBadgeModel, confirmCoiForCompany } from '../../lib/coi-warning'
 import DailyReportForm from './DailyReportForm'
-import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions } from '../../lib/daily-report-payload'
+import { publishedReports, visibleReports, isDraftReport, canEditDraft, canReopenReport, finalReportDates, revisionLabel, canViewReportVersions, canDeleteReport, reportDeliveryCount, isDeletedReportLogEntry, deletedReportSnapshot } from '../../lib/daily-report-payload'
 import { reportPhotoInternal } from '../../lib/report-photo-links'
 import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
 import { isBulkSelectable, selectablePaths, chunkPaths, toggleInSet, toggleDay, shortDayLabel } from '../../lib/photo-bulk-select'
-import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE } from '../../lib/daily-report-client'
+import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE, deleteDailyReport, deleteReportConfirm, DELETE_BUTTON } from '../../lib/daily-report-client'
 import ReportVersionsModal from './ReportVersionsModal'
 
 const s = {
@@ -397,6 +397,7 @@ function JobDetailInner() {
   const [editingDailyReport, setEditingDailyReport] = useState(null) // a draft open in DailyReportForm (prompt 85)
   const [fieldUserId, setFieldUserId] = useState(null)
   const [reopeningReport, setReopeningReport] = useState(null)
+  const [deletingReport, setDeletingReport] = useState(null) // prompt 91: report id being deleted
   const [versionsReportId, setVersionsReportId] = useState(null) // prompt 86: earlier versions modal
   const [respondingRfi, setRespondingRfi] = useState(null)
   const [rfiResponse, setRfiResponse] = useState('')
@@ -10809,6 +10810,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           try { await reopenDailyReport(authFetch, r.id); await loadFieldData() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
                         }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
                       )}
+                      {/* Prompt 91: permanent, logged delete (draft or final). Office any report; a super only their own. */}
+                      {canDeleteReport({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
+                        <button type="button" style={{ ...DELETE_BUTTON, opacity: deletingReport === r.id ? 0.6 : 1 }} disabled={deletingReport === r.id} onClick={async e => {
+                          e.stopPropagation()
+                          if (!window.confirm(deleteReportConfirm(r, reportDeliveryCount(r, fieldDeliveries)))) return
+                          setDeletingReport(r.id)
+                          try {
+                            const res = await deleteDailyReport(authFetch, r.id)
+                            if (editingDailyReport?.id === r.id) { setShowNewDailyReport(false); setEditingDailyReport(null) }
+                            if (expandedFieldReport === r.id) setExpandedFieldReport(null)
+                            if (versionsReportId === r.id) setVersionsReportId(null)
+                            await loadFieldData()
+                            if (res?.warning) alert(res.warning)
+                          } catch (err) { alert(err.message) } finally { setDeletingReport(null) }
+                        }}>{deletingReport === r.id ? 'Deleting…' : 'Delete'}</button>
+                      )}
                       {r.weather && <span style={{ fontSize: '12px', color: '#6b7280' }}>{r.weather}</span>}
                       {r.crew_count != null && <span style={{ fontSize: '12px', color: '#6b7280' }}>{r.crew_count} crew</span>}
                     </div>
@@ -15296,7 +15313,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {changeLog.map(entry => {
-                  const dotColor = { billing: '#2563eb', subcontract: '#16a34a', change_order: '#d97706', job: '#e8590c', coi: '#7c3aed' }[entry.entity_type] || '#6b7280'
+                  const dotColor = isDeletedReportLogEntry(entry) ? '#dc2626' : ({ billing: '#2563eb', subcontract: '#16a34a', change_order: '#d97706', job: '#e8590c', coi: '#7c3aed', daily_report: '#0891b2' }[entry.entity_type] || '#6b7280')
+                  const deletedSnap = deletedReportSnapshot(entry)
                   return (
                     <div key={entry.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                       <div style={{ flexShrink: 0, width: '10px', height: '10px', borderRadius: '50%', background: dotColor, marginTop: '4px' }} />
@@ -15307,7 +15325,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {new Date(entry.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} {new Date(entry.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        {(entry.old_value || entry.new_value) && (
+                        {isDeletedReportLogEntry(entry) ? (
+                          // Prompt 91: old_value is the whole deleted report as JSON — summary + expandable snapshot.
+                          <details style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>
+                            <summary style={{ cursor: 'pointer', minHeight: '24px' }}>
+                              {deletedSnap ? `Deleted ${deletedSnap.status === 'draft' ? 'draft' : 'final'} report${deletedSnap.weather_delay === true ? ' · weather delay' : ''}${deletedSnap.work_performed ? ` · ${String(deletedSnap.work_performed).slice(0, 80)}` : ''}` : 'Deleted report (snapshot saved)'}
+                            </summary>
+                            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '11px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '8px', margin: '6px 0 0', maxHeight: '320px', overflow: 'auto' }}>{deletedSnap ? JSON.stringify(deletedSnap, null, 2) : entry.old_value}</pre>
+                          </details>
+                        ) : (entry.old_value || entry.new_value) && (
                           <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>
                             {entry.old_value && <span style={{ textDecoration: 'line-through', color: '#dc2626', marginRight: '8px' }}>{entry.old_value}</span>}
                             {entry.new_value && <span style={{ color: '#16a34a' }}>→ {entry.new_value}</span>}

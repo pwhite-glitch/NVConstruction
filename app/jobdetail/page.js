@@ -76,6 +76,7 @@ import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE, deleteDa
 import ReportVersionsModal from './ReportVersionsModal'
 import { ReportExportButtons, ReportRangeExport, ReportSentLine, EmailReportsModal, useReportSends } from './DailyReportExport'
 import { canExportReports } from '../../lib/daily-report-export'
+import { budgetLineLabel, budgetTagText, budgetTagStyle, budgetTagTextStyle, budgetSelectStyle, normalizeBudgetAllocations } from '../../lib/budget-label'
 
 const s = {
   // ── Layout ──
@@ -163,9 +164,9 @@ const s = {
   inlineForm: { background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '1.25rem', marginBottom: '1rem' },
 
   // ── Contract/billing rows ──
-  contractRow: { border: '1px solid #e5e7eb', borderRadius: '6px', marginBottom: '6px', overflow: 'hidden' },
-  contractRowHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#fff' },
-  contractRowExpanded: { borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb' },
+  contractRow: { border: '1px solid #e5e7eb', borderRadius: '6px', marginBottom: '6px', overflow: 'hidden', minWidth: 0, maxWidth: '100%' },
+  contractRowHeader: { display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px 16px', padding: '12px 14px', background: '#fff', minWidth: 0 },
+  contractRowExpanded: { borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb', minWidth: 0 },
   billingEntryRow: { border: '1px solid #e5e7eb', borderRadius: '6px', marginBottom: '6px', overflow: 'hidden' },
   billingEntryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#fff' },
   billingEntryExpanded: { borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb' },
@@ -4301,7 +4302,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
         if (d.members?.length === 1) subUserId = d.members[0].id
       }
     }
-    const validAllocs = (contractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
+    const validAllocs = normalizeBudgetAllocations(contractForm.budget_allocations)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (contractForm.budget_item_id || null)
     let bidProposalUrl = null
     if (contractBidFile) {
@@ -4395,7 +4396,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function updateContract() {
-    const validAllocs = (editContractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
+    const validAllocs = normalizeBudgetAllocations(editContractForm.budget_allocations)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (editContractForm.budget_item_id || null)
     let bidProposalUrl = editContractForm.bid_proposal_url || null
     if (editContractBidFile) {
@@ -8593,8 +8594,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
                         )}
                         {allocs.map((alloc, idx) => (
-                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
-                            <select style={{ ...s.input, padding: '8px 10px' }} value={alloc.budget_item_id} onChange={e => {
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(90px, 130px) 28px', gap: '6px', marginBottom: '6px', alignItems: 'center', minWidth: 0 }}>
+                            <select style={{ ...s.input, ...budgetSelectStyle, padding: '8px 10px' }} title={budgetLineLabel(budgetItems.find(b => b.id === alloc.budget_item_id)) || undefined} value={alloc.budget_item_id} onChange={e => {
                               const next = allocs.map((a, i) => i === idx ? { ...a, budget_item_id: e.target.value } : a)
                               setContractForm(f => ({ ...f, budget_allocations: next }))
                             }}>
@@ -8609,7 +8610,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         ))}
                         {allocs.length > 0 && contractVal > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
                             <span style={{ color: '#6b7280' }}>Allocated: <strong style={{ color: '#111827' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#111827' }}>${contractVal.toLocaleString()}</strong></span>
                             <span style={{ fontWeight: '700', color: remaining < 0 ? '#dc2626' : remaining === 0 ? '#16a34a' : '#e8590c' }}>
                               {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
@@ -8664,21 +8665,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 return (
                   <div key={c.id} style={{ ...s.contractRow, ...(isDraft ? { borderStyle: 'dashed', borderColor: '#f59e0b' } : {}) }}>
                     <div style={{ ...s.contractRowHeader, ...(isDraft ? { background: '#fffbeb' } : {}) }} className="rx-stack-sm">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{subName}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 260px', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827', minWidth: 0, overflowWrap: 'anywhere' }}>{subName}</span>
                         {renderCoiBadge(c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name)}
                         {allocations.length > 0
                           ? allocations.map((a, i) => {
                               const item = budgetItems.find(b => b.id === a.budget_item_id)
                               if (!item) return null
+                              const tag = budgetTagText(item, a.amount || null)
                               return (
-                                <span key={i} style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
-                                  {item.cost_code ? `${item.cost_code} · ` : ''}{item.description}
-                                  {a.amount ? <span style={{ color: '#6b7280', marginLeft: '4px' }}>${Number(a.amount).toLocaleString()}</span> : null}
+                                <span key={i} title={tag.title} style={{ ...budgetTagStyle, fontSize: '11px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 8px' }}>
+                                  <span style={budgetTagTextStyle}>{tag.text}</span>
+                                  {a.amount ? <span style={{ color: '#6b7280', flexShrink: 0, whiteSpace: 'nowrap' }}>${Number(a.amount).toLocaleString()}</span> : null}
                                 </span>
                               )
                             })
-                          : budgetLine && <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 8px' }}>{budgetLine.cost_code || budgetLine.description}</span>
+                          : budgetLine && (
+                            <span title={budgetLineLabel(budgetLine)} style={{ ...budgetTagStyle, fontSize: '11px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 8px' }}>
+                              <span style={budgetTagTextStyle}>{budgetLine.cost_code || budgetTagText(budgetLine).text}</span>
+                            </span>
+                          )
                         }
                         {isDraft
                           ? <span title="Only NV staff can see this. Activate to show it in the sub's portal." style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', whiteSpace: 'nowrap' }}>Draft · not visible to sub</span>
@@ -8689,7 +8695,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }} className="rx-wrap-sm">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px 20px', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0, maxWidth: '100%' }} className="rx-wrap-sm">
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Contract</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>${Number(c.contract_value).toLocaleString()}</div>
@@ -8712,7 +8718,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Retainage</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.retainage_pct) > 0 ? '#a16207' : '#6b7280' }}>{Number(c.retainage_pct || 0)}%</div>
                         </div>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
                           {isDraft && <button style={{ ...s.btnSmall, background: '#16a34a', color: '#fff', border: '1px solid #16a34a' }} onClick={() => activateContract(c)} title="Makes it visible in the sub's portal and assigns them with billing off. No email is sent.">Activate</button>}
                           {canMoveToDraft && <button style={s.btnSmall} onClick={() => moveContractToDraft(c)} title="Hides it from the sub's portal again. Not available once signed. No email is sent.">Move to draft</button>}
                           <button style={s.btnSmallOrange} onClick={() => {
@@ -8729,7 +8735,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <>
                                 <button style={{ ...s.btnSmall, background: '#dcfce7', color: '#16a34a', border: '1px solid #dcfce7' }} onClick={() => openContractGenerator(c)}>{!req ? 'Gen Contract' : req.status === 'signed' ? 'View contract' : 'View / Resend contract'}</button>
                                 {req && (
-                                  <span title={req.signer_email} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#dcfce7' : '#fff7ed', color: req.status === 'signed' ? '#16a34a' : '#d97706', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#fed7aa'}` }}>
+                                  <span title={req.signer_email} style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere', fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px',background: req.status === 'signed' ? '#dcfce7' : '#fff7ed', color: req.status === 'signed' ? '#16a34a' : '#d97706', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#fed7aa'}` }}>
                                     {req.status === 'signed'
                                       ? `✓ Signed ${req.signed_at ? fmtDate(req.signed_at) : ''}`
                                       : `⏳ Sent for signature ${fmtDate(req.created_at)} to ${req.signer_email}`}
@@ -8826,14 +8832,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <button style={s.btnSmall} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
                               </div>
                               {allocs.length === 0 && (
-                                <select style={{ ...s.input, padding: '8px 10px', marginBottom: '4px' }} value={editContractForm.budget_item_id || ''} onChange={e => setEditContractForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                                <select style={{ ...s.input, ...budgetSelectStyle, padding: '8px 10px', marginBottom: '4px' }} title={budgetLineLabel(budgetItems.find(b => b.id === editContractForm.budget_item_id)) || undefined} value={editContractForm.budget_item_id || ''} onChange={e => setEditContractForm(f => ({ ...f, budget_item_id: e.target.value }))}>
                                   <option value="">— No budget line —</option>
                                   {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
                                 </select>
                               )}
                               {allocs.map((alloc, idx) => (
-                                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
-                                  <select style={{ ...s.input, padding: '8px 10px' }} value={alloc.budget_item_id} onChange={e => {
+                                <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(90px, 130px) 28px', gap: '6px', marginBottom: '6px', alignItems: 'center', minWidth: 0 }}>
+                                  <select style={{ ...s.input, ...budgetSelectStyle, padding: '8px 10px' }} title={budgetLineLabel(budgetItems.find(b => b.id === alloc.budget_item_id)) || undefined} value={alloc.budget_item_id} onChange={e => {
                                     const next = allocs.map((a, i) => i === idx ? { ...a, budget_item_id: e.target.value } : a)
                                     setEditContractForm(f => ({ ...f, budget_allocations: next }))
                                   }}>
@@ -8848,7 +8854,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </div>
                               ))}
                               {allocs.length > 0 && contractVal > 0 && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
                                   <span style={{ color: '#6b7280' }}>Allocated: <strong style={{ color: '#111827' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#111827' }}>${contractVal.toLocaleString()}</strong></span>
                                   <span style={{ fontWeight: '700', color: remaining < 0 ? '#dc2626' : remaining === 0 ? '#16a34a' : '#e8590c' }}>
                                     {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
@@ -9092,7 +9098,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <td style={{ padding: '8px', color: '#374151' }}>
                                               {line.description}
                                               {line.budget_items && (
-                                                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                                                <div title={budgetLineLabel(line.budget_items)} style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px', overflowWrap: 'anywhere' }}>
                                                   {line.budget_items.cost_code ? `${line.budget_items.cost_code} · ` : ''}{line.budget_items.description}
                                                 </div>
                                               )}
@@ -12401,7 +12407,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         <div>
                                           <span style={{ fontSize: '13px', color: '#4b5563' }}>{po.vendor_name}</span>
                                           <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '8px' }}>{po.po_number}</span>
-                                          {budgetLine && <span style={{ fontSize: '11px', color: '#d97706', marginLeft: '8px' }}>→ {budgetLine.description}</span>}
+                                          {budgetLine && <span title={budgetLineLabel(budgetLine)} style={{ fontSize: '11px', color: '#d97706', marginLeft: '8px', overflowWrap: 'anywhere' }}>→ {budgetLine.description}</span>}
                                           {!budgetLine && <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px' }}>No budget line — pick one</span>}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -14788,7 +14794,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>Reimbursement</span>
                                         : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#f3f4f6', color: '#6b7280', border: '1px solid #222' }}>Check to vendor</span>
                                       }
-                                      {bi && <span style={{ fontSize: '11px', color: '#6b7280' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span>}
+                                      {bi && <span title={budgetLineLabel(bi)} style={{ ...budgetTagStyle, fontSize: '11px', color: '#6b7280' }}><span style={budgetTagTextStyle}>{budgetTagText(bi).text}</span></span>}
                                       {!bi && <span style={{ fontSize: '11px', color: '#3a3a3a' }}>No budget line</span>}
                                       <span style={{ fontSize: '11px', color: '#6b7280' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>
                                       {po.draw_request_id && (() => { const dr = drawRequests.find(d => d.id === po.draw_request_id); return dr ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#eff6ff', color: '#38bdf8', border: '1px solid #bae6fd' }}>Draw #{dr.draw_number}{dr.title ? ` — ${dr.title}` : ''}</span> : null })()}

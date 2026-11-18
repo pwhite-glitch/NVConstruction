@@ -13,6 +13,7 @@ import { safeFileName } from '../../lib/storage-path'
 import { photoDateCentral } from '../../lib/photo-taken-at'
 import CompanyCamLinkBar from '../components/CompanyCamLinkBar'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
+import { isAiaDraft, aiaPeriodLabel, aiaTitleSuffix, aiaDraftPeriodNote, aiaFinalizeError, aiaCreatePeriod, monthPeriod, AIA_PERIOD_REQUIRED_MESSAGE } from '../../lib/aia-period'
 import { canRecordAiaPayment, parseAiaPaymentAmount, aiaPaymentDiffers, aiaPaymentMismatchMessage } from '../../lib/aia-payments'
 import { isPreviewActive, PRIME_CO_APPLIED_NO_DELETE } from '../../lib/prime-co-review'
 import { companyKey, sameCompany } from '../../lib/company-name'
@@ -2039,6 +2040,10 @@ function JobDetailInner() {
     const isDrawType = job?.billing_type === 'draw_request'
     if (!isDrawType && !newAiaForm.period_to) return
     if (isDrawType && !newAiaForm.linked_draw_request_id) return
+    // Draw-request jobs get a period too (prompt 93): the form's dates, else the current
+    // Central month — same first-to-last-day convention as the monthly picker.
+    const period = aiaCreatePeriod({ isDrawType, form: newAiaForm, today: todayCentral() })
+    if (period.error) { alert(period.error); return }
     setSavingAia(true)
     const { data: { session } } = await supabase.auth.getSession()
     // Carry forward from the latest prime app (NV-sub apps are a separate sequence)
@@ -2060,17 +2065,7 @@ function JobDetailInner() {
       }
       appNumber = typedNumber
     }
-    let periodTo = null, periodFrom = null
-    if (!isDrawType) {
-      if (newAiaForm.period_from) {
-        periodTo = newAiaForm.period_to
-        periodFrom = newAiaForm.period_from
-      } else {
-        const [year, month] = newAiaForm.period_to.split('-').map(Number)
-        periodTo = new Date(year, month, 0).toISOString().split('T')[0]
-        periodFrom = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`
-      }
-    }
+    const periodTo = period.period_to, periodFrom = period.period_from
     const linkedDraw = isDrawType ? drawRequests.find(d => d.id === newAiaForm.linked_draw_request_id) : null
     const { data: newApp, error } = await supabase.from('aia_applications').insert({
       job_id: id,
@@ -2261,8 +2256,15 @@ function JobDetailInner() {
     if (!activeAia) return
     // The stored row decides the lock (the Status dropdown is local until saved).
     const { data: stored, error: storedErr } = await supabase.from('aia_applications')
-      .select('id, app_number, status, payment_received, retainage_pct, markup_pct').eq('id', activeAia.id).maybeSingle()
+      .select('id, app_number, status, payment_received, retainage_pct, markup_pct, period_from, period_to').eq('id', activeAia.id).maybeSingle()
     if (storedErr || !stored) { alert('Could not check the application: ' + (storedErr?.message || 'not found')); return false }
+    // Prompt 93: leaving draft (submitted / certified) needs a billing period end date.
+    // Saving a draft is never blocked; /api/aia-status checks the stored row again.
+    const targetStatus = activeAia.status || 'draft'
+    if (targetStatus !== (stored.status || 'draft') && aiaFinalizeError(activeAia, targetStatus)) {
+      alert(AIA_PERIOD_REQUIRED_MESSAGE)
+      return false
+    }
     const ownerOverride = aiaUnlockedId === stored.id && isPrincipal(userRole)
     if (isAiaLocked(stored) && !ownerOverride) {
       // Locked: amounts, retainage % and markup % stay as stored. Only Status may move forward.
@@ -2299,8 +2301,7 @@ function JobDetailInner() {
           if (fz.error) { setSavingAia(false); alert(`Status was not changed — the schedule of values could not be saved:\n\n${fz.error}`); return false }
           freezeHeader = fz.header
         }
-        if (newStatus === 'draft') freezeHeader = { schedule_frozen_at: null }
-        const { error: stErr, row: stRow } = await updateAiaHeader(stored.id, { status: newStatus, updated_at: new Date().toISOString(), ...freezeHeader })
+        const { error: stErr, row: stRow } = await changeAiaStatus(stored.id, newStatus, freezeHeader)
         setSavingAia(false)
         if (stErr) { alert('Status was not saved: ' + stErr.message); return false }
         setActiveAia(a => (a && a.id === stored.id ? { ...a, ...stRow } : a))
@@ -2331,15 +2332,27 @@ function JobDetailInner() {
     const unfreezing = newStatus === 'draft' && prevStatus !== 'draft'
     const frozenNow = !!activeAia.schedule_frozen_at && !unfreezing
 
+    // Billing period (editable while the app is editable). Status changes go through
+    // /api/aia-status (prompt 93), which refuses to leave draft without period_to.
     const { error: appErr } = await updateAiaHeader(activeAia.id, {
       retainage_pct: parseFloat(activeAia.retainage_pct),
       markup_pct: parseFloat(activeAia.markup_pct) || 0,
-      status: freezing ? prevStatus : newStatus,
+      period_from: activeAia.period_from || null,
+      period_to: activeAia.period_to || null,
       updated_at: new Date().toISOString(),
-      ...(unfreezing ? { schedule_frozen_at: null } : {}),
     })
     if (appErr) saveErrors.push(`Application header: ${appErr.message}`)
-    else if (unfreezing) setActiveAia(a => (a && a.id === activeAia.id ? { ...a, schedule_frozen_at: null } : a))
+    // Status changes that don't freeze (back to draft, submitted → certified, NV-sub apps)
+    // are written with the header, before the lines — as before.
+    if (!appErr && !freezing && newStatus !== prevStatus) {
+      const { error: stErr, row: stRow } = await changeAiaStatus(activeAia.id, newStatus)
+      if (stErr) {
+        saveErrors.push(`Status: ${stErr.message}`)
+        setActiveAia(a => (a && a.id === activeAia.id ? { ...a, status: prevStatus } : a))
+      } else {
+        setActiveAia(a => (a && a.id === activeAia.id ? { ...a, ...stRow } : a))
+      }
+    }
 
     let storedDropped = false
     const writeLine = run => async row => {
@@ -2398,7 +2411,7 @@ function JobDetailInner() {
           saveErrors.push(`Schedule of values: ${fz.error}`)
           statusNote = `\n\nStatus was NOT changed to ${newStatus} (still ${prevStatus}) because the schedule of values could not be saved.`
         } else {
-          const { error: stErr, row: stRow } = await updateAiaHeader(activeAia.id, { status: newStatus, updated_at: new Date().toISOString(), ...fz.header })
+          const { error: stErr, row: stRow } = await changeAiaStatus(activeAia.id, newStatus, fz.header)
           if (stErr) {
             saveErrors.push(`Status: ${stErr.message}`)
             statusNote = `\n\nStatus was NOT changed to ${newStatus} (still ${prevStatus}).`
@@ -2434,6 +2447,24 @@ function JobDetailInner() {
   // aia_applications header write; before 063 the freeze columns are dropped and the rest saves.
   async function updateAiaHeader(appId, patch) {
     return writeWithMissingColumnRetry(row => supabase.from('aia_applications').update(row).eq('id', appId), patch, { fallbackCols: AIA_FREEZE_COLS })
+  }
+
+  // Status change through /api/aia-status (prompt 93: no submit / certify without a
+  // billing period end date). header = the schedule-freeze columns when leaving draft.
+  // Same shape as updateAiaHeader: { error, row } (row = what was written).
+  async function changeAiaStatus(appId, status, header = {}) {
+    try {
+      const res = await authFetch('/api/aia-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app_id: appId, status, header }),
+      })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok) return { error: { message: out.error || `Status change failed (${res.status}).` } }
+      return { error: null, row: out.patch || { status } }
+    } catch (e) {
+      return { error: { message: e?.message || 'Could not reach the server.' } }
+    }
   }
 
   // Freeze a prime app's schedule of values when it leaves draft: write every prime line's
@@ -2474,7 +2505,8 @@ function JobDetailInner() {
   // Always saves before generating so the exported PDF reflects the stored application.
   async function saveAndGenerateAIA(override = false) {
     if (!activeAia) return
-    if (!activeAia.period_to && !window.confirm('The billing period end date is not set. The PDF will be marked DRAFT. Continue?')) return
+    // Drafts only (prompt 93): a sent app is never printed as DRAFT.
+    if (aiaDraftPeriodNote(activeAia) && !window.confirm('The billing period end date is not set on this draft. Set it before submitting. Generate the draft PDF anyway?')) return
     const ok = await saveAiaLines()
     if (ok === false) return
     generateAIAFromApp(override)
@@ -2682,9 +2714,11 @@ function JobDetailInner() {
       : (job.nv_role === 'sub' || app.nv_subcontract_id) ? contractSumToDate : baseContract
     const REBUILT_NOTE = 'Schedule rebuilt from the current budget — this application was submitted before the portal saved its schedule of values.'
 
-    const isDraft = !app.period_to
-    const periodFrom = app.period_from ? new Date(app.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
-    const periodTo   = app.period_to  ? new Date(app.period_to  + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+    // Prompt 93 (lib/aia-period.js): DRAFT follows the status only — a submitted /
+    // certified app is never labeled DRAFT. Missing period_to prints "Not set".
+    const isDraft = isAiaDraft(app)
+    const draftPeriodNote = aiaDraftPeriodNote(app)
+    const periodText = aiaPeriodLabel(app)
     const genDate    = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const fmt      = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
@@ -2822,7 +2856,7 @@ ${isDraft ? `.draft-banner { background: #fef3c7; border-bottom: 1px solid #fde6
 <div class="no-print">
   <button class="btn" onclick="window.print()">Print / Save as PDF</button>
   <button class="btn-sec" onclick="window.close()">Close</button>
-  ${isDraft ? `<span style="font-size:11px;color:#f59e0b;font-weight:700;margin-left:8px">⚠ DRAFT — Billing period is not set</span>` : ''}
+  ${draftPeriodNote ? `<span style="font-size:11px;color:#f59e0b;font-weight:700;margin-left:8px">⚠ Draft — ${draftPeriodNote}</span>` : ''}
   ${overbilledLines.length > 0 ? `<span style="font-size:11px;color:#dc2626;font-weight:700;margin-left:8px">⚠ ${overbilledLines.length} line${overbilledLines.length > 1 ? 's' : ''} exceed scheduled value</span>` : ''}
 </div>
 
@@ -2836,12 +2870,12 @@ ${isDraft ? `.draft-banner { background: #fef3c7; border-bottom: 1px solid #fde6
   </div>
   <div class="hdr-right">
     <div class="hdr-type">Application for Payment</div>
-    <div class="hdr-title">Application No. ${app.app_number}${isDraft ? ' — DRAFT' : ''}</div>
-    <div class="hdr-meta">Period: ${periodFrom} – ${periodTo}<br>Generated: ${genDate}</div>
+    <div class="hdr-title">Application No. ${app.app_number}${aiaTitleSuffix(app)}</div>
+    <div class="hdr-meta">Period: ${periodText}<br>Generated: ${genDate}</div>
   </div>
 </div>
 <div class="rule"></div>
-${isDraft ? `<div class="draft-banner">DRAFT — Billing period end date is required before final submission</div>` : ''}
+${isDraft ? `<div class="draft-banner">DRAFT — not submitted${draftPeriodNote ? ` · ${draftPeriodNote}` : ''}</div>` : ''}
 
 <!-- G702 Application for Payment -->
 <div class="g702-page">
@@ -2865,7 +2899,7 @@ ${isDraft ? `<div class="draft-banner">DRAFT — Billing period end date is requ
   </div>
   <div class="info-cell">
     <div class="info-label">Billing Period</div>
-    <div class="info-val">${periodFrom} – ${periodTo}</div>
+    <div class="info-val">${periodText}</div>
     <div class="info-sub">Retainage: ${retPctLabel}%</div>
   </div>
 </div>
@@ -2903,7 +2937,7 @@ ${visibleSovLines.length > 0 ? `
 <div class="g703-page">
 <div class="cont-header">
   <span class="cont-title">G703 &nbsp;·&nbsp; Continuation Sheet &nbsp;·&nbsp; App #${app.app_number}</span>
-  <span class="cont-meta">${esc(job.project_name)} &nbsp;·&nbsp; Contract #${job.job_number} &nbsp;·&nbsp; Period: ${periodFrom} – ${periodTo}</span>
+  <span class="cont-meta">${esc(job.project_name)} &nbsp;·&nbsp; Contract #${job.job_number} &nbsp;·&nbsp; Period: ${periodText}</span>
 </div>
 
 <table class="g703">
@@ -12004,7 +12038,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button style={s.btnSmallOrange} onClick={() => {
                           setShowNewAia(true)
-                          setNewAiaForm({ app_number: String(nextAiaAppNumber(aiaApplications)), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
+                          // Draw-request jobs start on the current Central month (prompt 93); still editable.
+                          const drawPeriod = job.billing_type === 'draw_request' ? monthPeriod(todayCentral().slice(0, 7)) : null
+                          setNewAiaForm({ app_number: String(nextAiaAppNumber(aiaApplications)), period_to: drawPeriod?.period_to || '', period_from: drawPeriod?.period_from || '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
                         }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
                         {aiaApplications.length > 0 && (
                           <button
@@ -12024,7 +12060,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     return (
                     <div style={{ ...s.inlineForm, border: '1px solid #fed7aa', marginBottom: '1.25rem' }}>
                       <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{isDrawType ? 'New Draw Request' : 'New AIA Application'}</p>
-                      <div style={{ display: 'grid', gridTemplateColumns: isDrawType ? '100px 1fr 100px 100px' : isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isDrawType ? '100px 1fr 1fr 1fr 100px 100px' : isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                         <div>
                           <label style={s.label}>Draw #</label>
                           <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
@@ -12049,6 +12085,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               )}
                             </select>
                           </div>
+                        ) : null}
+                        {isDrawType ? (
+                          <>
+                            <div>
+                              <label style={s.label}>Period from</label>
+                              <input type="date" style={s.input} value={newAiaForm.period_from} onChange={e => setNewAiaForm(f => ({ ...f, period_from: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label style={s.label}>Period to</label>
+                              <input type="date" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
+                            </div>
+                          </>
                         ) : isBiweekly ? (
                           <>
                             <div>
@@ -12156,9 +12204,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const aiaLocked = isAiaLocked(aiaStored)
                 const aiaEditLocked = aiaLocked && aiaUnlockedId !== activeAia.id
                 const lockedFieldset = { border: 0, padding: 0, margin: 0, minWidth: 0, opacity: aiaEditLocked ? 0.75 : 1 }
-                const periodLabel = activeAia.period_from && activeAia.period_from !== (activeAia.period_to ? activeAia.period_to.slice(0, 7) + '-01' : '')
-                  ? `${new Date(activeAia.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : activeAia.period_to ? new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
+                // Prompt 93: label from the stored dates ("Not set" when there is no end date).
+                const periodLabel = `Period: ${aiaPeriodLabel(aiaStored)}`
+                const aiaStatusTarget = activeAia.status || 'draft'
+                const periodBlocksStatus = aiaStatusTarget !== (aiaStored.status || 'draft') && !!aiaFinalizeError(activeAia, aiaStatusTarget)
                 return (
                   <div style={{ ...s.billingEntryRow, border: '1px solid #fed7aa' }}>
                     <div style={s.billingEntryHeader}>
@@ -12168,7 +12217,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {job.billing_type === 'draw_request' ? `Draw #${activeAia.app_number}` : `App #${activeAia.app_number}`}
                           </span>
                           <span style={{ fontSize: '13px', color: '#6b7280' }}>{periodLabel}</span>
-                          <span style={s.coBadge(activeAia.status === 'certified' ? 'approved' : activeAia.status === 'submitted' ? 'pending' : 'pending')}>{activeAia.status}</span>
+                          <span style={s.coBadge(activeAia.status === 'certified' ? 'approved' : activeAia.status === 'submitted' ? 'pending' : 'pending')}>{activeAia.status || 'draft'}</span>
+                          {isAiaDraft(aiaStored) && aiaDraftPeriodNote(aiaStored) && (
+                            <span style={{ fontSize: '11px', color: '#92400e' }}>{aiaDraftPeriodNote(aiaStored)}</span>
+                          )}
                           {activeAia.payment_received && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>
                               {activeAia.amount_received ? `$${Number(activeAia.amount_received).toLocaleString()} received` : 'Payment Received'}
@@ -12234,6 +12286,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <option value="submitted">Submitted</option>
                                   <option value="certified">Certified</option>
                                 </select>
+                                {periodBlocksStatus && (
+                                  <p style={{ fontSize: '11px', color: '#b91c1c', margin: '3px 0 0', maxWidth: '240px' }}>{AIA_PERIOD_REQUIRED_MESSAGE}</p>
+                                )}
+                              </div>
+                              <div>
+                                <label style={s.label}>Period from</label>
+                                <input type="date" disabled={aiaEditLocked} style={{ ...s.input, width: 'auto' }} value={activeAia.period_from || ''} onChange={e => setActiveAia(a => ({ ...a, period_from: e.target.value || null }))} />
+                              </div>
+                              <div>
+                                <label style={s.label}>Period to</label>
+                                <input type="date" disabled={aiaEditLocked} style={{ ...s.input, width: 'auto' }} value={activeAia.period_to || ''} onChange={e => setActiveAia(a => ({ ...a, period_to: e.target.value || null }))} />
                               </div>
                               <div>
                                 <label style={s.label}>Retainage %</label>

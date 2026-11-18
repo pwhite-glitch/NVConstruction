@@ -6,6 +6,7 @@ import { isBeforeTodayCentral } from '../../lib/central-date'
 import { coNumberLabel } from '../../lib/co-number'
 import { authFetch } from '../../lib/client-fetch'
 import { ownerResBilling } from '../../lib/owner-res-draws'
+import { aiaPeriodLabel } from '../../lib/aia-period'
 import MobileTopBar from '../components/MobileTopBar'
 
 const s = {
@@ -542,7 +543,7 @@ export default function OwnerPortal() {
                             {aiaApps.map(a => (
                               <tr key={a.id}>
                                 <td style={s.td}>{a.app_number ?? '—'}</td>
-                                <td style={s.td}>{a.period_to ? new Date(a.period_to + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}</td>
+                                <td style={s.td}>{aiaPeriodLabel(a)}</td>
                                 <td style={{ ...s.td, fontVariantNumeric: 'tabular-nums' }}>{fmt(a.current_payment_due)}</td>
                                 <td style={s.td}><span style={statusBadge(a.status)}>{a.status}</span></td>
                                 <td style={s.td}>{fmtDate(a.submitted_at)}</td>

@@ -404,8 +404,11 @@ describe('job page source', () => {
   test('status change freezes the schedule (status set last) and back-to-draft clears it', () => {
     const save = fnBody(job, 'async function saveAiaLines(')
     expect(save).toContain('freezePrimeAiaSchedule(activeAia)')
-    expect(save).toContain("status: freezing ? prevStatus : newStatus")
-    expect(save).toContain('schedule_frozen_at: null')
+    // Prompt 93: status goes through /api/aia-status (status last, with the freeze
+    // header); back to draft clears schedule_frozen_at in that route.
+    expect(save).toContain('changeAiaStatus(activeAia.id, newStatus, fz.header)')
+    expect(save).not.toMatch(/updateAiaHeader\([^)]*status:/)
+    expect(read('app/api/aia-status/route.js')).toContain("if (status === 'draft') patch.schedule_frozen_at = null")
     const freeze = fnBody(job, 'async function freezePrimeAiaSchedule(')
     expect(freeze).toContain('schedule_frozen_at: new Date().toISOString()')
     expect(freeze).toContain('original_contract_sum')

@@ -73,6 +73,8 @@ import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
 import { isBulkSelectable, selectablePaths, chunkPaths, toggleInSet, toggleDay, shortDayLabel } from '../../lib/photo-bulk-select'
 import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE, deleteDailyReport, deleteReportConfirm, DELETE_BUTTON } from '../../lib/daily-report-client'
 import ReportVersionsModal from './ReportVersionsModal'
+import { ReportExportButtons, ReportRangeExport, ReportSentLine, EmailReportsModal, useReportSends } from './DailyReportExport'
+import { canExportReports } from '../../lib/daily-report-export'
 
 const s = {
   // ── Layout ──
@@ -398,6 +400,10 @@ function JobDetailInner() {
   const [fieldUserId, setFieldUserId] = useState(null)
   const [reopeningReport, setReopeningReport] = useState(null)
   const [deletingReport, setDeletingReport] = useState(null) // prompt 91: report id being deleted
+  // Prompt 92: Export PDF / Email to owner (Owner / admin / PM / APM; final reports only).
+  const canExportDailyReports = canExportReports(userRole) && !inPreview
+  const [emailReportTarget, setEmailReportTarget] = useState(null)
+  const [reportSends, reloadReportSends] = useReportSends(authFetch, id, canExportDailyReports)
   const [versionsReportId, setVersionsReportId] = useState(null) // prompt 86: earlier versions modal
   const [respondingRfi, setRespondingRfi] = useState(null)
   const [rfiResponse, setRfiResponse] = useState('')
@@ -10787,6 +10793,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )}
               </div>
             )}
+            {/* Prompt 92: one combined PDF of the final reports in a date range (or email it). */}
+            {fieldSubTab === 'reports' && canExportDailyReports && fieldDailyReports.some(r => !isDraftReport(r)) && (
+              <ReportRangeExport jobId={id} fetchFn={authFetch} onEmail={setEmailReportTarget} />
+            )}
+            {emailReportTarget && (
+              <EmailReportsModal
+                target={emailReportTarget}
+                job={job}
+                fetchFn={authFetch}
+                onClose={() => setEmailReportTarget(null)}
+                onSent={res => {
+                  setEmailReportTarget(null)
+                  if (res?.owner_email_saved) setJob(j => (j && !String(j.owner_email || '').trim() ? { ...j, owner_email: res.owner_email_saved } : j))
+                  reloadReportSends()
+                  showToast(`Emailed to ${(res?.sent_to || []).join(', ')}`)
+                }}
+              />
+            )}
             {fieldSubTab === 'reports' && (
               fieldDailyReports.length === 0 ? <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' }}>No daily reports submitted yet.</div>
               : fieldDailyReports.map(r => (
@@ -10810,6 +10834,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           try { await reopenDailyReport(authFetch, r.id); await loadFieldData() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
                         }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
                       )}
+                      {/* Prompt 92: final reports only — never drafts; hidden for supers. */}
+                      {!isDraftReport(r) && canExportDailyReports && (
+                        <ReportExportButtons report={r} fetchFn={authFetch} onEmail={setEmailReportTarget} style={s.btnSmall} />
+                      )}
+                      {!isDraftReport(r) && canExportDailyReports && <ReportSentLine send={reportSends[r.id]} />}
                       {/* Prompt 91: permanent, logged delete (draft or final). Office any report; a super only their own. */}
                       {canDeleteReport({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
                         <button type="button" style={{ ...DELETE_BUTTON, opacity: deletingReport === r.id ? 0.6 : 1 }} disabled={deletingReport === r.id} onClick={async e => {

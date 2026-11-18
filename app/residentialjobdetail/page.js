@@ -38,6 +38,8 @@ import { reportPhotoInternal } from '../../lib/report-photo-links'
 import { fetchAllJobPhotos } from '../../lib/job-photo-pages'
 import { reopenDailyReport, REOPEN_CONFIRM, DRAFT_BADGE, REVISED_BADGE, deleteDailyReport, deleteReportConfirm, countReportDeliveries, DELETE_BUTTON } from '../../lib/daily-report-client'
 import ReportVersionsModal from '../jobdetail/ReportVersionsModal'
+import { ReportExportButtons, ReportRangeExport, ReportSentLine, EmailReportsModal, useReportSends } from '../jobdetail/DailyReportExport'
+import { canExportReports } from '../../lib/daily-report-export'
 import NewPOForm from '../jobdetail/NewPOForm'
 import EditPOForm from '../jobdetail/EditPOForm'
 import PaymentTypeSelector from '../jobdetail/PaymentTypeSelector' // eslint-disable-line no-unused-vars -- used inside the shared PO forms
@@ -235,6 +237,10 @@ function ResidentialJobDetailInner() {
   const [reviewingCOId, setReviewingCOId] = useState(null)
   const [inPreview, setInPreview] = useState(false) // role preview: CO review disabled (API refuses too)
   useEffect(() => { setInPreview(isPreviewActive()) }, [])
+  // Prompt 92: Export PDF / Email to owner (Owner / admin / PM / APM; final reports only).
+  const canExportDailyReports = canExportReports(userRole) && !inPreview
+  const [emailReportTarget, setEmailReportTarget] = useState(null)
+  const [reportSends, reloadReportSends] = useReportSends(authFetch, id, canExportDailyReports)
   const [openRfiThread, setOpenRfiThread] = useState(null)
 
   // Billing
@@ -3977,6 +3983,24 @@ function ResidentialJobDetailInner() {
                       onSuccess={(_report, { finalized } = {}) => { setShowNewDailyReport(false); setEditingDailyReport(null); setDailyReportSaved(finalized ? 'final' : 'draft'); setTimeout(() => setDailyReportSaved(false), 4000); loadFieldData() }}
                     />
                   )}
+                  {/* Prompt 92: one combined PDF of the final reports in a date range (or email it). */}
+                  {canExportDailyReports && fieldData.reports.some(r => !isDraftReport(r)) && (
+                    <ReportRangeExport jobId={id} fetchFn={authFetch} onEmail={setEmailReportTarget} />
+                  )}
+                  {emailReportTarget && (
+                    <EmailReportsModal
+                      target={emailReportTarget}
+                      job={job}
+                      fetchFn={authFetch}
+                      onClose={() => setEmailReportTarget(null)}
+                      onSent={res => {
+                        setEmailReportTarget(null)
+                        if (res?.owner_email_saved) setJob(j => (j && !String(j.owner_email || '').trim() ? { ...j, owner_email: res.owner_email_saved } : j))
+                        reloadReportSends()
+                        flash(true, `Emailed to ${(res?.sent_to || []).join(', ')}`)
+                      }}
+                    />
+                  )}
                   {fieldData.reports.length === 0 ? <div style={s.emptyMsg}>No daily reports yet.</div> : fieldData.reports.map(r => (
                     <div key={r.id} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
                       <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -3996,6 +4020,11 @@ function ResidentialJobDetailInner() {
                             try { await reopenDailyReport(authFetch, r.id); await loadFieldData() } catch (err) { alert(err.message) } finally { setReopeningReport(null) }
                           }}>{reopeningReport === r.id ? 'Reopening…' : 'Reopen'}</button>
                         )}
+                        {/* Prompt 92: final reports only — never drafts; hidden for supers. */}
+                        {!isDraftReport(r) && canExportDailyReports && (
+                          <ReportExportButtons report={r} fetchFn={authFetch} onEmail={setEmailReportTarget} style={s.btnSmGray} />
+                        )}
+                        {!isDraftReport(r) && canExportDailyReports && <ReportSentLine send={reportSends[r.id]} />}
                         {/* Prompt 91: permanent, logged delete (draft or final). Office any report; a super only their own. */}
                         {canDeleteReport({ role: userRole, userId: fieldUserId }, r) && !inPreview && (
                           <button type="button" style={{ ...DELETE_BUTTON, opacity: deletingReport === r.id ? 0.6 : 1 }} disabled={deletingReport === r.id} onClick={async () => {

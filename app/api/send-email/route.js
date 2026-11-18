@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, isPM, isSub } from '../../../lib/server-auth'
 import { emailWrap, escapeHtml } from '../../../lib/email'
+// Shared with the daily report "Email to owner" route (prompt 92).
+import { MAX_RECIPIENTS, EMAIL_RE } from '../../../lib/daily-report-export'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,8 +13,6 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 const FROM = process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>'
 const PM_EMAIL = process.env.PM_EMAIL || 'pwhite@nvim.co'
-const MAX_RECIPIENTS = 20
-const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/
 
 // POST — signed-in users only.
 // Office staff (pm/apm/super/admin): { to, subject, html } — composed emails to subs and bidders.

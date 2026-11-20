@@ -10,6 +10,10 @@ import { isSubcontractSigned } from '../../../lib/signing'
 import { getSiteUrl } from '../../../lib/site-url'
 import { withExhibitAppendix } from '../../../lib/subcontract-exhibits'
 import { buildAndStoreExhibits } from '../../../lib/subcontract-exhibits-server'
+import { isSignwellEnabled } from '../../../lib/signwell'
+import { buildSignwellPacket } from '../../../lib/signwell-packet'
+import { signwellSendPreflight, sendSubcontractViaSignwell } from '../../../lib/signwell-server'
+import { SIGNED_UPLOAD_ROLES } from '../../../lib/signed-upload'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -60,6 +64,17 @@ export async function POST(request) {
     subcontract = sc
   }
 
+  // Prompt 98: with SIGNWELL_API_KEY set, a subcontract goes out through SignWell instead of
+  // the built-in signing link (same contract HTML + exhibits, same signer). Without the key
+  // everything below runs exactly as before. Office roles only (owner/admin any job, PM/APM
+  // assigned jobs — denyJob above); checked before anything is built or stored.
+  const viaSignwell = !!subcontract && isSignwellEnabled()
+  if (viaSignwell) {
+    if (!SIGNED_UPLOAD_ROLES.has(auth.role)) return Response.json({ error: 'Only office staff can send a subcontract for e-signature.' }, { status: 403 })
+    const pre = await signwellSendPreflight(adminSupabase, subcontract.id)
+    if (pre.error) return Response.json({ error: pre.error, ...(pre.code ? { code: pre.code } : {}) }, { status: pre.status })
+  }
+
   let document_html = inlineHtml
   if (hasAttachment) {
     const v = await verifyAttachment(adminSupabase, document_attachment, { target: 'signing-html', subject: auth.userId, ctx: { job: job_id, rec: subcontract_id || null, user: auth.userId } })
@@ -76,6 +91,7 @@ export async function POST(request) {
   // sees them on the signing page and the signed copy keeps them. A failure stops the send
   // (nothing is emailed) rather than sending without exhibits the user expected.
   let exhibits_included = []
+  let exhibitsBytes = null
   if (subcontract && body.exhibits && typeof body.exhibits === 'object') {
     const include = { proposal: body.exhibits.proposal !== false, billing: body.exhibits.billing !== false }
     if (include.proposal || include.billing) {
@@ -89,7 +105,32 @@ export async function POST(request) {
       if (ex.unreadable?.length) return Response.json({ error: 'Nothing was sent: could not read ' + ex.unreadable.map(u => `Exhibit ${u.key === 'proposal' ? 'A' : 'B'} (${u.name})`).join(' and ') + '. Try again.' }, { status: 502 })
       document_html = withExhibitAppendix(document_html, ex.appendix)
       exhibits_included = ex.included || []
+      exhibitsBytes = ex.bytes || null
     }
+  }
+
+  if (viaSignwell) {
+    const packet = buildSignwellPacket({ html: document_html, exhibitsBytes, vendorName: subcontract.vendor_name })
+    const sent = await sendSubcontractViaSignwell(adminSupabase, {
+      sc: subcontract, packet, signerName, signerEmail: signer_email.trim().toLowerCase(),
+      title: document_title || 'Subcontract Agreement', jobId: job_id,
+    })
+    if (sent.error) return Response.json({ error: sent.error, ...(sent.code ? { code: sent.code } : {}) }, { status: sent.status })
+    // Keep a copy of exactly what was sent (best effort, as below).
+    let saved_contract = null
+    try {
+      saved_contract = await saveGeneratedContract(adminSupabase, { subcontractId: subcontract.id, html: packet.html, userId: auth.userId })
+    } catch (e) {
+      console.error('signing-requests: could not save contract copy:', e.message)
+    }
+    // Any older built-in link for this subcontract stops working (SignWell replaces it).
+    const { data: old } = await adminSupabase.from('signing_requests')
+      .update({ status: 'voided' }).eq('subcontract_id', subcontract.id).eq('status', 'pending').select('id')
+    return Response.json({
+      provider: 'signwell',
+      data: { subcontract_id: subcontract.id, signwell_document_id: sent.document_id, signwell_status: sent.signwell_status, test_mode: !!sent.test_mode },
+      saved_contract, voided: old?.length || 0, exhibits_included,
+    })
   }
 
   const { data: row, error: insertErr } = await adminSupabase

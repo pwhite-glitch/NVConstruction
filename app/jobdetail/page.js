@@ -56,6 +56,7 @@ import RfiCommentThread from '../components/RfiCommentThread'
 import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib/job-doc-client'
 import { confirmExhibits, exhibitAppendixHtml, withExhibitAppendix, fileBaseName, BILLING_SCHEDULE_CATEGORY } from '../../lib/subcontract-exhibits'
 import { canUploadSignedContract, signedUploadPath, signedMethodLabel, SIGNED_UPLOAD_ACCEPT } from '../../lib/signed-upload'
+import { isSignwellOpen, signwellStatusLabel } from '../../lib/signwell-status'
 import { readJsonResponse, fetchJson, jsonInit, rawResponseError } from '../../lib/fetch-json'
 import { uploadThenSend, putToSignedUrl } from '../../lib/file-upload-client'
 import { exportOwnerReimbZip } from '../../lib/export-client'
@@ -694,6 +695,9 @@ function JobDetailInner() {
   const [signingLoadError, setSigningLoadError] = useState('')
   // Prompt 97: office signed-contract upload + Exhibit B billing schedule (job document)
   const [uploadingSignedFor, setUploadingSignedFor] = useState(null)
+  // Prompt 98: SignWell e-sign (office). { enabled, test_mode } booleans from the server; never the key.
+  const [signwellConfig, setSignwellConfig] = useState({ enabled: false, test_mode: false })
+  const [signwellBusy, setSignwellBusy] = useState(null)
   const [billingScheduleDoc, setBillingScheduleDoc] = useState(null) // newest job_documents row, category billing_schedule
   const [exhibitBNotes, setExhibitBNotes] = useState('')
   const [exhibitBPreview, setExhibitBPreview] = useState(null) // { url, bytes }
@@ -886,6 +890,8 @@ function JobDetailInner() {
     const { data: gen } = await supabase.from('subcontracts').select('id, generated_contract_path, generated_at').eq('job_id', id)
     // Separate query: signed_method comes from migration 080 (prompt 97); null until it is applied
     const { data: signedMethods } = await supabase.from('subcontracts').select('id, signed_method').eq('job_id', id)
+    // Separate query: SignWell columns come from migration 081 (prompt 98); null until it is applied
+    const { data: signwellRows } = await supabase.from('subcontracts').select('id, signwell_document_id, signwell_status, signwell_sent_at, signwell_completed_at').eq('job_id', id)
     // Fetch SOV line budget assignments so committedForItem can use them when no explicit budget_allocations are set
     const contractIds = summary.map(c => c.id)
     const { data: sovLines } = contractIds.length
@@ -918,6 +924,9 @@ function JobDetailInner() {
         generated_contract_path: genRow?.generated_contract_path ?? null,
         generated_at: genRow?.generated_at ?? null,
         signed_method: signedMethods?.find(r => r.id === c.id)?.signed_method ?? null,
+        signwell_document_id: signwellRows?.find(r => r.id === c.id)?.signwell_document_id ?? null,
+        signwell_status: signwellRows?.find(r => r.id === c.id)?.signwell_status ?? null,
+        signwell_sent_at: signwellRows?.find(r => r.id === c.id)?.signwell_sent_at ?? null,
       }
     })
     setContracts(merged)
@@ -3032,6 +3041,11 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     w.document.close()
   }
 
+  // Prompt 98: SignWell config (office roles only) once the role is known.
+  useEffect(() => {
+    if (id && activeTab === 'contracts' && canUploadSignedContract(userRole)) loadSignwellConfig()
+  }, [id, activeTab, userRole]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts(); loadBillingScheduleDoc() }
@@ -4919,6 +4933,28 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
   }
 
+  // Prompt 98: SignWell (office only). Config is two booleans; the key never reaches the page.
+  async function loadSignwellConfig() {
+    if (!canUploadSignedContract(userRole)) return
+    const r = await fetchJson(authFetch, '/api/subcontracts/signwell')
+    if (r.ok) setSignwellConfig({ enabled: !!r.data?.enabled, test_mode: !!r.data?.test_mode })
+  }
+
+  async function signwellAction(c, action) {
+    if (action === 'void' && !window.confirm(`Void the SignWell request for ${c.vendor_name || 'this subcontract'}? The signer's SignWell link will stop working.`)) return
+    setSignwellBusy(c.id)
+    try {
+      const r = await fetchJson(authFetch, '/api/subcontracts/signwell', jsonInit('POST', { subcontract_id: c.id, action }))
+      if (!r.ok) throw new Error(r.error)
+      if (action === 'remind') alert('Reminder sent through SignWell.')
+      await loadContracts()
+    } catch (e) {
+      alert((action === 'void' ? 'Void' : 'Reminder') + ' failed: ' + (e?.message || 'error'))
+    } finally {
+      setSignwellBusy(null)
+    }
+  }
+
   // Exhibit B billing schedule: built from the sub billing settings shown in Job Details.
   function exhibitBJob() {
     const src = { ...(job || {}), ...(form || {}) }
@@ -5033,7 +5069,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       const json = r.data || {}
       markContractGenerated(contractGenForm.contract_id, json.saved_contract)
       const exList = (json.exhibits_included || []).map(k => (k === 'proposal' ? 'Exhibit A' : 'Exhibit B'))
-      setSignMsg('Sent! The subcontractor will receive an email link to sign.' + (exList.length ? ` ${exList.join(' and ')} attached.` : '') + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
+      const lead = json.provider === 'signwell'
+        ? `Sent through SignWell${json.data?.test_mode ? ' (TEST MODE — not legally binding)' : ''}. The subcontractor will receive a SignWell email to sign.`
+        : 'Sent! The subcontractor will receive an email link to sign.'
+      setSignMsg(lead + (exList.length ? ` ${exList.join(' and ')} attached.` : '') + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
       setShowSignPanel(false)
       setSignerEmail('')
       setSignerName('')
@@ -9051,8 +9090,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {c.generated_contract_path && <button style={s.btnSmall} onClick={() => openLastGeneratedContract(c)} title={c.generated_at ? `Generated ${new Date(c.generated_at).toLocaleString('en-US')}` : undefined}>Last generated contract</button>}
                           {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#bfdbfe', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
                           {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #dcfce7' }} onClick={() => openSignedContractUrl(c)}>Signed Contract ↗</button>}
+                          {c.signwell_document_id && c.signwell_status && c.signed_method !== 'signwell' && (
+                            <span title={`SignWell${c.signwell_sent_at ? ' · sent ' + new Date(c.signwell_sent_at).toLocaleDateString('en-US') : ''}`} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', whiteSpace: 'nowrap', ...(c.signwell_status === 'completed' ? { background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' } : isSignwellOpen(c.signwell_status) ? { background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' } : { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }) }}>
+                              SignWell: {signwellStatusLabel(c.signwell_status)}
+                            </span>
+                          )}
+                          {canUploadSignedContract(userRole) && signwellConfig.enabled && signwellConfig.test_mode && (c.signwell_document_id || !c.signed_contract_url) && (
+                            <span title="SignWell is in test mode: documents are free and not legally binding" style={{ fontSize: '10px', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>TEST MODE</span>
+                          )}
+                          {canUploadSignedContract(userRole) && signwellConfig.enabled && c.signwell_document_id && isSignwellOpen(c.signwell_status) && (
+                            <>
+                              <button style={s.btnSmall} disabled={signwellBusy === c.id} onClick={() => signwellAction(c, 'remind')}>Resend reminder</button>
+                              <button style={s.btnSmallRed} disabled={signwellBusy === c.id} onClick={() => signwellAction(c, 'void')}>Void</button>
+                            </>
+                          )}
                           {c.signed_contract_url && signedMethodLabel(c.signed_method) && (
-                            <span title={c.signed_method === 'manual_upload' ? 'Signed copy uploaded by the office' : 'Signed on the e-signature page'} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>
+                            <span title={c.signed_method === 'manual_upload' ? 'Signed copy uploaded by the office' : c.signed_method === 'signwell' ? 'Signed through SignWell (the PDF includes its audit page)' : 'Signed on the e-signature page'} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>
                               {signedMethodLabel(c.signed_method)}
                             </span>
                           )}

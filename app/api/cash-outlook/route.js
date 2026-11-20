@@ -5,6 +5,7 @@ import { fetchAll, isMissingRelation } from '../../../lib/budget-line-refs'
 import { todayCentral } from '../../../lib/central-date'
 import { inActiveJobList } from '../../../lib/job-lifecycle'
 import { aiaItems, lenderDrawItems, billingItems, poItems, payrollItems, DEFAULT_WEEKS } from '../../../lib/cash-outlook'
+import { paidInvoiceAmountByPO } from '../../../lib/po-invoices'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -53,14 +54,18 @@ export async function GET(request) {
   // PROPOSED columns (migration 047 / 046, written, NOT applied): probe, never assume.
   // direct_costs.purchase_order_id is migration 067 (written, NOT applied): without it no
   // cost is linked to a PO and every reimbursement PO counts at its full amount.
-  const [aiaDate, billDate, drawDate, drawFunded, dcPoLink] = await Promise.all([
+  // Migration 082 (prompt 99, written, NOT applied): purchase_orders.payer_override and
+  // po_invoices. Without them the legacy payment_type rule applies and no PO invoice is paid.
+  const [aiaDate, billDate, drawDate, drawFunded, dcPoLink, poOverride, poInvoices] = await Promise.all([
     hasColumn('aia_applications', 'expected_payment_date'),
     hasColumn('billing_submissions', 'expected_payment_date'),
     hasColumn('res_owner_draws', 'expected_payment_date'),
     hasColumn('res_owner_draws', 'amount_funded'),
     hasColumn('direct_costs', 'purchase_order_id'),
+    hasColumn('purchase_orders', 'payer_override'),
+    hasColumn('po_invoices', 'paid_amount'),
   ])
-  for (const [what, r] of [['pay apps', aiaDate], ['sub billings', billDate], ['owner draws', drawDate], ['owner draws', drawFunded], ['direct costs', dcPoLink]]) {
+  for (const [what, r] of [['pay apps', aiaDate], ['sub billings', billDate], ['owner draws', drawDate], ['owner draws', drawFunded], ['direct costs', dcPoLink], ['purchase orders', poOverride], ['PO invoices', poInvoices]]) {
     if (r.error) return fail(what, r.error)
   }
   const datesMigrated = !!(aiaDate.ok && billDate.ok && drawDate.ok)
@@ -76,7 +81,7 @@ export async function GET(request) {
     fetchAll(() => adminSupabase.from('aia_applications').select('*').order('id')),
     fetchAll(() => adminSupabase.from('res_owner_draws').select('*').order('id')),
     fetchAll(() => adminSupabase.from('billing_submissions').select('*').eq('status', 'approved').is('paid_at', null).order('id')),
-    fetchAll(() => adminSupabase.from('purchase_orders').select('id, job_id, po_number, vendor_name, amount, status, issued_date, draw_request_id, payment_type').in('status', ['issued', 'received']).order('id')),
+    fetchAll(() => adminSupabase.from('purchase_orders').select(`id, job_id, po_number, vendor_name, amount, status, issued_date, draw_request_id, payment_type${poOverride.ok ? ', payer_override' : ''}`).in('status', ['issued', 'received']).order('id')),
     fetchAll(() => adminSupabase.from('employees').select('id, active, weekly_salary, weekly_truck, weekly_healthcare, weekly_taxes').order('id')),
   ])
   if (appsRes.error) return fail('pay apps', appsRes.error)
@@ -93,6 +98,16 @@ export async function GET(request) {
       .eq('status', 'approved').order('id'))
     if (dcRes.error && !isMissingRelation(dcRes.error)) return fail('direct costs linked to POs', dcRes.error)
     linkedDcs = dcRes.error ? [] : dcRes.data.filter(dc => dc.purchase_order_id)
+  }
+
+  // Checks recorded on open POs' invoices (082) pay those POs down (never on top of a linked cost).
+  let invoicePaidByPO = {}
+  if (poInvoices.ok && posRes.data.length) {
+    const poIds = posRes.data.map(p => p.id)
+    const invRes = await inChunks(poIds, chunk => adminSupabase.from('po_invoices').select('id, po_id, paid_amount').in('po_id', chunk).order('id'))
+    if (invRes.error && !isMissingRelation(invRes.error)) return fail('PO invoices', invRes.error)
+    const posById = Object.fromEntries(posRes.data.map(p => [p.id, p]))
+    invoicePaidByPO = invRes.error ? {} : paidInvoiceAmountByPO(invRes.data, posById, jobsById)
   }
 
   const apps = appsRes.data.filter(a => jobsById[a.job_id])
@@ -113,7 +128,7 @@ export async function GET(request) {
   const aia = aiaItems({ jobsById, apps, linesByApp, budgetByJob, datesMigrated })
   const draws = lenderDrawItems({ jobsById, draws: drawsRes.data, fundedMigrated: !!drawFunded.ok, datesMigrated })
   const bills = billingItems({ jobsById, billings: billsRes.data, datesMigrated })
-  const pos = poItems({ jobsById, pos: posRes.data, directCosts: linkedDcs })
+  const pos = poItems({ jobsById, pos: posRes.data, directCosts: linkedDcs, invoicePaidByPO })
   const payroll = payrollItems({ employees: empRes.data, today, weeks: DEFAULT_WEEKS })
 
   // Active jobs with no draft pay app / lender draw: their unbilled work is not quantified (not $0).
@@ -136,5 +151,6 @@ export async function GET(request) {
       expected_payment_dates: datesMigrated, // 047
       amount_funded: !!drawFunded.ok,        // 046
     },
+    po_invoices_migrated: !!poInvoices.ok,   // 082: paid PO invoices reduce the PO estimate
   })
 }

@@ -46,6 +46,8 @@ import { openLookaheadPrint } from '../../lib/lookahead-print'
 import { equipmentLabel } from '../../lib/equipment-usage'
 import * as lookaheadApi from '../../lib/lookahead-client'
 import EditPOForm from './EditPOForm'
+import POInvoicesPanel, { usePOInvoices, POPaymentBadge, POPayerTag } from './POInvoicesPanel'
+import { jobPOPayer, paidInvoiceAmountByPO, poPaymentStatus, effectivePOPayer, STATUS_LABELS as PO_PAY_STATUS_LABELS, PO_PAYER_LABELS } from '../../lib/po-invoices'
 import { confirmPOEdit, editFormFromPO, RECEIVED_EDIT_WARNING, CLOSED_LOCKED_MESSAGE } from '../../lib/po-edit-guards'
 import { REIMBURSEMENT, PAYMENT_ROUTE_LABELS, poPaymentRoute, directCostPaymentRoute, generalConditionPaymentRoute, subBillingPaymentRoute, totalsByPaymentRoute } from '../../lib/payment-route'
 import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/central-date'
@@ -467,6 +469,9 @@ function JobDetailInner() {
   const [savingPOEdit, setSavingPOEdit] = useState(false)
   const [poFile, setPOFile] = useState(null)
   const [editPOFile, setEditPOFile] = useState(null)
+  // PO vendor invoices / Ready to pay (prompt 99, migration 082)
+  const poInv = usePOInvoices(id)
+  const [poPayFilter, setPOPayFilter] = useState('')
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
@@ -3121,6 +3126,9 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       budget_item_id: poForm.budget_item_id || null,
       notes: poForm.notes || null,
       payment_type: poForm.payment_type || 'check',
+      // Migration 082: per-PO "who pays" override ('' = follow the job). The server keeps
+      // payment_type in step with it.
+      ...(jobPOPayer(job) ? { payer_override: poForm.payer_override || null } : {}),
       status: issueImmediately ? 'issued' : 'draft',
       created_by: session.user.id,
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
@@ -3174,6 +3182,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       budget_item_id: editPOForm.budget_item_id || null,
       notes: editPOForm.notes || null,
       payment_type: editPOForm.payment_type || 'check',
+      ...(jobPOPayer(job) ? { payer_override: editPOForm.payer_override || null } : {}),
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
     }
     // No new file = attachment omitted, which keeps the saved one.
@@ -6430,6 +6439,8 @@ ${(budgets || []).length > 0 ? `
     // Owner address (migration 079): also sent only when changed, so saves before 079 is
     // applied don't warn when nobody touched it (the server drops it and warns otherwise).
     if ((form.owner_address || '').trim() !== (job.owner_address || '').trim()) fields.owner_address = form.owner_address || ''
+    // Who pays PO vendors (migration 082): only once the column exists, and only when changed.
+    if (jobPOPayer(job) && form.po_payer && form.po_payer !== job.po_payer) fields.po_payer = form.po_payer
     try {
       let data = {}
       const res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
@@ -7338,6 +7349,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <option value="owner_pays_direct">Owner pays subs directly</option>
                     </select>
                   </div>
+                  {jobPOPayer(job) && (
+                    <div><label style={s.label}>Who pays vendors (POs)</label>
+                      <select style={s.input} value={form.po_payer || job.po_payer || 'nv'} onChange={e => update('po_payer', e.target.value)}>
+                        <option value="nv">{PO_PAYER_LABELS.nv}</option>
+                        <option value="owner">{PO_PAYER_LABELS.owner}</option>
+                      </select>
+                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>NV pays: approved PO invoices go on the office Ready to pay list. Owner pays: invoices are tracked here only. A PO can override this.</p>
+                    </div>
+                  )}
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', marginBottom: '12px', cursor: 'pointer' }}>
                   <input type="checkbox" checked={!!form.rollup_general_conditions} onChange={e => update('rollup_general_conditions', e.target.checked)} />
@@ -10338,7 +10358,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const billingRoute = subBillingPaymentRoute(job)
                 const routeTotals = totalsByPaymentRoute([
                   ...taggedCosts.map(c => ({ route: directCostPaymentRoute(c), amount: (c.is_credit ? -1 : 1) * Number(c.amount || 0) })),
-                  ...taggedPOs.map(po => ({ route: poPaymentRoute(po), amount: po.amount })),
+                  ...taggedPOs.map(po => ({ route: poPaymentRoute(po, job), amount: po.amount })),
                   ...taggedGCs.map(e => ({ route: generalConditionPaymentRoute(e), amount: e.amount })),
                   ...drawBillings.filter(b => b.status === 'approved').map(b => ({ route: billingRoute, amount: b.amount_billed })),
                 ])
@@ -10484,7 +10504,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div>
                                   <span style={{ color: '#374151' }}>{po.vendor_name}</span>
                                   <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` · ${po.description}` : ''}</span>
-                                  {payTag(poPaymentRoute(po))}
+                                  {payTag(poPaymentRoute(po, job))}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -14013,8 +14033,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           // Cash OUT (estimated): open POs NV pays (payment_type 'reimbursement') by issued month,
           // less approved direct costs linked to the PO (lib/po-cash.js, same rule as the Owner
           // cash outlook). Owner-check POs are disclosed only.
-          const poByMonth = poCashOutByMonth(purchaseOrders, directCosts)
-          const ownerCheckPOs = summarizeOwnerCheckPOs(purchaseOrders)
+          // Who pays follows the job setting / per-PO override (082); checks recorded on PO
+          // invoices also pay the PO down (the larger of that and linked costs, never both).
+          const invoicePaidByPO = paidInvoiceAmountByPO(poInv.invoices, Object.fromEntries(purchaseOrders.map(p => [p.id, p])), job ? { [job.id]: job } : {})
+          const poByMonth = poCashOutByMonth(purchaseOrders, directCosts, { job, invoicePaidByPO })
+          const ownerCheckPOs = summarizeOwnerCheckPOs(purchaseOrders, { job })
 
           const allMonths = [...new Set([...Object.keys(cashInByMonth), ...Object.keys(subPayByMonth), ...Object.keys(dcByMonth), ...Object.keys(poByMonth)])].filter(k => k && k !== 'unknown').sort()
           const totalIn = Object.values(cashInByMonth).reduce((a, v) => a + v, 0)
@@ -15034,14 +15057,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
 
                       {showNewPO && (
-                        <NewPOForm s={s} poForm={poForm} setPOForm={setPOForm} poFile={poFile} setPOFile={setPOFile} budgetItems={budgetItems} savingPO={savingPO} savePO={savePO} />
+                        <NewPOForm s={s} poForm={poForm} setPOForm={setPOForm} poFile={poFile} setPOFile={setPOFile} budgetItems={budgetItems} savingPO={savingPO} savePO={savePO} jobPayer={jobPOPayer(job)} />
                       )}
                     </div>
 
                     {/* PO list */}
                     <div style={s.card}>
                       {purchaseOrders.length === 0 && <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No purchase orders yet. Click "+ New PO" to create one.</p>}
-                      {purchaseOrders.map(po => {
+                      {poInv.migrationMissing && purchaseOrders.length > 0 && <p style={{ color: '#92400e', fontSize: '12px', margin: '0 0 8px' }}>Payment tracking (vendor invoices / Ready to pay) needs database migration 082.</p>}
+                      {!poInv.migrationMissing && purchaseOrders.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>Payment status:</span>
+                          <select style={{ ...s.input, width: 'auto', padding: '5px 8px', fontSize: '12px' }} value={poPayFilter} onChange={e => setPOPayFilter(e.target.value)}>
+                            <option value="">All</option>
+                            {['no_invoice', 'needs_approval', 'ready_to_pay', 'paid', 'owner_to_pay', 'paid_by_owner'].map(k => <option key={k} value={k}>{PO_PAY_STATUS_LABELS[k]}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {purchaseOrders.filter(po => !poPayFilter || poPaymentStatus(poInv.byPO[po.id] || [], effectivePOPayer(po, job)) === poPayFilter).map(po => {
                         const isExpanded = expandedPOId === po.id
                         const isEditing = editingPOId === po.id
                         const sc = PO_STATUS[po.status] || PO_STATUS.draft
@@ -15049,7 +15082,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         return (
                           <div key={po.id} style={{ borderBottom: '1px solid #f3f4f6', paddingBottom: '0', marginBottom: '0' }}>
                             {isEditing ? (
-                              <EditPOForm s={s} fmt={fmt} po={po} editPOForm={editPOForm} setEditPOForm={setEditPOForm} editPOFile={editPOFile} setEditPOFile={setEditPOFile} budgetItems={budgetItems} savingPOEdit={savingPOEdit} savePOEdit={savePOEdit} setEditingPOId={setEditingPOId} />
+                              <EditPOForm s={s} fmt={fmt} po={po} editPOForm={editPOForm} setEditPOForm={setEditPOForm} editPOFile={editPOFile} setEditPOFile={setEditPOFile} budgetItems={budgetItems} savingPOEdit={savingPOEdit} savePOEdit={savePOEdit} setEditingPOId={setEditingPOId} jobPayer={jobPOPayer(job)} />
                             ) : (
                               <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', cursor: 'pointer' }}
@@ -15062,10 +15095,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{po.status}</span>
-                                      {po.payment_type === 'reimbursement'
-                                        ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>Reimbursement</span>
-                                        : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#f3f4f6', color: '#6b7280', border: '1px solid #222' }}>Check to vendor</span>
+                                      {jobPOPayer(job)
+                                        ? <POPayerTag po={po} job={job} />
+                                        : po.payment_type === 'reimbursement'
+                                          ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>Reimbursement</span>
+                                          : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#f3f4f6', color: '#6b7280', border: '1px solid #222' }}>Check to vendor</span>
                                       }
+                                      {!poInv.migrationMissing && poInv.loaded && <POPaymentBadge po={po} job={job} invoices={poInv.byPO[po.id]} />}
                                       {bi && <span title={budgetLineLabel(bi)} style={{ ...budgetTagStyle, fontSize: '11px', color: '#6b7280' }}><span style={budgetTagTextStyle}>{budgetTagText(bi).text}</span></span>}
                                       {!bi && <span style={{ fontSize: '11px', color: '#3a3a3a' }}>No budget line</span>}
                                       <span style={{ fontSize: '11px', color: '#6b7280' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>
@@ -15082,7 +15118,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <div style={{ paddingBottom: '14px' }}>
                                     {po.notes && <p style={{ fontSize: '13px', color: '#4b5563', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
                                     <div style={{ display: 'flex', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                                      {po.payment_type && (
+                                      {po.payment_type && !jobPOPayer(job) && (
                                         <span style={{ fontSize: '12px', color: '#6b7280' }}>
                                           Payment: <span style={{ color: po.payment_type === 'reimbursement' ? '#2563eb' : '#111827', fontWeight: '600' }}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>
                                         </span>
@@ -15094,16 +15130,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       )}
                                     </div>
                                     <POLineItemsTable items={po.purchase_order_items} />
+                                    <POInvoicesPanel s={s} po={po} job={job} invoices={poInv.byPO[po.id] || []} can={poInv.can} isOwner={isPrincipal(userRole)} migrationMissing={poInv.migrationMissing} onChanged={poInv.reload} />
                                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                                       {po.status === 'draft' && <>
                                         <button style={{ ...s.btnSmallGreen, opacity: (updatingPOId === po.id || !po.attachment_url) ? 0.6 : 1 }} disabled={updatingPOId === po.id || !po.attachment_url} title={!po.attachment_url ? 'Attach a document before issuing' : ''} onClick={() => updatePOStatus(po.id, 'issued')}>Issue PO</button>
                                         {!po.attachment_url && <span style={{ fontSize: '12px', color: '#6b7280' }}>Attachment required to issue</span>}
-                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', payment_type: po.payment_type || 'check', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
+                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm(editFormFromPO(po)) }}>Edit</button>
                                         <button style={s.btnSmallRed} onClick={() => deletePO(po.id)}>Delete</button>
                                       </>}
                                       {po.status === 'issued' && <>
                                         <button style={{ ...s.btnSmallGreen, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'received')}>Mark Received</button>
-                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', payment_type: po.payment_type || 'check', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
+                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm(editFormFromPO(po)) }}>Edit</button>
                                         <button style={{ ...s.btnSmallRed, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'closed')}>Cancel PO</button>
                                       </>}
                                       {po.status === 'received' && <>

@@ -1,8 +1,11 @@
 ﻿'use client'
 import React from 'react'
 import PaymentTypeSelector from './PaymentTypeSelector'
+import POPayerSelector from './POPayerSelector'
 
-export default function NewPOForm({ s, poForm, setPOForm, poFile, setPOFile, budgetItems, savingPO, savePO }) {
+// jobPayer: the job's po_payer ('nv' | 'owner') once migration 082 is applied; until then the
+// legacy payment type choice is shown.
+export default function NewPOForm({ s, poForm, setPOForm, poFile, setPOFile, budgetItems, savingPO, savePO, jobPayer = null }) {
   const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   return (
@@ -19,8 +22,13 @@ export default function NewPOForm({ s, poForm, setPOForm, poFile, setPOFile, bud
       </div>
 
       <div style={{ marginBottom: '12px' }}>
-        <label style={s.label}>Payment type</label>
-        <PaymentTypeSelector name="po_pt_new" value={poForm.payment_type} onChange={v => setPOForm(f => ({ ...f, payment_type: v }))} />
+        {jobPayer ? <>
+          <label style={s.label}>Who pays this vendor</label>
+          <POPayerSelector name="po_pt_new" jobPayer={jobPayer} value={poForm.payer_override} onChange={v => setPOForm(f => ({ ...f, payer_override: v }))} />
+        </> : <>
+          <label style={s.label}>Payment type</label>
+          <PaymentTypeSelector name="po_pt_new" value={poForm.payment_type} onChange={v => setPOForm(f => ({ ...f, payment_type: v }))} />
+        </>}
       </div>
 
       <div style={{ marginBottom: '12px' }}>

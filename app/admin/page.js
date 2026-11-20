@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
@@ -18,6 +18,7 @@ import { findDirectoryEntry, coiBadgeModel, confirmCoiOrProceed } from '../../li
 import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentMismatchWarning } from '../../lib/billing-payment'
 import { signedWaiverTerms, waiverTermChanges } from '../../lib/lien-waiver-terms'
 import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, dcAmountInputState, dcCreditInputState, signedDcAmount } from '../../lib/dc-amount'
+import { STATUS_LABELS as PO_PAY_LABELS, STATUS_COLORS as PO_PAY_COLORS, MIGRATION_082_SHORT, invoiceRemaining } from '../../lib/po-invoices'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -136,6 +137,9 @@ const PERM_GROUPS = [
     { key: 'billing.mark_paid', label: 'Mark Ready to Pay', desc: 'Mark billing ready for payment processing' },
     { key: 'billing.delete_submission', label: 'Delete Submissions', desc: 'Permanently delete a billing submission' },
   ]},
+  { label: 'Purchase Orders', features: [
+    { key: 'po.mark_paid', label: 'Mark PO Invoices Paid', desc: 'Record checks on approved PO invoices (Orders → Ready to pay). Approving stays with the job PM/APM or an Owner.' },
+  ]},
   { label: 'Direct Costs', features: [
     { key: 'costs.approve', label: 'Approve Costs', desc: 'Approve submitted direct costs' },
     { key: 'costs.apm_auto_approve', label: 'Auto-Approve Own Costs', desc: "When on, this role's costs are auto-approved; when off they go to pending" },
@@ -245,12 +249,22 @@ export default function AdminPortal() {
   const [teamInviteLoading, setTeamInviteLoading] = useState(null)
   const [teamInviteResult, setTeamInviteResult] = useState({})
 
-  // Purchase order state (read-only)
+  // Purchase order state (All POs view is read-only)
   const [purchaseOrders, setPurchaseOrders] = useState([])
   const [poLoading, setPoLoading] = useState(false)
   const [poError, setPoError] = useState('')
   const [filterPoJob, setFilterPoJob] = useState('')
   const [filterPoStatus, setFilterPoStatus] = useState('')
+  // PO invoices — Ready to pay (prompt 99, migration 082). Default view: Ready to pay.
+  const [poView, setPoView] = useState('ready_to_pay')
+  const [poInvoices, setPoInvoices] = useState([])
+  const [poInvCan, setPoInvCan] = useState({ approve: false, mark_paid: false })
+  const [poInvMissing, setPoInvMissing] = useState(false)
+  const [poInvError, setPoInvError] = useState('')
+  const [poInvMsg, setPoInvMsg] = useState('')
+  const [payingInvId, setPayingInvId] = useState(null)
+  const [payInvForm, setPayInvForm] = useState({ check_number: '', paid_on: todayCentral(), amount: '', payment_notes: '' })
+  const [savingInvPay, setSavingInvPay] = useState(false)
 
   // Lien waiver state
   const [filterLienJob, setFilterLienJob] = useState('')
@@ -292,7 +306,7 @@ export default function AdminPortal() {
   useEffect(() => {
     if (activeTab === 'costs') loadCosts()
     if (activeTab === 'calendar' || activeTab === 'billing' || activeTab === 'payments') loadBilling()
-    if (activeTab === 'orders') loadPurchaseOrders()
+    if (activeTab === 'orders') { loadPurchaseOrders(); loadPOInvoices() }
     if (activeTab === 'permissions') loadPermissions()
   }, [activeTab])
 
@@ -307,6 +321,49 @@ export default function AdminPortal() {
       setPoError(e.message)
     }
     setPoLoading(false)
+  }
+
+  async function loadPOInvoices() {
+    setPoInvError('')
+    const r = await fetchJson(authFetch, '/api/po-invoices')
+    if (!r.ok) { setPoInvError(r.error); return }
+    setPoInvoices(r.data?.invoices || [])
+    setPoInvCan(r.data?.can || { approve: false, mark_paid: false })
+    setPoInvMissing(!!r.data?.migration_required)
+  }
+
+  // Records ONE check on a Ready to pay PO invoice. A partial amount leaves the rest ready to pay.
+  async function payPOInvoice(inv) {
+    if (savingInvPay) return
+    setPoInvMsg('')
+    if (!payInvForm.check_number.trim()) { setPoInvMsg('Enter the check #.'); return }
+    setSavingInvPay(true)
+    try {
+      const r = await fetchJson(authFetch, '/api/po-invoices', jsonInit('PATCH', { id: inv.id, action: 'mark_paid', check_number: payInvForm.check_number, paid_on: payInvForm.paid_on, amount: payInvForm.amount, payment_notes: payInvForm.payment_notes }))
+      if (!r.ok) { setPoInvMsg('Payment not saved: ' + r.error); return }
+      setPayingInvId(null)
+      await loadPOInvoices()
+    } finally { setSavingInvPay(false) }
+  }
+
+  async function sendBackPOInvoice(inv) {
+    const reason = window.prompt(`Send invoice ${inv.invoice_number} (${inv.po?.vendor_name || 'vendor'}) back to the PM? Enter the reason (required):`)
+    if (reason === null) return
+    if (!reason.trim()) { setPoInvMsg('A reason is required to send an invoice back.'); return }
+    const r = await fetchJson(authFetch, '/api/po-invoices', jsonInit('PATCH', { id: inv.id, action: 'send_back', reason: reason.trim() }))
+    if (!r.ok) { setPoInvMsg('Not sent back: ' + r.error); return }
+    await loadPOInvoices()
+  }
+
+  async function approvePOInvoice(inv) {
+    let r = await fetchJson(authFetch, '/api/po-invoices', jsonInit('PATCH', { id: inv.id, action: 'approve' }))
+    if (!r.ok && r.data?.needs_owner_override) {
+      const note = window.prompt(r.error + '\n\nOwner override — enter a note explaining why:')
+      if (!note || !note.trim()) { setPoInvMsg('Not approved — an override note is required.'); return }
+      r = await fetchJson(authFetch, '/api/po-invoices', jsonInit('PATCH', { id: inv.id, action: 'approve', override_note: note.trim() }))
+    }
+    if (!r.ok) { setPoInvMsg('Not approved: ' + r.error); return }
+    await loadPOInvoices()
   }
 
   async function loadPermissions() {
@@ -1444,8 +1501,138 @@ export default function AdminPortal() {
               )
             })()}
 
-            {/* ── PURCHASE ORDERS (read-only, all jobs) ── */}
+            {/* ── PURCHASE ORDERS: Ready to pay (PO invoices) + All POs (read-only) ── */}
             {activeTab === 'orders' && (() => {
+              const fmtAmt = n => '$' + parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              const fmtD = d => (d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
+              const CHIPS = [
+                { key: 'ready_to_pay', label: 'Ready to pay' },
+                { key: 'needs_approval', label: 'Needs approval' },
+                { key: 'paid', label: 'Paid' },
+                { key: 'owner', label: 'Owner pays (tracking)' },
+                { key: 'all_pos', label: 'All POs' },
+              ]
+              const inView = (inv, view) => view === 'owner' ? (inv.status === 'owner_to_pay' || inv.status === 'paid_by_owner') : inv.status === view
+              const jobRows = poInvoices.filter(i => !filterPoJob || i.po?.job_id === filterPoJob)
+              const chipStats = key => {
+                const rows = jobRows.filter(i => inView(i, key))
+                const total = rows.reduce((a, i) => a + (key === 'paid' || i.status === 'paid_by_owner' ? Number(i.amount || 0) : invoiceRemaining(i)), 0)
+                return { count: rows.length, total, overdue: rows.filter(i => i.overdue).length }
+              }
+              const rows = jobRows.filter(i => inView(i, poView))
+              const openInvoice = inv => openFile(async () => {
+                const r = await fetchJson(authFetch, `/api/po-invoices?sign=${encodeURIComponent(inv.id)}`)
+                if (!r.ok || !r.data?.signedUrl) { alert('Could not open the invoice: ' + (r.ok ? 'no link returned' : r.error)); return null }
+                return r.data.signedUrl
+              })
+              const pill = st => { const c = PO_PAY_COLORS[st] || PO_PAY_COLORS.no_invoice; return <span style={{ padding: '2px 9px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase', color: c.color, background: c.bg, border: `1px solid ${c.border}`, whiteSpace: 'nowrap' }}>{PO_PAY_LABELS[st] || st}</span> }
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    {CHIPS.map(c => {
+                      const st = c.key === 'all_pos' ? null : chipStats(c.key)
+                      const active = poView === c.key
+                      return (
+                        <button key={c.key} onClick={() => { setPoView(c.key); setPayingInvId(null); setPoInvMsg('') }}
+                          style={{ padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left', border: active ? '2px solid #e8590c' : '1px solid #e5e7eb', background: active ? '#fff7ed' : '#fff' }}>
+                          <div style={{ fontSize: '12px', fontWeight: '700', color: active ? '#c2410c' : '#374151' }}>{c.label}{st ? ` · ${st.count}` : ''}</div>
+                          {st && <div style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>{fmtAmt(st.total)}{st.overdue ? <span style={{ color: '#dc2626', fontWeight: '700' }}> · {st.overdue} overdue</span> : null}</div>}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {poView !== 'all_pos' && (
+                    <>
+                      <div style={s.filterRow}>
+                        <select style={s.filterSelect} value={filterPoJob} onChange={e => setFilterPoJob(e.target.value)}>
+                          <option value="">All jobs</option>
+                          {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                        </select>
+                        <span style={{ fontSize: '12px', color: '#6b7280', alignSelf: 'center' }}>
+                          {poView === 'ready_to_pay' && 'Approved by the job PM/APM or an Owner. Earliest due first.'}
+                          {poView === 'needs_approval' && 'Waiting on the job PM/APM (or an Owner) to approve. The office cannot approve.'}
+                          {poView === 'paid' && 'Paid in full by NV.'}
+                          {poView === 'owner' && 'The owner pays these vendors directly — not on the NV check list.'}
+                        </span>
+                      </div>
+                      {poInvMissing && <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{MIGRATION_082_SHORT} Ask Peyton to apply supabase/migrations/082_po_invoices_ready_to_pay.sql.</div>}
+                      {poInvError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{poInvError}</div>}
+                      {poInvMsg && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{poInvMsg}</div>}
+                      {!poInvMissing && (rows.length === 0 ? <div style={s.emptyMsg}>{poView === 'ready_to_pay' ? 'Nothing is ready to pay.' : 'No invoices here.'}</div> : (
+                        <div className="rx-table-scroll" style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr>
+                                <th style={s.th}>{poView === 'paid' || poView === 'owner' ? 'Paid / due' : 'Due'}</th>
+                                <th style={s.th}>Vendor</th>
+                                <th style={s.th}>Job</th>
+                                <th style={s.th}>PO #</th>
+                                <th style={s.th}>Invoice #</th>
+                                <th style={{ ...s.th, textAlign: 'right' }}>{poView === 'ready_to_pay' ? 'To pay' : 'Amount'}</th>
+                                <th style={{ ...s.th, textAlign: 'right' }}>Days waiting</th>
+                                <th style={s.th}>File</th>
+                                <th style={s.th}>Status</th>
+                                <th style={s.th} />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map(inv => {
+                                const remaining = invoiceRemaining(inv)
+                                const paying = payingInvId === inv.id
+                                return (
+                                  <React.Fragment key={inv.id}>
+                                    <tr style={{ background: inv.overdue ? '#fffbeb' : undefined }}>
+                                      <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
+                                        {inv.status === 'paid' || inv.status === 'paid_by_owner' ? fmtD(inv.last_payment_date || inv.paid_at) : fmtD(inv.due_date)}
+                                        {inv.overdue && <div style={{ fontSize: '10px', fontWeight: '800', color: '#dc2626', letterSpacing: '0.5px' }}>OVERDUE</div>}
+                                      </td>
+                                      <td style={s.td}><span style={{ fontWeight: '600' }}>{inv.po?.vendor_name || '—'}</span></td>
+                                      <td style={s.td}><span style={{ cursor: 'pointer', color: '#111827' }} onClick={() => router.push(jobHrefById(inv.po?.job_id, jobs, 'po'))}>#{inv.job?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{inv.job?.project_name}</span></td>
+                                      <td style={s.td}>{inv.po?.po_number}{inv.payer_source === 'override' && <div style={{ fontSize: '10px', color: '#6b7280' }}>payer set on PO</div>}</td>
+                                      <td style={s.td}>{inv.invoice_number}<div style={{ fontSize: '11px', color: '#6b7280' }}>{fmtD(inv.invoice_date)}</div></td>
+                                      <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', fontFamily: 'monospace' }}>
+                                        {fmtAmt(poView === 'ready_to_pay' ? remaining : inv.amount)}
+                                        {Number(inv.paid_amount) > 0 && inv.status === 'ready_to_pay' && <div style={{ fontSize: '11px', color: '#b45309', fontWeight: '600' }}>of {fmtAmt(inv.amount)} · {fmtAmt(inv.paid_amount)} paid</div>}
+                                        {inv.check_number && inv.status !== 'ready_to_pay' && <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '400' }}>Check # {inv.check_number}</div>}
+                                      </td>
+                                      <td style={{ ...s.td, textAlign: 'right' }}>{inv.status === 'paid' || inv.status === 'paid_by_owner' ? '—' : (inv.days_waiting ?? '—')}</td>
+                                      <td style={s.td}>{inv.has_attachment ? <button style={s.btnSm('blue')} onClick={() => openInvoice(inv)}>📎 View</button> : <span style={{ color: '#dc2626', fontSize: '11px', fontWeight: '600' }}>No file</span>}</td>
+                                      <td style={s.td}>{pill(inv.status)}{inv.sent_back_reason && inv.status === 'needs_approval' && <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '3px', maxWidth: '220px' }}>Sent back: {inv.sent_back_reason}</div>}</td>
+                                      <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
+                                        {inv.status === 'ready_to_pay' && poInvCan.mark_paid && !paying && <button style={s.btnSm('green')} onClick={() => { setPayingInvId(inv.id); setPoInvMsg(''); setPayInvForm({ check_number: '', paid_on: todayCentral(), amount: remaining.toFixed(2), payment_notes: '' }) }}>Mark paid</button>}{' '}
+                                        {inv.status === 'needs_approval' && poInvCan.approve && <button style={s.btnSm('green')} onClick={() => approvePOInvoice(inv)}>Approve</button>}{' '}
+                                        {(inv.status === 'ready_to_pay' || inv.status === 'needs_approval') && !(Number(inv.paid_amount) > 0) && (poInvCan.mark_paid || poInvCan.approve) && <button style={s.btnSm('red')} onClick={() => sendBackPOInvoice(inv)}>Send back</button>}
+                                      </td>
+                                    </tr>
+                                    {paying && (
+                                      <tr>
+                                        <td colSpan={10} style={{ ...s.td, background: '#f9fafb' }}>
+                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', alignItems: 'end' }}>
+                                            <div><label style={s.label}>Check #</label><input style={s.input} value={payInvForm.check_number} onChange={e => setPayInvForm(f => ({ ...f, check_number: e.target.value }))} autoFocus /></div>
+                                            <div><label style={s.label}>Check date</label><input type="date" style={s.input} value={payInvForm.paid_on} onChange={e => setPayInvForm(f => ({ ...f, paid_on: e.target.value }))} /></div>
+                                            <div><label style={s.label}>Amount (remaining {fmtAmt(remaining)})</label><input type="number" step="0.01" min="0.01" style={s.input} value={payInvForm.amount} onChange={e => setPayInvForm(f => ({ ...f, amount: e.target.value }))} /></div>
+                                            <div><label style={s.label}>Notes</label><input style={s.input} placeholder="Optional" value={payInvForm.payment_notes} onChange={e => setPayInvForm(f => ({ ...f, payment_notes: e.target.value }))} /></div>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                              <button style={{ ...s.btn, opacity: savingInvPay ? 0.6 : 1 }} disabled={savingInvPay} onClick={() => payPOInvoice(inv)}>{savingInvPay ? 'Saving…' : 'Save payment'}</button>
+                                              <button style={s.btnGray} onClick={() => setPayingInvId(null)}>Cancel</button>
+                                            </div>
+                                          </div>
+                                          {Number(payInvForm.amount) > 0 && Number(payInvForm.amount) < remaining - 0.005 && <div style={{ fontSize: '12px', color: '#b45309', marginTop: '6px' }}>Partial payment: {fmtAmt(remaining - Number(payInvForm.amount))} stays on Ready to pay.</div>}
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  {poView === 'all_pos' && (() => {
               const PO_STATUSES = ['draft', 'issued', 'received', 'closed']
               const PO_BADGE = {
                 draft:    { color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' },
@@ -1523,6 +1710,9 @@ export default function AdminPortal() {
                       </table>
                     </div>
                   )}
+                </>
+              )
+                  })()}
                 </>
               )
             })()}

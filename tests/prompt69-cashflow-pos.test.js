@@ -297,8 +297,9 @@ describe('page wiring and migration 067', () => {
     const start = page.indexOf("{activeTab === 'cashflow' && (() => {")
     expect(start).toBeGreaterThan(-1)
     const block = page.slice(start, start + 12000)
-    expect(block).toMatch(/poCashOutByMonth\(purchaseOrders, directCosts\)/)
-    expect(block).toMatch(/summarizeOwnerCheckPOs\(purchaseOrders\)/)
+    // prompt 99: the job (who pays vendors) and paid PO invoices are passed too.
+    expect(block).toMatch(/poCashOutByMonth\(purchaseOrders, directCosts, \{ job, invoicePaidByPO \}\)/)
+    expect(block).toMatch(/summarizeOwnerCheckPOs\(purchaseOrders, \{ job \}\)/)
     expect(block).toMatch(/totalOut = totalSubPay \+ totalDC \+ totalPOs/)
     expect(block).toMatch(/'Direct costs', 'POs out', 'Total out'/)
     expect(block).toMatch(/owner-check PO/)
@@ -314,7 +315,8 @@ describe('page wiring and migration 067', () => {
   test('cash-outlook route passes linked direct costs to poItems', () => {
     const route = read('app/api/cash-outlook/route.js')
     expect(route).toMatch(/hasColumn\('direct_costs', 'purchase_order_id'\)/)
-    expect(route).toMatch(/poItems\(\{ jobsById, pos: posRes\.data, directCosts: linkedDcs \}\)/)
+    // prompt 99: plus checks recorded on PO invoices (082).
+    expect(route).toMatch(/poItems\(\{ jobsById, pos: posRes\.data, directCosts: linkedDcs, invoicePaidByPO \}\)/)
   })
 
   test('migration 067 is idempotent, FK ON DELETE SET NULL, has rollback', () => {

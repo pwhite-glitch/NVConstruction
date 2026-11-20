@@ -5,6 +5,8 @@ import { todayCentral } from '../../../lib/central-date'
 import { denyUnlessOnJob, seesAllJobs } from '../../../lib/roles'
 import { logChange } from '../../../lib/change-log'
 import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
+import { normalizePayerOverride, effectivePOPayer, jobPOPayer, paymentTypeForPayer, PO_PAYER_LABELS } from '../../../lib/po-invoices'
+import { isMissingColumnError, missingColumnName } from '../../../lib/missing-column-retry'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -23,6 +25,11 @@ const CLOSED_EDITABLE = new Set(['status', 'issued_date'])
 // Normalized the same way PUT stores lines, so a stored line and its re-sent copy match.
 const lineKey = i => [i.description ?? '', parseFloat(i.qty) || 1, i.unit || '', parseFloat(i.unit_price) || 0].join('|')
 const fmtAmount = n => String(Number(n) || 0)
+
+// purchase_orders.payer_override (migration 082): 'nv' | 'owner' | null (follow the job).
+const isMissingPayerOverride = err => isMissingColumnError(err) && missingColumnName(err) === 'payer_override'
+const PAYER_OVERRIDE_NOT_SAVED_WARNING = 'The per-PO "who pays" choice was not saved: it needs database migration 082. The rest of the PO was saved.'
+const payerText = v => (v ? PO_PAYER_LABELS[v] + ' (this PO)' : 'Follow job')
 
 // Load a PO by id and guard its real job. Returns { po } or { denied }.
 async function loadPOForCaller(auth, id) {
@@ -121,12 +128,15 @@ export async function POST(request) {
     const body = parsed.body
     let attachment_url = null
 
-    const { job_id, vendor_name, description, budget_item_id, notes, payment_type, status = 'draft', items = [], created_by, attachment } = body
+    const { job_id, vendor_name, description, budget_item_id, notes, status = 'draft', items = [], created_by, attachment } = body
+    let { payment_type } = body
+    const payerOverride = normalizePayerOverride(body.payer_override)
+    if (payerOverride === 'invalid') return Response.json({ error: 'Who pays must be "nv", "owner" or blank (follow the job).' }, { status: 400 })
 
     if (!job_id || !vendor_name) return Response.json({ error: 'job_id and vendor_name required' }, { status: 400 })
     const denied = await denyUnlessOnJob(adminSupabase, auth, job_id)
     if (denied) return denied
-    const { data: jobRow, error: jobErr } = await adminSupabase.from('jobs').select('id, job_number').eq('id', job_id).maybeSingle()
+    const { data: jobRow, error: jobErr } = await adminSupabase.from('jobs').select('*').eq('id', job_id).maybeSingle()
     if (jobErr) return Response.json({ error: jobErr.message }, { status: 500 })
     if (!jobRow) return Response.json({ error: 'Job not found.' }, { status: 404 })
     const refDenied = await denyForeignRefs(job_id, { budget_item_id })
@@ -146,10 +156,21 @@ export async function POST(request) {
 
     const insertRow = { job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? todayCentral() : null, created_by: created_by || null, attachment_url }
 
+    // Migration 082: the job's "who pays vendors" + an optional per-PO override decide the payer;
+    // the legacy payment_type is written to match it, so older readers agree.
+    if (payerOverride !== undefined) insertRow.payer_override = payerOverride
+    if (jobPOPayer(jobRow)) payment_type = paymentTypeForPayer(effectivePOPayer({ payer_override: payerOverride ?? null }, jobRow))
+
     // Try with payment_type first; if the column doesn't exist yet (migration 004), save the rest and warn
     if (payment_type) insertRow.payment_type = payment_type
     let warning = null
     let { data: po, error: poErr } = await adminSupabase.from('purchase_orders').insert(insertRow).select().single()
+    if ('payer_override' in insertRow && isMissingPayerOverride(poErr)) {
+      delete insertRow.payer_override
+      const retry = await adminSupabase.from('purchase_orders').insert(insertRow).select().single()
+      po = retry.data; poErr = retry.error
+      if (!poErr && payerOverride) warning = PAYER_OVERRIDE_NOT_SAVED_WARNING
+    }
     if (payment_type && isMissingPaymentTypeColumn(poErr)) {
       delete insertRow.payment_type
       const retry = await adminSupabase.from('purchase_orders').insert(insertRow).select().single()
@@ -212,6 +233,24 @@ export async function PUT(request) {
     if (fields.payment_type) updates.payment_type = fields.payment_type  // requires migration 004
     if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
     if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
+    // Per-PO "who pays" override (migration 082). Before 082 it is dropped with a warning.
+    const payerOverride = normalizePayerOverride(fields.payer_override)
+    if (payerOverride === 'invalid') return Response.json({ error: 'Who pays must be "nv", "owner" or blank (follow the job).' }, { status: 400 })
+    let oldPayerOverride = null
+    let payerWarning = null
+    if (payerOverride !== undefined) {
+      const { data: cur, error: curErr } = await adminSupabase.from('purchase_orders').select('payer_override').eq('id', id).maybeSingle()
+      if (curErr && !isMissingColumnError(curErr)) return Response.json({ error: curErr.message }, { status: 500 })
+      if (curErr) {
+        if (payerOverride) payerWarning = PAYER_OVERRIDE_NOT_SAVED_WARNING
+      } else {
+        oldPayerOverride = cur?.payer_override ?? null
+        updates.payer_override = payerOverride
+        const { data: jobRow, error: jobErr } = await adminSupabase.from('jobs').select('*').eq('id', po.job_id).maybeSingle()
+        if (jobErr) return Response.json({ error: jobErr.message }, { status: 500 })
+        if (jobPOPayer(jobRow)) updates.payment_type = paymentTypeForPayer(effectivePOPayer({ payer_override: payerOverride }, jobRow))
+      }
+    }
 
     // Gate on the STORED status, never the client's. A closed PO accepts a status-only
     // change; any other column, line items (even []) or a new attachment is refused.
@@ -293,6 +332,7 @@ export async function PUT(request) {
     }
     if ('vendor_name' in updates) add('vendor_name', po.vendor_name, updates.vendor_name)
     if ('payment_type' in updates && !warning) add('payment_type', po.payment_type, updates.payment_type)
+    if ('payer_override' in updates && oldPayerOverride !== updates.payer_override) add('payer_override', payerText(oldPayerOverride), payerText(updates.payer_override))
     if ('budget_item_id' in updates) add('budget_item_id', po.budget_item_id, updates.budget_item_id)
     if ('status' in updates) add('status', po.status, updates.status)
     if (items !== undefined) {
@@ -307,7 +347,8 @@ export async function PUT(request) {
       await logChange({ job_id: po.job_id, entity_type: 'purchase_order', entity_id: po.id, changed_by: auth.userId, ...d })
     }
 
-    return Response.json(warning ? { ok: true, warning } : { ok: true })
+    const warnings = [warning, payerWarning].filter(Boolean)
+    return Response.json(warnings.length ? { ok: true, warning: warnings.join(' ') } : { ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

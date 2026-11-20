@@ -228,6 +228,9 @@ const PERM_GROUPS = [
     { key: 'billing.mark_paid', label: 'Mark Ready to Pay', desc: 'Mark billing ready for payment processing' },
     { key: 'billing.delete_submission', label: 'Delete Submissions', desc: 'Permanently delete a billing submission' },
   ]},
+  { label: 'Purchase Orders', features: [
+    { key: 'po.mark_paid', label: 'Mark PO Invoices Paid', desc: 'Record checks on approved PO invoices (Orders → Ready to pay). Approving stays with the job PM/APM or an Owner.' },
+  ]},
   { label: 'Direct Costs', features: [
     { key: 'costs.approve', label: 'Approve Costs', desc: 'Approve submitted direct costs' },
     { key: 'costs.apm_auto_approve', label: 'Auto-Approve Own Costs', desc: "When on, this role's costs are auto-approved; when off they go to pending" },

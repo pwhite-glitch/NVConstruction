@@ -5,6 +5,8 @@ import { jobDetailsUpdate, JOB_DETAILS_WRITER_ROLES, OPTIONAL_JOB_COLS, OWNER_AD
 import { isBotAccount, isBotEmail, BOT_NOT_STAFF_MESSAGE } from '../../../../lib/bot-rules'
 import { writeWithMissingColumnRetry, isMissingColumnError, missingColumnName } from '../../../../lib/missing-column-retry'
 import { CONTRACT_DATE_NEEDS_069, CONTRACT_TIME_MIGRATION } from '../../../../lib/contract-time'
+import { PO_PAYER_NEEDS_082, PO_PAYER_LABELS } from '../../../../lib/po-invoices'
+import { logChange } from '../../../../lib/change-log'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -63,6 +65,7 @@ export async function POST(request) {
     const w = []
     if (cols.includes('contract_completion_date')) w.push(CONTRACT_DATE_NEEDS_069)
     if (cols.includes('owner_address')) w.push(OWNER_ADDRESS_NEEDS_079)
+    if (cols.includes('po_payer')) w.push(PO_PAYER_NEEDS_082)
     return w.length ? {
       warning: w.join(' '),
       ...(cols.includes('contract_completion_date') ? { migration_required: CONTRACT_TIME_MIGRATION } : {}),
@@ -78,6 +81,11 @@ export async function POST(request) {
     return Response.json({ error: error.message }, { status: 500 })
   }
   if (!data?.length) return Response.json({ error: 'Job not found.' }, { status: 404 })
+  // Who pays PO vendors decides whether this job's PO invoices reach the admin check list.
+  if ('po_payer' in update && !dropped.includes('po_payer') && job.po_payer !== data[0].po_payer) {
+    await logChange({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'po_payer', old_value: job.po_payer ?? null, new_value: data[0].po_payer, changed_by: auth.userId,
+      note: `Who pays vendors (POs): ${PO_PAYER_LABELS[job.po_payer] || 'not set'} → ${PO_PAYER_LABELS[data[0].po_payer] || data[0].po_payer}` })
+  }
   return Response.json({
     ok: true, job: data[0], unarchived: update.archived === false,
     ...warningFor(dropped),

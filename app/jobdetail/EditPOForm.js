@@ -1,8 +1,10 @@
 ﻿'use client'
 import React from 'react'
 import PaymentTypeSelector from './PaymentTypeSelector'
+import POPayerSelector from './POPayerSelector'
 
-export default function EditPOForm({ s, fmt, po, editPOForm, setEditPOForm, editPOFile, setEditPOFile, budgetItems, savingPOEdit, savePOEdit, setEditingPOId }) {
+// jobPayer: see NewPOForm.
+export default function EditPOForm({ s, fmt, po, editPOForm, setEditPOForm, editPOFile, setEditPOFile, budgetItems, savingPOEdit, savePOEdit, setEditingPOId, jobPayer = null }) {
   return (
     <div style={{ padding: '14px 0' }}>
       <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '1rem' }}>Edit {po.po_number}</p>
@@ -19,8 +21,13 @@ export default function EditPOForm({ s, fmt, po, editPOForm, setEditPOForm, edit
       </div>
 
       <div style={{ marginBottom: '12px' }}>
-        <label style={s.label}>Payment type</label>
-        <PaymentTypeSelector name="po_pt_edit" value={editPOForm.payment_type} onChange={v => setEditPOForm(f => ({ ...f, payment_type: v }))} />
+        {jobPayer ? <>
+          <label style={s.label}>Who pays this vendor</label>
+          <POPayerSelector name="po_pt_edit" jobPayer={jobPayer} value={editPOForm.payer_override} onChange={v => setEditPOForm(f => ({ ...f, payer_override: v }))} />
+        </> : <>
+          <label style={s.label}>Payment type</label>
+          <PaymentTypeSelector name="po_pt_edit" value={editPOForm.payment_type} onChange={v => setEditPOForm(f => ({ ...f, payment_type: v }))} />
+        </>}
       </div>
 
       <div style={{ marginBottom: '12px' }}>

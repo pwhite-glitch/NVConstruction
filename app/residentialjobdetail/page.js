@@ -42,6 +42,8 @@ import { ReportExportButtons, ReportRangeExport, ReportSentLine, EmailReportsMod
 import { canExportReports } from '../../lib/daily-report-export'
 import NewPOForm from '../jobdetail/NewPOForm'
 import EditPOForm from '../jobdetail/EditPOForm'
+import POInvoicesPanel, { usePOInvoices, POPaymentBadge, POPayerTag } from '../jobdetail/POInvoicesPanel'
+import { jobPOPayer } from '../../lib/po-invoices'
 import PaymentTypeSelector from '../jobdetail/PaymentTypeSelector' // eslint-disable-line no-unused-vars -- used inside the shared PO forms
 import { confirmPOEdit, editFormFromPO, RECEIVED_EDIT_WARNING, CLOSED_LOCKED_MESSAGE } from '../../lib/po-edit-guards'
 
@@ -268,6 +270,8 @@ function ResidentialJobDetailInner() {
   const [savingPOEdit, setSavingPOEdit] = useState(false)
   const [poFile, setPOFile] = useState(null)
   const [editPOFile, setEditPOFile] = useState(null)
+  // PO vendor invoices / Ready to pay (prompt 99, migration 082)
+  const poInv = usePOInvoices(id)
   const [editingCostId, setEditingCostId] = useState(null)
   const [editCostForm, setEditCostForm] = useState({})
   // Inline amount errors (lib/dc-amount.js): add-cost form and the edit form.
@@ -570,6 +574,7 @@ function ResidentialJobDetailInner() {
         budget_item_id: poForm.budget_item_id || null,
         notes: poForm.notes || null,
         payment_type: poForm.payment_type || 'check',
+        ...(jobPOPayer(job) ? { payer_override: poForm.payer_override || null } : {}),
         status: issueImmediately ? 'issued' : 'draft',
         created_by: session?.user?.id || null,
         items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
@@ -621,6 +626,7 @@ function ResidentialJobDetailInner() {
         budget_item_id: editPOForm.budget_item_id || null,
         notes: editPOForm.notes || null,
         payment_type: editPOForm.payment_type || 'check',
+        ...(jobPOPayer(job) ? { payer_override: editPOForm.payer_override || null } : {}),
         items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
       }
       // No new file = attachment omitted, which keeps the saved one.
@@ -2877,7 +2883,7 @@ function ResidentialJobDetailInner() {
                   <button style={s.btnSmallOrange} onClick={() => { setShowNewPO(v => !v); setEditingPOId(null) }}>{showNewPO ? 'Cancel' : '+ New PO'}</button>
                 </div>
                 {showNewPO && (
-                  <NewPOForm s={s} poForm={poForm} setPOForm={setPOForm} poFile={poFile} setPOFile={setPOFile} budgetItems={budgetItems} savingPO={savingPO} savePO={savePO} />
+                  <NewPOForm s={s} poForm={poForm} setPOForm={setPOForm} poFile={poFile} setPOFile={setPOFile} budgetItems={budgetItems} savingPO={savingPO} savePO={savePO} jobPayer={jobPOPayer(job)} />
                 )}
               </div>
 
@@ -2893,7 +2899,7 @@ function ResidentialJobDetailInner() {
                   if (editingPOId === po.id) {
                     return (
                       <div key={po.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                        <EditPOForm s={s} fmt={poFmt} po={po} editPOForm={editPOForm} setEditPOForm={setEditPOForm} editPOFile={editPOFile} setEditPOFile={setEditPOFile} budgetItems={budgetItems} savingPOEdit={savingPOEdit} savePOEdit={savePOEdit} setEditingPOId={setEditingPOId} />
+                        <EditPOForm s={s} fmt={poFmt} po={po} editPOForm={editPOForm} setEditPOForm={setEditPOForm} editPOFile={editPOFile} setEditPOFile={setEditPOFile} budgetItems={budgetItems} savingPOEdit={savingPOEdit} savePOEdit={savePOEdit} setEditingPOId={setEditingPOId} jobPayer={jobPOPayer(job)} />
                       </div>
                     )
                   }
@@ -2908,7 +2914,8 @@ function ResidentialJobDetailInner() {
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                             <span style={{ ...s.badge(PO_BADGE[po.status] || 'gray'), textTransform: 'uppercase' }}>{po.status}</span>
-                            <span style={s.badge(po.payment_type === 'reimbursement' ? 'blue' : 'gray')}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>
+                            {jobPOPayer(job) ? <POPayerTag po={po} job={job} /> : <span style={s.badge(po.payment_type === 'reimbursement' ? 'blue' : 'gray')}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>}
+                            {!poInv.migrationMissing && poInv.loaded && <POPaymentBadge po={po} job={job} invoices={poInv.byPO[po.id]} />}
                             {bi ? <span style={{ fontSize: '11px', color: '#6b7280' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span> : <span style={{ fontSize: '11px', color: '#9ca3af' }}>No budget line</span>}
                             <span style={{ fontSize: '11px', color: '#6b7280' }}>{items.length} item{items.length !== 1 ? 's' : ''}</span>
                             {dr && <span style={s.badge('blue')}>Draw #{dr.draw_number}{dr.title ? ` — ${dr.title}` : ''}</span>}
@@ -2937,6 +2944,7 @@ function ResidentialJobDetailInner() {
                               ))}
                             </div>
                           )}
+                          <POInvoicesPanel po={po} job={job} invoices={poInv.byPO[po.id] || []} can={poInv.can} isOwner={isPrincipal(userRole)} migrationMissing={poInv.migrationMissing} onChanged={poInv.reload} />
                           <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                             {po.status === 'draft' && <>
                               <button style={{ ...s.btnSmallGreen, opacity: (busy || !po.attachment_url) ? 0.6 : 1 }} disabled={busy || !po.attachment_url} title={!po.attachment_url ? 'Attach a document before issuing' : ''} onClick={() => updatePOStatus(po.id, 'issued')}>Issue PO</button>

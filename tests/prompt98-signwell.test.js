@@ -28,6 +28,7 @@ jest.mock('../lib/server-auth', () => {
 })
 
 const SW = require('../lib/signwell')
+const SWSrv = require('../lib/signwell-server')
 const SWS = require('../lib/signwell-status')
 const { withSignwellTextTags, buildSignwellPacket } = require('../lib/signwell-packet')
 const { signedMethodLabel } = require('../lib/signed-upload')
@@ -60,7 +61,7 @@ let PDF
 beforeAll(async () => { PDF = await onePagePdf() })
 
 // ── fetch mock ──────────────────────────────────────────────────────────────
-let calls, docs, fetchOverride
+let calls, docs, fetchOverride, hookList
 const res = (status, body, { binary } = {}) => ({
   ok: status >= 200 && status < 300, status,
   text: async () => (body == null ? '' : typeof body === 'string' ? body : JSON.stringify(body)),
@@ -70,11 +71,13 @@ function installFetch() {
   calls = []
   docs = {}
   fetchOverride = null
+  hookList = []
   global.fetch = jest.fn(async (url, init = {}) => {
     const call = { url, method: init.method, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : undefined }
     calls.push(call)
     if (fetchOverride) { const o = fetchOverride(call); if (o) return o }
     const u = new URL(url)
+    if (u.pathname === '/api/v1/hooks' && init.method === 'GET') return res(200, hookList)
     const m = /^\/api\/v1\/documents(?:\/([^/]+))?(?:\/(\w+))?$/.exec(u.pathname)
     if (!m) return res(404, { message: 'nope' })
     const [, id, sub] = m
@@ -117,6 +120,7 @@ beforeEach(() => {
   delete process.env.SIGNWELL_TEST_MODE
   global.__resendSent = 0
   installFetch()
+  SWSrv.resetSignwellHookCache()
   seed()
   as('principal')
 })
@@ -428,6 +432,138 @@ describe('webhook', () => {
     sent()
     mockState.missingSelectCols = { subcontracts: ['signwell_document_id'] }
     expect((await hook(event('document_viewed'))).status).toBe(503)
+  })
+})
+
+// ── webhook key lookup (prompt 98b) ─────────────────────────────────────────
+const HA = '6ff542d5-590c-44b2-8131-7ae998e78c5b'
+const HB = '35826895-d91f-49d9-a397-39955b7a5ac9'
+const BYPASS = 'SECRETBYPASS0123456789'
+const cb = (host = 'nv-construction.vercel.app', p = '/api/signwell/webhook') => `https://${host}${p}?x-vercel-protection-bypass=${BYPASS}`
+const signedBy = (key, type = 'document_viewed', time = 1689332249) => event(type, { time, hash: sign(type, time, key) })
+const hookCalls = () => calls.filter(c => c.url.endsWith('/api/v1/hooks')).length
+
+describe('webhook key lookup without SIGNWELL_WEBHOOK_ID', () => {
+  test('SIGNWELL_WEBHOOK_ID still wins: no lookup, looked-up ids not accepted', async () => {
+    sent()
+    hookList = [{ id: HA, callback_url: cb() }]
+    expect((await hook(signedBy(HOOK))).status).toBe(200)
+    expect((await hook(signedBy(HA))).status).toBe(401)
+    expect(hookCalls()).toBe(0)
+  })
+
+  test('lookup: callback path matches ignoring host and query; X-Api-Key sent', async () => {
+    delete process.env.SIGNWELL_WEBHOOK_ID
+    sent()
+    docs[DOC].status = 'Viewed'
+    hookList = [{ id: HA, callback_url: cb('nv-construction-git-prompt98-nv.vercel.app') }]
+    expect((await hook(signedBy(HA))).status).toBe(200)
+    expect(sc1().signwell_status).toBe('viewed')
+    const c = calls.find(x => x.url.endsWith('/api/v1/hooks'))
+    expect(c).toMatchObject({ method: 'GET', url: 'https://www.signwell.com/api/v1/hooks' })
+    expect(c.headers['X-Api-Key']).toBe(KEY)
+  })
+
+  test('non-matching paths (other path, sub-path, trailing slash, bad URL) are ignored', async () => {
+    delete process.env.SIGNWELL_WEBHOOK_ID
+    sent()
+    hookList = [
+      { id: HA, callback_url: cb(undefined, '/api/other') },
+      { id: HB, callback_url: cb(undefined, '/api/signwell/webhook/extra') },
+      { id: 'h3', callback_url: cb(undefined, '/api/signwell/webhook/') },
+      { id: 'h4', callback_url: 'not a url' },
+      { id: 'h5' },
+    ]
+    for (const k of [HA, HB, 'h3', 'h4', 'h5']) expect((await hook(signedBy(k))).status).toBe(401)
+    expect(SWSrv.matchingHookIds(hookList)).toEqual([])
+    expect(SWSrv.matchingHookIds([{ id: HA, callback_url: 'http://localhost:3000/api/signwell/webhook' }, { id: HA, callback_url: cb() }, null])).toEqual([HA])
+    expect(sc1().signwell_status).toBe('sent')
+  })
+
+  test('multiple candidates: the second one verifies', async () => {
+    delete process.env.SIGNWELL_WEBHOOK_ID
+    sent()
+    hookList = [{ id: HA, callback_url: cb('a.vercel.app') }, { id: 'other', callback_url: 'https://x.com/hook' }, { id: HB, callback_url: cb('b.vercel.app') }]
+    expect((await hook(signedBy(HB))).status).toBe(200)
+    expect((await hook(signedBy(HA))).status).toBe(200)
+    expect(hookCalls()).toBe(1)
+  })
+
+  test('cached ~10 min; a failure refetches once (new hook), throttled; expiry refetches', async () => {
+    delete process.env.SIGNWELL_WEBHOOK_ID
+    sent()
+    hookList = [{ id: HA, callback_url: cb() }]
+    expect((await hook(signedBy(HA))).status).toBe(200)
+    expect((await hook(signedBy(HA, 'document_viewed', 1689332250))).status).toBe(200)
+    expect(hookCalls()).toBe(1) // cached
+    hookList.push({ id: HB, callback_url: cb('preview.vercel.app') })
+    expect((await hook(signedBy(HB))).status).toBe(200) // cache miss → one refetch → accepted
+    expect(hookCalls()).toBe(2)
+    expect((await hook(signedBy('forged'))).status).toBe(401)
+    expect((await hook(signedBy('forged2'))).status).toBe(401)
+    expect(hookCalls()).toBe(2) // refetch throttled: forged requests don't hit SignWell
+
+    // direct: expiry and throttle window, with a controlled clock
+    SWSrv.resetSignwellHookCache()
+    calls.length = 0
+    const t0 = 1_000_000_000_000
+    const ev = signedBy(HA).event
+    expect(await SWSrv.verifySignwellWebhook(ev, { now: t0 })).toBe(true)
+    expect(await SWSrv.verifySignwellWebhook(ev, { now: t0 + SWSrv.SIGNWELL_HOOK_CACHE_MS - 1 })).toBe(true)
+    expect(hookCalls()).toBe(1)
+    expect(await SWSrv.verifySignwellWebhook(ev, { now: t0 + SWSrv.SIGNWELL_HOOK_CACHE_MS })).toBe(true)
+    expect(hookCalls()).toBe(2)
+    const bad = signedBy('nope').event
+    const t1 = t0 + SWSrv.SIGNWELL_HOOK_CACHE_MS + 1000
+    expect(await SWSrv.verifySignwellWebhook(bad, { now: t1 })).toBe(false) // one refetch
+    expect(hookCalls()).toBe(3)
+    expect(await SWSrv.verifySignwellWebhook(bad, { now: t1 + 1000 })).toBe(false) // throttled
+    expect(hookCalls()).toBe(3)
+    expect(await SWSrv.verifySignwellWebhook(bad, { now: t1 + SWSrv.SIGNWELL_HOOK_REFETCH_MIN_MS })).toBe(false)
+    expect(hookCalls()).toBe(4)
+    // malformed events never trigger a lookup
+    SWSrv.resetSignwellHookCache()
+    calls.length = 0
+    expect(await SWSrv.verifySignwellWebhook({ type: 'x', time: 1, hash: 'zz' })).toBe(false)
+    expect(await SWSrv.verifySignwellWebhook(null)).toBe(false)
+    expect(hookCalls()).toBe(0)
+  })
+
+  test('no key → 401 without any request; no matching hook / list failure → 401', async () => {
+    delete process.env.SIGNWELL_WEBHOOK_ID
+    delete process.env.SIGNWELL_API_KEY
+    sent()
+    expect((await hook(signedBy(HA))).status).toBe(401)
+    expect(calls).toHaveLength(0)
+    process.env.SIGNWELL_API_KEY = KEY
+    expect((await hook(signedBy(HA))).status).toBe(401) // no hooks at all
+    fetchOverride = c => (c.url.endsWith('/hooks') ? res(500, { message: 'boom' }) : null)
+    SWSrv.resetSignwellHookCache()
+    expect((await hook(signedBy(HA))).status).toBe(401)
+    fetchOverride = c => (c.url.endsWith('/hooks') ? res(401, { message: 'revoked' }) : null)
+    SWSrv.resetSignwellHookCache()
+    expect((await hook(signedBy(HA))).status).toBe(401)
+    expect(sc1().signwell_status).toBe('sent')
+  })
+
+  test('nothing secret (key, hook ids, callback query) in responses or logs', async () => {
+    const logged = []
+    const spies = ['error', 'log', 'warn', 'info'].map(m => jest.spyOn(console, m).mockImplementation((...a) => { logged.push(a.map(String).join(' ')) }))
+    try {
+      delete process.env.SIGNWELL_WEBHOOK_ID
+      sent()
+      hookList = [{ id: HA, callback_url: cb() }, { id: HB, callback_url: cb('x.vercel.app', '/nope') }]
+      const bodies = []
+      for (const p of [signedBy(HA), signedBy(HB), signedBy('forged'), 'junk']) bodies.push(JSON.stringify((await json(await hook(p))).body))
+      fetchOverride = c => (c.url.endsWith('/hooks') ? res(422, { message: `bad ${KEY} ${BYPASS} ${HA}` }) : null)
+      SWSrv.resetSignwellHookCache()
+      bodies.push(JSON.stringify((await json(await hook(signedBy(HA)))).body))
+      const all = bodies.join('\n') + '\n' + logged.join('\n')
+      for (const s of [KEY, HA, HB, BYPASS, 'x-vercel-protection-bypass']) expect(all).not.toContain(s)
+      expect(logged.some(l => l.includes('no matching SignWell webhook'))).toBe(true)
+    } finally {
+      spies.forEach(s => s.mockRestore())
+    }
   })
 })
 

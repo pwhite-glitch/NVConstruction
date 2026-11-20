@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { verifySignwellEvent } from '../../../../lib/signwell'
-import { processSignwellWebhook } from '../../../../lib/signwell-server'
+import { processSignwellWebhook, verifySignwellWebhook } from '../../../../lib/signwell-server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,16 +9,16 @@ const adminSupabase = createClient(
 export const dynamic = 'force-dynamic'
 
 // POST /api/signwell/webhook — SignWell event callback (prompt 98). Public (no session).
-// 1. Verify event.hash = HMAC-SHA256(SIGNWELL_WEBHOOK_ID, `${type}@${time}`) (hex, constant
-//    time). No secret configured or a bad hash → 401.
+// 1. Verify event.hash = HMAC-SHA256(webhook id, `${type}@${time}`) (hex, constant time). The
+//    id is SIGNWELL_WEBHOOK_ID, or if unset the ids of the account's hooks pointing at this
+//    path (GET /hooks, cached; prompt 98b). No key / no matching hook / bad hash → 401.
 // 2. The hash does not cover the body, so the body is only used for the event type and the
 //    document id: lib/signwell-server re-fetches GET /documents/{id} and acts on that, only
 //    for the subcontract named in its metadata whose stored signwell_document_id matches.
 export async function POST(request) {
-  const secret = process.env.SIGNWELL_WEBHOOK_ID
   let payload
   try { payload = JSON.parse(await request.text()) } catch { payload = null }
-  if (!secret || !payload || !verifySignwellEvent(payload.event, secret)) {
+  if (!payload || !(await verifySignwellWebhook(payload.event))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {

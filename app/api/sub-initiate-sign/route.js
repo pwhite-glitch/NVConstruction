@@ -4,6 +4,7 @@ import { buildSubcontractHtml } from '../../../lib/buildSubcontractHtml'
 import { getSiteUrl } from '../../../lib/site-url'
 import { withExhibitAppendix } from '../../../lib/subcontract-exhibits'
 import { buildAndStoreExhibits } from '../../../lib/subcontract-exhibits-server'
+import { isSignwellOpen } from '../../../lib/signwell-status'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -37,6 +38,12 @@ export async function POST(request) {
     }
     if (!isDirectSub && !isCompanySub) {
       return Response.json({ error: 'Not authorized' }, { status: 403 })
+    }
+
+    // Prompt 98: out for signature on SignWell → the sub signs from SignWell's email, not here
+    // (no second, built-in signing link). Before migration 081 these fields are undefined.
+    if (sc.signwell_document_id && isSignwellOpen(sc.signwell_status)) {
+      return Response.json({ error: 'This subcontract was sent to you through SignWell. Please sign it from the SignWell email.', code: 'signwell_open' }, { status: 409 })
     }
 
     // Return existing request if one exists

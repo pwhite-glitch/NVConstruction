@@ -44,6 +44,7 @@ import { retainagePctOrDefault } from '../../lib/retainage-pct'
 import { findDuplicateBillings, duplicateTooltip } from '../../lib/billing-duplicates'
 import { confirmCoiForCompany } from '../../lib/coi-warning'
 import { currentCompletionDate, daysLeftFromToday, completionFlag } from '../../lib/contract-time'
+import { DEFAULT_BILLING_TYPE } from '../../lib/billing-type'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -311,7 +312,7 @@ export default function Dashboard() {
   const [coiFilter, setCoiFilter] = useState('')
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', pm_email: '', billing_type: 'aia', nv_role: 'gc', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', pm_email: '', nv_role: 'gc', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
   const [rejectingSubId, setRejectingSubId] = useState(null)
   const [rejectionReasonDraft, setRejectionReasonDraft] = useState('')
   const [billingPage, setBillingPage] = useState(1)
@@ -1604,7 +1605,7 @@ export default function Dashboard() {
       owner_billing_due: newJob.owner_billing_due ? parseInt(newJob.owner_billing_due) : null,
       owner_billing_anchor: newJob.owner_billing_anchor || null,
       pm_email: newJob.pm_email || null,
-      billing_type: newJob.billing_type || 'aia',
+      billing_type: DEFAULT_BILLING_TYPE, // prompt 95: every job bills by draw request
       nv_role: newJob.nv_role || 'gc',
       job_type: 'commercial',
     }).select('id').single()
@@ -1631,7 +1632,7 @@ export default function Dashboard() {
       pm_email: newResJob.pm_email || null,
       status: 'active',
       nv_role: 'gc',
-      billing_type: 'draw_request',
+      billing_type: DEFAULT_BILLING_TYPE,
       job_type: 'residential',
       sub_billing_start: newResJob.sub_billing_start || null,
       sub_billing_frequency: newResJob.sub_billing_frequency || 'monthly',
@@ -2656,7 +2657,7 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
         status: 'active',
         job_type: 'commercial',
         nv_role: 'gc',
-        billing_type: 'aia',
+        billing_type: DEFAULT_BILLING_TYPE,
         sub_billing_frequency: 'monthly',
         owner_billing_frequency: 'monthly',
       }).select('id').single()
@@ -5670,7 +5671,7 @@ ${planLinks.map(p => p.url
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && !isResidentialJob(j))).length})</button>
                     <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => !isResidentialJob(j) && inCompletedJobList(j)).length})</button>
                   </div>
-                  {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { const opening = !showNewJobForm; setShowNewJobForm(opening); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg(''); if (opening) jobNums.seed('newJob', 'commercial', setNewJob) }}>
+                  {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { const opening = !showNewJobForm; setShowNewJobForm(opening); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg(''); if (opening) jobNums.seed('newJob', 'commercial', setNewJob) }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
                   </button>}
                 </div>
@@ -5695,13 +5696,6 @@ ${planLinks.map(p => p.url
                       </div>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Job start date</label><input style={s.input} type="date" value={newJob.start_date} onChange={e => setNewJob(j => ({ ...j, start_date: e.target.value }))} /></div>
-                        <div>
-                          <label style={s.label}>{(newJob.nv_role || 'gc') === 'sub' ? 'GC billing type' : 'Prime billing type'}</label>
-                          <select style={s.input} value={newJob.billing_type} onChange={e => setNewJob(j => ({ ...j, billing_type: e.target.value }))}>
-                            <option value="aia">AIA Application for Payment (G702/G703)</option>
-                            <option value="draw_request">Draw Request</option>
-                          </select>
-                        </div>
                       </div>
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>PM contact (for sub emails)</label>

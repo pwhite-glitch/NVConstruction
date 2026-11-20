@@ -154,7 +154,8 @@ describe('prompt 93 — create period (draw-request jobs default to the Central 
     expect(create).toContain('period_to: periodTo,')
     expect(create).not.toContain('let periodTo = null')
     // new draw form is prefilled with the current month and has editable dates
-    expect(job).toContain("const drawPeriod = job.billing_type === 'draw_request' ? monthPeriod(todayCentral().slice(0, 7)) : null")
+    // prompt 95: every job is a draw-request job, so the default is unconditional
+    expect(job).toContain('const drawPeriod = monthPeriod(todayCentral().slice(0, 7))')
   })
 })
 

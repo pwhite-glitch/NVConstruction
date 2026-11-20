@@ -26,6 +26,7 @@ import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, csvDcAmount, dcDupl
 import { isFirstReviewOnOpenDraw } from '../../lib/billing-fields'
 import { sovLockReason } from '../../lib/sov-guards'
 import { shiftScreenLine } from '../../lib/aia-draw'
+import { isDrawBilling, primeAppLabel, primeAppsHeading, canCreatePrimeDraw, primeBillsSource, NO_SUB_DRAWS_HINT } from '../../lib/billing-type'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
 import { parseBudgetCsv, toInsertRows } from '../../lib/budget-csv'
 import { allocateJobBillings, cumulativeOnContract, contractsForSubmissionSub } from '../../lib/contract-billing'
@@ -1755,17 +1756,19 @@ function JobDetailInner() {
       return
     }
 
-    const monthPrefix = app.period_to ? app.period_to.slice(0, 7) + '-01' : null
-    const linkedDrawId = app.linked_draw_request_id || null
+    // Prompt 95: linked draw first; the billing_period month pull is only a fallback
+    // for old apps that were never linked (relink them with "Relink draw").
+    const billsSource = primeBillsSource(app)
+    const linkedDrawId = billsSource?.by === 'draw' ? billsSource.drawId : null
     const prevApps = aiaApplications
       .filter(a => a.app_number < app.app_number)
       .sort((a, b) => a.app_number - b.app_number)
     const [{ data: lines }, { data: bills }, { data: dcs }, { data: prevAppLines }] = await Promise.all([
       supabase.from('aia_application_lines').select('*').eq('application_id', app.id),
-      linkedDrawId
-        ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('draw_request_id', linkedDrawId)
-        : monthPrefix
-          ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
+      billsSource?.by === 'draw'
+        ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('draw_request_id', billsSource.drawId)
+        : billsSource?.by === 'month'
+          ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', billsSource.month)
           : Promise.resolve({ data: [] }),
       supabase.from('direct_costs').select('*').eq('job_id', id).eq('status', 'approved').order('cost_date', { ascending: false }),
       prevApps.length > 0
@@ -2038,11 +2041,11 @@ function JobDetailInner() {
   }
 
   async function createAiaApplication() {
-    const isDrawType = job?.billing_type === 'draw_request'
-    if (!isDrawType && !newAiaForm.period_to) return
-    if (isDrawType && !newAiaForm.linked_draw_request_id) return
-    // Draw-request jobs get a period too (prompt 93): the form's dates, else the current
-    // Central month — same first-to-last-day convention as the monthly picker.
+    // Prompt 95: every job bills by draw request; a new one must link a sub draw request.
+    const isDrawType = isDrawBilling(job)
+    const linkedDraw = drawRequests.find(d => d.id === newAiaForm.linked_draw_request_id)
+    if (!linkedDraw) { alert('Link a sub draw request first.'); return }
+    // Period: the form's dates, else the current Central month (prompt 93).
     const period = aiaCreatePeriod({ isDrawType, form: newAiaForm, today: todayCentral() })
     if (period.error) { alert(period.error); return }
     setSavingAia(true)
@@ -2067,7 +2070,6 @@ function JobDetailInner() {
       appNumber = typedNumber
     }
     const periodTo = period.period_to, periodFrom = period.period_from
-    const linkedDraw = isDrawType ? drawRequests.find(d => d.id === newAiaForm.linked_draw_request_id) : null
     const { data: newApp, error } = await supabase.from('aia_applications').insert({
       job_id: id,
       app_number: appNumber,
@@ -6186,7 +6188,7 @@ ${(budgets || []).length > 0 ? `
       engineer_name: form.engineer_name, engineer_company: form.engineer_company, engineer_email: form.engineer_email,
       permit_number: form.permit_number, permit_date: form.permit_date || null, scope_notes: form.scope_notes,
       pm_email: form.pm_email || null,
-      billing_type: form.billing_type || 'aia',
+      // billing_type is not sent (prompt 95): every job bills by linked draw request.
       rollup_general_conditions: !!form.rollup_general_conditions,
       nv_role: form.nv_role || 'gc',
     }
@@ -7104,12 +7106,6 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <select style={s.input} value={form.payment_type || 'nv_pays'} onChange={e => update('payment_type', e.target.value)}>
                       <option value="nv_pays">NV Construction pays subs</option>
                       <option value="owner_pays_direct">Owner pays subs directly</option>
-                    </select>
-                  </div>
-                  <div><label style={s.label}>Prime billing type</label>
-                    <select style={s.input} value={form.billing_type || 'aia'} onChange={e => update('billing_type', e.target.value)}>
-                      <option value="aia">AIA Application for Payment (G702/G703)</option>
-                      <option value="draw_request">Draw Request</option>
                     </select>
                   </div>
                 </div>
@@ -12038,16 +12034,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                     <p style={{ ...s.cardTitle, margin: 0 }}>
-                      {job.billing_type === 'draw_request' ? `Draw Requests (${aiaApplications.length})` : `AIA Applications (${aiaApplications.length})`}
+                      {primeAppsHeading(aiaApplications.length)}
                     </p>
                     {!showNewAia && (
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button style={s.btnSmallOrange} onClick={() => {
                           setShowNewAia(true)
-                          // Draw-request jobs start on the current Central month (prompt 93); still editable.
-                          const drawPeriod = job.billing_type === 'draw_request' ? monthPeriod(todayCentral().slice(0, 7)) : null
+                          // Every job (prompt 95) starts on the current Central month (prompt 93); still editable.
+                          const drawPeriod = monthPeriod(todayCentral().slice(0, 7))
                           setNewAiaForm({ app_number: String(nextAiaAppNumber(aiaApplications)), period_to: drawPeriod?.period_to || '', period_from: drawPeriod?.period_from || '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
-                        }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
+                        }}>+ New draw request</button>
                         {aiaApplications.length > 0 && (
                           <button
                             style={{ ...s.btnSmallGreen, opacity: creatingRetainage ? 0.6 : 1 }}
@@ -12060,79 +12056,44 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )}
                   </div>
                   {showNewAia && (() => {
-                    const isDrawType = job.billing_type === 'draw_request'
-                    const isBiweekly = !isDrawType && (job?.owner_billing_frequency || job?.billing_frequency || 'monthly') === 'biweekly'
-                    const canCreate = !savingAia && budgetItems.length > 0 && (isDrawType ? !!newAiaForm.linked_draw_request_id : newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from))
+                    // Prompt 95: every new draw request links a sub draw request (no AIA / biweekly picker path).
+                    const noSubDraws = drawRequests.length === 0
+                    const canCreate = canCreatePrimeDraw({ linkedDrawId: newAiaForm.linked_draw_request_id, drawCount: drawRequests.length, budgetCount: budgetItems.length, saving: savingAia })
                     return (
                     <div style={{ ...s.inlineForm, border: '1px solid #fed7aa', marginBottom: '1.25rem' }}>
-                      <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{isDrawType ? 'New Draw Request' : 'New AIA Application'}</p>
-                      <div style={{ display: 'grid', gridTemplateColumns: isDrawType ? '100px 1fr 1fr 1fr 100px 100px' : isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
+                      <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New Draw Request</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '12px', marginBottom: '12px' }}>
                         <div>
                           <label style={s.label}>Draw #</label>
                           <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
                         </div>
-                        {isDrawType ? (
-                          <div>
-                            <label style={s.label}>Link to sub draw request</label>
-                            <select style={s.input} value={newAiaForm.linked_draw_request_id} onChange={e => {
-                              const dr = drawRequests.find(d => d.id === e.target.value)
-                              setNewAiaForm(f => ({ ...f, linked_draw_request_id: e.target.value, app_number: dr ? String(dr.draw_number) : f.app_number }))
-                            }}>
-                              <option value="">— Select sub draw request —</option>
-                              {drawRequests.filter(d => d.status === 'open').map(d => (
-                                <option key={d.id} value={d.id}>{d.title}</option>
-                              ))}
-                              {drawRequests.filter(d => d.status !== 'open').length > 0 && (
-                                <optgroup label="Closed">
-                                  {drawRequests.filter(d => d.status !== 'open').map(d => (
-                                    <option key={d.id} value={d.id}>{d.title} (closed)</option>
-                                  ))}
-                                </optgroup>
-                              )}
-                            </select>
-                          </div>
-                        ) : null}
-                        {isDrawType ? (
-                          <>
-                            <div>
-                              <label style={s.label}>Period from</label>
-                              <input type="date" style={s.input} value={newAiaForm.period_from} onChange={e => setNewAiaForm(f => ({ ...f, period_from: e.target.value }))} />
-                            </div>
-                            <div>
-                              <label style={s.label}>Period to</label>
-                              <input type="date" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
-                            </div>
-                          </>
-                        ) : isBiweekly ? (
-                          <>
-                            <div>
-                              <label style={s.label}>Period from</label>
-                              <input type="date" style={s.input} value={newAiaForm.period_from} onChange={e => setNewAiaForm(f => ({ ...f, period_from: e.target.value }))} />
-                            </div>
-                            <div>
-                              <label style={s.label}>Period to</label>
-                              <input type="date" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
-                            </div>
-                          </>
-                        ) : (
-                          <div>
-                            <label style={s.label}>Billing period</label>
-                            <select style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))}>
-                              <option value="">Select month...</option>
-                              {(() => {
-                                const opts = []
-                                const now = new Date()
-                                for (let i = 24; i >= -6; i--) {
-                                  const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-                                  const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                                  const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-                                  opts.push(<option key={val} value={val}>{label}</option>)
-                                }
-                                return opts
-                              })()}
-                            </select>
-                          </div>
-                        )}
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={s.label}>Link to sub draw request</label>
+                          <select style={s.input} value={newAiaForm.linked_draw_request_id} disabled={noSubDraws} onChange={e => {
+                            const dr = drawRequests.find(d => d.id === e.target.value)
+                            setNewAiaForm(f => ({ ...f, linked_draw_request_id: e.target.value, app_number: dr ? String(dr.draw_number) : f.app_number }))
+                          }}>
+                            <option value="">— Select sub draw request —</option>
+                            {drawRequests.filter(d => d.status === 'open').map(d => (
+                              <option key={d.id} value={d.id}>{d.title}</option>
+                            ))}
+                            {drawRequests.filter(d => d.status !== 'open').length > 0 && (
+                              <optgroup label="Closed">
+                                {drawRequests.filter(d => d.status !== 'open').map(d => (
+                                  <option key={d.id} value={d.id}>{d.title} (closed)</option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={s.label}>Period from</label>
+                          <input type="date" style={s.input} value={newAiaForm.period_from} onChange={e => setNewAiaForm(f => ({ ...f, period_from: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Period to</label>
+                          <input type="date" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
+                        </div>
                         <div>
                           <label style={s.label}>Retainage %</label>
                           <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
@@ -12142,9 +12103,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <input type="number" min="0" step="0.5" style={s.input} value={newAiaForm.markup_pct} onChange={e => setNewAiaForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" />
                         </div>
                       </div>
+                      {noSubDraws && (
+                        <div data-testid="no-sub-draws-hint" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 12px', margin: '0 0 12px', fontSize: '12px', color: '#9a3412' }}>
+                          <span>{NO_SUB_DRAWS_HINT}</span>
+                          <button style={s.btnSmallOrange} onClick={() => { setShowNewAia(false); setActiveTab('billing') }}>Go to Billing → Draw requests</button>
+                        </div>
+                      )}
                       {aiaApplications.length > 0 && (
                         <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 12px' }}>
-                          % complete from App #{aiaApplications[0].app_number} will auto-carry forward as "Previous" on this application.
+                          % complete from {primeAppLabel(aiaApplications[0])} will auto-carry forward as "Previous" on this draw request.
                         </p>
                       )}
                       {budgetItems.length === 0 && (
@@ -12154,7 +12121,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button style={{ ...s.btn, opacity: canCreate ? 1 : 0.6 }}
                           disabled={!canCreate}
                           onClick={createAiaApplication}>
-                          {savingAia ? 'Creating...' : 'Create application'}
+                          {savingAia ? 'Creating...' : 'Create draw request'}
                         </button>
                         <button style={s.btnGray} onClick={() => setShowNewAia(false)}>Cancel</button>
                       </div>
@@ -12163,7 +12130,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   })()}
                   {aiaApplications.length === 0 && !showNewAia && (
                     <p style={{ color: '#6b7280', fontSize: '14px' }}>
-                      {job.billing_type === 'draw_request' ? 'No draw requests yet. Create your first draw request above.' : 'No AIA applications yet. Create your first application above to get started.'}
+                      No draw requests yet. Create your first draw request above.
                     </p>
                   )}
                   {aiaApplications.length > 0 && (
@@ -12193,7 +12160,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
+                            {primeAppLabel(app)}
                             {app.payment_received && <span style={{ color: '#16a34a', fontSize: '10px' }}>✓</span>}
                           </button>
                         )
@@ -12220,12 +12187,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>
-                            {job.billing_type === 'draw_request' ? `Draw #${activeAia.app_number}` : `App #${activeAia.app_number}`}
+                            {primeAppLabel(activeAia)}
                           </span>
                           <span style={{ fontSize: '13px', color: '#6b7280' }}>{periodLabel}</span>
                           <span style={s.coBadge(activeAia.status === 'certified' ? 'approved' : activeAia.status === 'submitted' ? 'pending' : 'pending')}>{activeAia.status || 'draft'}</span>
                           {isAiaDraft(aiaStored) && aiaDraftPeriodNote(aiaStored) && (
                             <span style={{ fontSize: '11px', color: '#92400e' }}>{aiaDraftPeriodNote(aiaStored)}</span>
+                          )}
+                          {!activeAia.nv_subcontract_id && !aiaStored.linked_draw_request_id && (
+                            <span style={{ fontSize: '11px', color: '#6b7280' }}>Not linked to a sub draw request — sub bills come from the billing month. Use Relink draw to link it.</span>
                           )}
                           {activeAia.payment_received && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>
@@ -13781,7 +13751,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
               {totalIn === 0 && receivedNoAmount.length === 0 && (
                 <div style={{ background: '#fff7ed', border: '1px solid #3a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#6b7280' }}>
-                  No payments recorded from the owner yet. Use the <strong style={{ color: '#111827' }}>Prime Contract</strong> tab to record payments received on each {job.billing_type === 'draw_request' ? 'draw request' : 'AIA application'}.
+                  No payments recorded from the owner yet. Use the <strong style={{ color: '#111827' }}>Prime Contract</strong> tab to record payments received on each draw request.
                 </div>
               )}
 
@@ -13838,12 +13808,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {aiaApplications.length > 0 && (
                 <div style={s.card}>
-                  <p style={s.cardTitle}>{job.billing_type === 'draw_request' ? 'Draw Requests — Payment Status' : 'AIA Applications — Payment Status'}</p>
+                  <p style={s.cardTitle}>{primeAppsHeading()} — Payment Status</p>
                   {aiaApplications.map(a => (
                     <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f3f4f6', flexWrap: 'wrap', gap: '8px' }}>
                       <div>
                         <div style={{ fontSize: '14px', color: '#111827', fontWeight: '600' }}>
-                          {job.billing_type === 'draw_request' ? `Draw #${a.app_number}` : `App #${a.app_number}`}
+                          {primeAppLabel(a)}
                           {a.period_to && <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>{new Date(a.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
                         </div>
                         {/* Owner-only planning date for the company cash outlook; does not unlock or change the app */}

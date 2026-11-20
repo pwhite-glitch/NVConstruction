@@ -179,7 +179,9 @@ describe('15. commercial Details allow-list (lib/job-details.js)', () => {
     const keys = [...obj.matchAll(/(?:^|[\s,{])([a-z_]+):/g)].map(m => m[1])
     expect(keys.length).toBeGreaterThan(30)
     for (const k of keys) expect(COMMERCIAL_DETAIL_FIELDS).toContain(k)
-    for (const k of Object.keys(FULL_COMMERCIAL)) expect(keys).toContain(k)
+    // prompt 95: billing_type is no longer chosen or sent from Job Details (every job is a draw-request job)
+    for (const k of Object.keys(FULL_COMMERCIAL).filter(k => k !== 'billing_type')) expect(keys).toContain(k)
+    expect(keys).not.toContain('billing_type')
   })
   test.each([
     [{ payment_type: 'cash' }], [{ billing_frequency: 'daily' }], [{ nv_role: 'owner' }], [{ billing_type: 'invoice' }],

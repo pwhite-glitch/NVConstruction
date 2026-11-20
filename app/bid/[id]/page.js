@@ -10,6 +10,7 @@ import LevelingMatrix, { loadLevelingEntries } from '../../components/bid/Leveli
 import JobNumberHint from '../../components/JobNumberHint'
 import { useJobNumbers, confirmJobNumberFree } from '../../../lib/use-job-numbers'
 import { jobNumberSaveError } from '../../../lib/job-numbers'
+import { DEFAULT_BILLING_TYPE } from '../../../lib/billing-type'
 
 // ── Section definitions ───────────────────────────────────────────────────────
 
@@ -1397,7 +1398,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
         status:       'active',
         job_type:     jobType,
         nv_role:      'gc',
-        billing_type: 'aia',
+        billing_type: DEFAULT_BILLING_TYPE, // prompt 95: every job bills by draw request
         sub_billing_frequency: 'monthly',
         owner_billing_frequency: 'monthly',
         source_bid_id: bidId,

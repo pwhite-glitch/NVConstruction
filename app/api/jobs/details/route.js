@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../../lib/server-auth'
 import { denyJob, isPrincipal, normEmail } from '../../../../lib/roles'
-import { jobDetailsUpdate, JOB_DETAILS_WRITER_ROLES } from '../../../../lib/job-details'
+import { jobDetailsUpdate, JOB_DETAILS_WRITER_ROLES, OPTIONAL_JOB_COLS, OWNER_ADDRESS_NEEDS_079 } from '../../../../lib/job-details'
 import { isBotAccount, isBotEmail, BOT_NOT_STAFF_MESSAGE } from '../../../../lib/bot-rules'
 import { writeWithMissingColumnRetry, isMissingColumnError, missingColumnName } from '../../../../lib/missing-column-retry'
 import { CONTRACT_DATE_NEEDS_069, CONTRACT_TIME_MIGRATION } from '../../../../lib/contract-time'
@@ -53,23 +53,33 @@ export async function POST(request) {
   }
 
   if (!Object.keys(update).length) return Response.json({ ok: true, job })
-  // contract_completion_date needs migration 069: before it, the update is retried
-  // without that column only, and the answer carries a warning (200, rest saved).
+  // contract_completion_date needs migration 069 and owner_address migration 079: before
+  // them, the update is retried without the missing column only, and the answer carries
+  // a warning (200, rest saved).
   const { data, error, dropped } = await writeWithMissingColumnRetry(
     row => adminSupabase.from('jobs').update(row).eq('id', id).select('*'),
-    update, { fallbackCols: ['contract_completion_date'] })
+    update, { fallbackCols: OPTIONAL_JOB_COLS })
+  const warningFor = cols => {
+    const w = []
+    if (cols.includes('contract_completion_date')) w.push(CONTRACT_DATE_NEEDS_069)
+    if (cols.includes('owner_address')) w.push(OWNER_ADDRESS_NEEDS_079)
+    return w.length ? {
+      warning: w.join(' '),
+      ...(cols.includes('contract_completion_date') ? { migration_required: CONTRACT_TIME_MIGRATION } : {}),
+    } : {}
+  }
   if (error) {
-    // Only the completion date changed and the column is missing: nothing else to save.
-    const onlyDate = Object.keys(update).length === 1 && 'contract_completion_date' in update
-    if (onlyDate && isMissingColumnError(error) && missingColumnName(error) === 'contract_completion_date') {
-      return Response.json({ ok: true, job, warning: CONTRACT_DATE_NEEDS_069, migration_required: CONTRACT_TIME_MIGRATION })
+    // Only optional columns were left and the one named is missing: nothing else to save.
+    const col = missingColumnName(error)
+    const onlyOptional = Object.keys(update).every(k => OPTIONAL_JOB_COLS.includes(k))
+    if (onlyOptional && isMissingColumnError(error) && OPTIONAL_JOB_COLS.includes(col)) {
+      return Response.json({ ok: true, job, ...warningFor([...dropped, col]) })
     }
     return Response.json({ error: error.message }, { status: 500 })
   }
   if (!data?.length) return Response.json({ error: 'Job not found.' }, { status: 404 })
-  const needs069 = dropped.includes('contract_completion_date')
   return Response.json({
     ok: true, job: data[0], unarchived: update.archived === false,
-    ...(needs069 ? { warning: CONTRACT_DATE_NEEDS_069, migration_required: CONTRACT_TIME_MIGRATION } : {}),
+    ...warningFor(dropped),
   })
 }

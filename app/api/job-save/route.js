@@ -13,7 +13,9 @@ const WRITER_ROLES = new Set(['principal', 'pm', 'apm', 'admin'])
 // On schema cache error, these are stripped and the update is retried.
 const OPTIONAL_COLS = new Set(['nv_role', 'billing_type', 'pm_email',
   'sub_billing_start', 'sub_billing_frequency', 'sub_billing_due', 'sub_billing_anchor',
-  'owner_billing_start', 'owner_billing_frequency', 'owner_billing_due', 'owner_billing_anchor'])
+  'owner_billing_start', 'owner_billing_frequency', 'owner_billing_due', 'owner_billing_anchor',
+  // migration 079 (prompt 96)
+  'owner_address'])
 
 export async function POST(request) {
   const auth = await requireAuth(request)
@@ -38,7 +40,7 @@ export async function POST(request) {
   delete updateFields.companycam_import_state
   let { error } = await adminSupabase.from('jobs').update(updateFields).eq('id', id)
 
-  if (error && error.message && error.message.includes('schema cache')) {
+  if (error && error.message && (error.message.includes('schema cache') || error.code === 'PGRST204' || error.code === '42703')) {
     updateFields = Object.fromEntries(Object.entries(updateFields).filter(([k]) => !OPTIONAL_COLS.has(k)))
     const retry = await adminSupabase.from('jobs').update(updateFields).eq('id', id)
     error = retry.error

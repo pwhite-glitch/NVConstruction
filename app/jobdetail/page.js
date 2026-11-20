@@ -78,6 +78,7 @@ import ReportVersionsModal from './ReportVersionsModal'
 import { ReportExportButtons, ReportRangeExport, ReportSentLine, EmailReportsModal, useReportSends } from './DailyReportExport'
 import { canExportReports } from '../../lib/daily-report-export'
 import { budgetLineLabel, budgetTagText, budgetTagStyle, budgetTagTextStyle, budgetSelectStyle, normalizeBudgetAllocations } from '../../lib/budget-label'
+import { EMPTY_GENERATOR_FORM, buildGeneratorDefaults, matchDirectoryEntry, latestSavedFields, isSameSub, readGeneratorRows, serializeGeneratorFields, JOB_LEVEL_KEYS, SUB_LEVEL_KEYS } from '../../lib/subcontract-generator'
 
 const s = {
   // ── Layout ──
@@ -255,7 +256,7 @@ function JobDetailInner() {
   const [editContractBidFile, setEditContractBidFile] = useState(null)
   const [showContractGen, setShowContractGen] = useState(false)
   const [showCustomText, setShowCustomText] = useState(false)
-  const [contractGenForm, setContractGenForm] = useState({ contract_id: '', date: '', sub_name: '', sub_address: '', entity_type: 'sole proprietorship', trade: '', project_name: '', project_address: '', owner_name: '', owner_address: '', contract_amount: '', pay_pct: '100', scope_of_work: '', job_number: '', subcontract_number: '', pm_name: 'Peyton White', superintendent: 'Landon Moore', cover_letter_body: 'Please carefully review paragraphs # 5 and #23 of the enclosed contract. All change orders must have written authorization (defined as a formal NV Construction change order or an email approval defining scope and cost) from the Project Manager before work is commenced in order to ensure you will be paid for the work. All payment requests including claims for additional work must include a formal signed NV Construction Change Order in order for your draw to be processed and paid.\n\nWhile I understand that in the heat of battle, a NV Construction employee may ask you to perform work with a verbal authorization; you must get that authorization in writing before proceeding. Any work done with only a verbal agreement will result in not being paid. Also, please note in paragraph #23 that the NV superintendent is not authorized to approve change orders for additional work. That approval must come from the Project Manager.\n\nI highlight these paragraphs to protect you as a subcontractor and to ensure that at the end of the job there are no surprises for any of us, including our client.\n\nWe appreciate your cooperation in this matter and look forward to working with you on this project. Please acknowledge your agreement and understanding of this requirement by signing this letter in the space provided below, and then return the signed copy with your contract.', contract_documents: 'Subcontractor Proposal\nLink to Current Plan Sheets\nExhibit A Attached\nExhibit B Attached\nSchedule', scope_notes: '* Change Orders: You must receive written authorization from the Project Manager before you begin the work.\n* Daily broom swept clean-up of all trash & debris\n* Comply with all OSHA regulations. *PPE will be required at all times for this job\n* Time is of the essence for this project. Complete work per schedule provided below.' })
+  const [contractGenForm, setContractGenForm] = useState(EMPTY_GENERATOR_FORM)
 
   // Change orders state
   const [allCOs, setAllCOs] = useState([])
@@ -678,6 +679,8 @@ function JobDetailInner() {
   const [showSignPanel, setShowSignPanel] = useState(false)
   const [contractGenMsg, setContractGenMsg] = useState('')
   const contractGenRef = useRef(null)
+  const contractGenOpenedRef = useRef(null) // { contract_id, form } as last filled, for "changed?" checks
+  const contractGenSeqRef = useRef(0)
   const [sendingSign, setSendingSign] = useState(false)
   const [signMsg, setSignMsg] = useState('')
   const [signingRequests, setSigningRequests] = useState([])
@@ -4435,40 +4438,97 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     await loadContracts()
   }
 
-  function openContractGenerator(contract) {
-    const subName = contract.vendor_name || registeredSubs.find(s => s.sub_id === contract.sub_id)?.profiles?.company_name || ''
-    const yr = new Date().getFullYear().toString().slice(2)
+  // Generator prefill (prompt 96): rules in lib/subcontract-generator.js. The form opens at
+  // once with what is already loaded; saved values, job contacts and the sub's Directory
+  // row are filled in when they arrive, leaving any field the user has already changed.
+  function generatorInputs(contract, { directory, contacts, rows }) {
+    const assignment = registeredSubs.find(s => s.sub_id === contract.sub_id)
+    const subName = contract.vendor_name || assignment?.profiles?.company_name || ''
     const idx = contracts.findIndex(c => c.id === contract.id)
-    const subNo = String((idx >= 0 ? idx : contracts.length) + 1).padStart(3, '0')
-    const jobNum = job?.job_number || ''
-    setContractGenForm({
-      contract_id: contract.id,
-      date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
-      sub_name: subName,
-      sub_address: '',
-      entity_type: 'sole proprietorship',
-      trade: contract.description || '',
-      project_name: job?.project_name || '',
-      project_address: job?.location || '',
-      owner_name: '',
-      owner_address: '',
-      contract_amount: String(contract.contract_value || ''),
-      pay_pct: '100',
-      scope_of_work: '',
-      job_number: jobNum,
-      subcontract_number: `${yr}-${jobNum}-${subNo}`,
-      pm_name: 'Peyton White',
-      superintendent: 'Landon Moore',
-      cover_letter_body: 'Please carefully review paragraphs # 5 and #23 of the enclosed contract. All change orders must have written authorization (defined as a formal NV Construction change order or an email approval defining scope and cost) from the Project Manager before work is commenced in order to ensure you will be paid for the work. All payment requests including claims for additional work must include a formal signed NV Construction Change Order in order for your draw to be processed and paid.\n\nWhile I understand that in the heat of battle, a NV Construction employee may ask you to perform work with a verbal authorization; you must get that authorization in writing before proceeding. Any work done with only a verbal agreement will result in not being paid. Also, please note in paragraph #23 that the NV superintendent is not authorized to approve change orders for additional work. That approval must come from the Project Manager.\n\nI highlight these paragraphs to protect you as a subcontractor and to ensure that at the end of the job there are no surprises for any of us, including our client.\n\nWe appreciate your cooperation in this matter and look forward to working with you on this project. Please acknowledge your agreement and understanding of this requirement by signing this letter in the space provided below, and then return the signed copy with your contract.',
-      contract_documents: 'Subcontractor Proposal\nLink to Current Plan Sheets\nExhibit A Attached\nExhibit B Attached\nSchedule',
-      scope_notes: '* Change Orders: You must receive written authorization from the Project Manager before you begin the work.\n* Daily broom swept clean-up of all trash & debris\n* Comply with all OSHA regulations. *PPE will be required at all times for this job\n* Time is of the essence for this project. Complete work per schedule provided below.',
-    })
+    const sub = matchDirectoryEntry(directory, { subId: contract.sub_id || null, email: assignment?.sub_email || null, names: [contract.vendor_name, assignment?.profiles?.company_name, assignment?._companyName] })
+    const own = rows.find(r => r.id === contract.id)
+    return {
+      job, subcontract: contract, subName, sub, contacts,
+      saved: own?.generator_fields || null,
+      latestJobFields: latestSavedFields(rows.filter(r => r.job_id === id), JOB_LEVEL_KEYS, { excludeId: contract.id }),
+      latestSubFields: latestSavedFields(rows, SUB_LEVEL_KEYS, { excludeId: contract.id, match: r => isSameSub(r, contract) }),
+      position: (idx >= 0 ? idx : contracts.length) + 1,
+    }
+  }
+  // Saved generator fields for this job's subcontracts and this sub's on any job (RLS may
+  // limit the cross-job rows; then the sub-level fallbacks just have less to go on).
+  async function loadGeneratorRows(contract) {
+    const esc = v => String(v).replace(/[\\%_]/g, c => '\\' + c)
+    const queries = [cols => supabase.from('subcontracts').select(cols).eq('job_id', id)]
+    if (contract.sub_id) queries.push(cols => supabase.from('subcontracts').select(cols).eq('sub_id', contract.sub_id).limit(200))
+    if (String(contract.vendor_name || '').trim()) queries.push(cols => supabase.from('subcontracts').select(cols).ilike('vendor_name', esc(contract.vendor_name.trim())).limit(200))
+    const results = await Promise.all(queries.map(q => readGeneratorRows(q).catch(e => ({ rows: [], error: e }))))
+    const byId = new Map()
+    for (const r of results) {
+      if (r.error) console.warn('subcontract generator: saved fields not loaded:', r.error?.message || r.error)
+      for (const row of r.rows) byId.set(row.id, row)
+    }
+    if (results.some(r => r.missing)) console.warn('subcontract generator: generator_fields column missing (migration 079 not applied); fields are not remembered.')
+    return [...byId.values()]
+  }
+  async function openContractGenerator(contract) {
+    const seq = ++contractGenSeqRef.current
+    const initial = buildGeneratorDefaults(generatorInputs(contract, { directory: subDirectory, contacts: jobContacts, rows: [] }))
+    setContractGenForm(initial)
+    contractGenOpenedRef.current = { contract_id: contract.id, form: initial }
     setShowSignPanel(false)
     setSignMsg('')
     setContractGenMsg('')
     setShowContractGen(true)
     // The panel renders above the contract list, so bring it into view
     setTimeout(() => contractGenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+    const [directory, contacts, rows] = await Promise.all([
+      subDirectoryLoaded ? Promise.resolve(subDirectory) : loadSubDirectory().then(r => r || subDirectory),
+      supabase.from('job_contacts').select('*').eq('job_id', id).order('created_at', { ascending: true })
+        .then(({ data, error }) => { if (error) console.warn('subcontract generator: job contacts not loaded:', error.message); return data || jobContacts }, () => jobContacts),
+      loadGeneratorRows(contract).catch(e => { console.warn('subcontract generator:', e?.message || e); return [] }),
+    ])
+    if (seq !== contractGenSeqRef.current) return // another subcontract was opened meanwhile
+    const full = buildGeneratorDefaults(generatorInputs(contract, { directory, contacts, rows }))
+    // Fill only fields still as they opened (the user may have started typing).
+    setContractGenForm(f => {
+      if (f.contract_id !== contract.id) return f
+      const next = { ...f }
+      for (const k of Object.keys(full)) if (f[k] === initial[k]) next[k] = full[k]
+      // Compare later against the prefill, so edits made while loading still count as changes.
+      contractGenOpenedRef.current = { contract_id: contract.id, form: full }
+      return next
+    })
+  }
+
+  // Remember the form on this subcontract (subcontracts.generator_fields, migration 079).
+  // Never contract value / numbering / status / signing (lib/subcontract-generator.js).
+  // Before 079 the server skips it; this never blocks generating. Returns true when saved.
+  async function saveGeneratorFields(f, { onlyIfChanged = false } = {}) {
+    if (!f?.contract_id) return false
+    if (onlyIfChanged) {
+      const opened = contractGenOpenedRef.current
+      if (opened && opened.contract_id === f.contract_id && JSON.stringify(serializeGeneratorFields(opened.form, new Date(0))) === JSON.stringify(serializeGeneratorFields(f, new Date(0)))) return false
+    }
+    try {
+      const res = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: f.contract_id, generator_fields: serializeGeneratorFields(f) }) })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok || out.error) { console.warn('subcontract generator: fields not saved:', out.error || `HTTP ${res.status}`); return false }
+      if (out.generator_fields_skipped) { console.warn('subcontract generator: fields not saved (migration 079 not applied).'); return false }
+      if (contractGenOpenedRef.current?.contract_id === f.contract_id) contractGenOpenedRef.current = { contract_id: f.contract_id, form: f }
+      return true
+    } catch (e) {
+      console.warn('subcontract generator: fields not saved:', e?.message || e)
+      return false
+    }
+  }
+  function closeContractGenerator() {
+    saveGeneratorFields(contractGenForm, { onlyIfChanged: true })
+    setShowContractGen(false)
+  }
+  async function saveContractGenDetails() {
+    const ok = await saveGeneratorFields(contractGenForm)
+    setContractGenMsg(ok ? 'Details saved for this subcontract.' : 'Error: details could not be saved (they still go into the contract when you generate it).')
   }
 
   // Prefill the e-signature recipient from the contract's sub, else the company's contact on file
@@ -4679,6 +4739,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   function generateSubcontract() {
     const html = buildSubcontractHtml(contractGenForm)
+    saveGeneratorFields(contractGenForm)
     const toolbar = [
       '<style id="nv-edit-style">',
       '#nv-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#f0f0f0;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;font-family:sans-serif;font-size:13px;border-bottom:2px solid #e8590c;box-shadow:0 2px 8px rgba(0,0,0,.4)}',
@@ -4778,6 +4839,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
     setSendingSign(true)
     setSignMsg('')
+    saveGeneratorFields(contractGenForm)
     try {
       const html = buildSubcontractHtml(contractGenForm)
       // The document is staged in Storage (direct upload); the API gets only its path + receipt.
@@ -6200,6 +6262,9 @@ ${(budgets || []).length > 0 ? `
     const priorCompletion = job.contract_completion_date || null
     const nextCompletion = form.contract_completion_date || null
     if (nextCompletion !== priorCompletion) fields.contract_completion_date = nextCompletion
+    // Owner address (migration 079): also sent only when changed, so saves before 079 is
+    // applied don't warn when nobody touched it (the server drops it and warns otherwise).
+    if ((form.owner_address || '').trim() !== (job.owner_address || '').trim()) fields.owner_address = form.owner_address || ''
     try {
       let data = {}
       const res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
@@ -7206,6 +7271,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div><label style={s.label}>Name</label><input style={s.input} value={form.owner_name || ''} onChange={e => update('owner_name', e.target.value)} /></div>
                   <div><label style={s.label}>Email</label><input style={s.input} value={form.owner_email || ''} onChange={e => update('owner_email', e.target.value)} /></div>
                   <div><label style={s.label}>Phone</label><input style={s.input} value={form.owner_phone || ''} onChange={e => update('owner_phone', e.target.value)} /></div>
+                  <div style={{ gridColumn: '1 / -1' }}><label style={s.label}>Owner address</label><input style={s.input} value={form.owner_address || ''} onChange={e => update('owner_address', e.target.value)} placeholder="Street, City, State ZIP (used on subcontracts)" /></div>
                 </div>
                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Architect</p>
                 <div style={{ ...s.grid3, marginBottom: '16px' }} className="rx-grid-3">
@@ -8391,7 +8457,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div ref={contractGenRef} style={{ ...s.card, border: '1px solid #dcfce7', marginBottom: '1.25rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ ...s.cardTitle, margin: 0, color: '#16a34a' }}>Generate Subcontract</p>
-                  <button style={s.btnGray} onClick={() => setShowContractGen(false)}>Close</button>
+                  <button style={s.btnGray} onClick={closeContractGenerator}>Close</button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div><label style={s.label}>Date</label><input style={s.input} value={contractGenForm.date} onChange={e => setContractGenForm(f => ({ ...f, date: e.target.value }))} /></div>
@@ -8400,7 +8466,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div><label style={s.label}>Subcontractor name</label>
-                    <select style={s.input} value={contractGenForm.contract_id} onChange={e => { const c = contracts.find(x => x.id === e.target.value); if (c) openContractGenerator(c) }}>
+                    <select style={s.input} value={contractGenForm.contract_id} onChange={e => { const c = contracts.find(x => x.id === e.target.value); if (c) { saveGeneratorFields(contractGenForm, { onlyIfChanged: true }); openContractGenerator(c) } }}>
                       <option value="">— Select —</option>
                       {contracts.map(c => { const n = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown'; return <option key={c.id} value={c.id}>{n}{c.description ? ` — ${c.description}` : ''}</option> })}
                     </select>
@@ -8459,6 +8525,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button style={{ ...s.btn, background: '#dcfce7', color: '#16a34a' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
+                  <button style={s.btnGray} onClick={saveContractGenDetails} title="Remember these details on this subcontract">Save details</button>
                   <button style={{ ...s.btn, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => { if (showSignPanel) { setShowSignPanel(false); setSignMsg('') } else openSignPanel() }}>
                     {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
                   </button>

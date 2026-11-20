@@ -5,6 +5,8 @@ import { logChange } from '../../../lib/change-log'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { changedContractTerms, isSubcontractSigned } from '../../../lib/signing'
 import { stampSubcontractSigned } from '../../../lib/generated-contract'
+import { sanitizeGeneratorFields } from '../../../lib/subcontract-generator'
+import { writeWithMissingColumnRetry, isMissingColumnError, missingColumnName } from '../../../lib/missing-column-retry'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -127,6 +129,14 @@ export async function PUT(request) {
     const { id } = raw
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const fields = pick(raw)
+    // Generator form fields (prompt 96, migration 079): known text keys only, never
+    // contract value / numbering / status / signing. Not a contract term, so allowed
+    // on signed contracts too.
+    if ('generator_fields' in raw) {
+      const gf = sanitizeGeneratorFields(raw.generator_fields)
+      if (!gf) return Response.json({ error: 'generator_fields must be an object.' }, { status: 400 })
+      fields.generator_fields = gf
+    }
 
     // Fetch current values for auditing changed fields
     const { data: current, error: curErr } = await adminSupabase.from('subcontracts')
@@ -155,13 +165,24 @@ export async function PUT(request) {
 
     // Once signed, the contract terms change only through a change order.
     // Signed = signed_at, status 'signed', a signed PDF on file, or a signed e-sign request.
+    const extraSkipped = {}
     const termsChanged = changedContractTerms(current, fields)
     if (termsChanged.length && (isSubcontractSigned(current) || await hasSignedRequest(id))) {
       return Response.json({ error: `This subcontract is signed. ${termsChanged.join(', ').replace(/_/g, ' ')} can only change through a change order.` }, { status: 409 })
     }
 
-    const { error } = await adminSupabase.from('subcontracts').update(fields).eq('id', id)
-    if (error) return Response.json({ error: error.message }, { status: 500 })
+    // Before migration 079 there is no generator_fields column: the rest still saves,
+    // and a generator-only save is skipped (ok, with generator_fields_skipped).
+    const { error, dropped } = await writeWithMissingColumnRetry(
+      row => adminSupabase.from('subcontracts').update(row).eq('id', id), fields, { fallbackCols: ['generator_fields'] })
+    if (error) {
+      const onlyGen = Object.keys(fields).length === 1 && 'generator_fields' in fields
+      if (onlyGen && isMissingColumnError(error) && missingColumnName(error) === 'generator_fields') {
+        return Response.json({ ok: true, voidedSigningRequests: 0, generator_fields_skipped: true })
+      }
+      return Response.json({ error: error.message }, { status: 500 })
+    }
+    if (dropped.includes('generator_fields')) extraSkipped.generator_fields_skipped = true
 
     // Became non-draft (draft/null → active, …), or a non-draft contract moved job / company / sub:
     // make sure the sub is on the job (billing off unless they already billed on this job;
@@ -170,7 +191,7 @@ export async function PUT(request) {
     const becameLive = (current.status == null || isDraftStatus(current.status)) && next.status != null && !isDraftStatus(next.status)
     const partyMoved = !isDraftStatus(next.status) && ['job_id', 'company_id', 'sub_id'].some(k => k in fields && (fields[k] || null) !== (current[k] || null))
     const assignment_error = next.job_id && (becameLive || partyMoved) ? await assignForContract(next) : null
-    const extra = assignment_error ? { assignment_error } : {}
+    const extra = { ...(assignment_error ? { assignment_error } : {}), ...extraSkipped }
 
     // Terms changed after a signing request went out: that link would sign the old terms.
     let voidedSigningRequests = 0

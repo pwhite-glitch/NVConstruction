@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { denyUnlessOnJob } from '../../../lib/roles'
 import { jobIdFromPath } from '../../../lib/storage-path'
-import { JOB_DOC_CATEGORIES } from '../../../lib/job-docs'
+import { isJobDocCategory } from '../../../lib/job-docs'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -119,7 +119,7 @@ export async function POST(request) {
       if (!job_id || !storage_path || !file_name) return Response.json({ error: 'job_id, storage_path, file_name required' }, { status: 400 })
       if (jobIdFromPath(storage_path) !== String(job_id).toLowerCase()) return Response.json({ error: 'File path does not match the job.' }, { status: 400 })
       const cat = category || 'other'
-      if (!JOB_DOC_CATEGORIES.some(c => c.value === cat)) return Response.json({ error: 'Unknown document category.' }, { status: 400 })
+      if (!isJobDocCategory(cat)) return Response.json({ error: 'Unknown document category.' }, { status: 400 })
       const denied = await denyOnJob(auth, job_id)
       if (denied) return denied
       const { data, error } = await adminSupabase.from('job_documents')

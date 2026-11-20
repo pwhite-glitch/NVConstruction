@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isSub } from '../../../lib/server-auth'
 import { buildSubcontractHtml } from '../../../lib/buildSubcontractHtml'
 import { getSiteUrl } from '../../../lib/site-url'
+import { withExhibitAppendix } from '../../../lib/subcontract-exhibits'
+import { buildAndStoreExhibits } from '../../../lib/subcontract-exhibits-server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -76,7 +78,16 @@ export async function POST(request) {
     }
 
     const baseUrl = getSiteUrl()
-    const document_html = buildSubcontractHtml(f, baseUrl)
+    let document_html = buildSubcontractHtml(f, baseUrl)
+    // Prompt 97: attach Exhibit A (proposal) / B (job billing schedule) when on file. The sub
+    // can't choose here, so missing ones are skipped and a failure only leaves them off (logged).
+    try {
+      const ex = await buildAndStoreExhibits(adminSupabase, sc, { subtitle: sc.vendor_name || '' })
+      if (ex.path) document_html = withExhibitAppendix(document_html, ex.appendix)
+      else if (ex.error) console.error('sub-initiate-sign: exhibits not attached:', ex.error)
+    } catch (e) {
+      console.error('sub-initiate-sign: exhibits not attached:', e.message)
+    }
     const document_title = `Subcontract — ${sc.vendor_name || 'Sub'} · #${jobNum}`
 
     // Get sub email from auth — never from profiles.email which may be stale

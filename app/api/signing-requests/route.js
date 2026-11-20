@@ -8,6 +8,8 @@ import { denyJob, denyJobOf } from '../../../lib/roles'
 import { escapeHtml } from '../../../lib/email'
 import { isSubcontractSigned } from '../../../lib/signing'
 import { getSiteUrl } from '../../../lib/site-url'
+import { withExhibitAppendix } from '../../../lib/subcontract-exhibits'
+import { buildAndStoreExhibits } from '../../../lib/subcontract-exhibits-server'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,12 +50,14 @@ export async function POST(request) {
   const denied = await denyJob(adminSupabase, auth, job_id) ||
     (subcontract_id ? await denyJobOf(adminSupabase, auth, 'subcontracts', subcontract_id) : null)
   if (denied) return denied
+  let subcontract = null
   if (subcontract_id) {
-    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, status, signed_at, signed_contract_url').eq('id', subcontract_id).maybeSingle()
+    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, status, signed_at, signed_contract_url, bid_proposal_url, vendor_name').eq('id', subcontract_id).maybeSingle()
     if (scErr) return Response.json({ error: scErr.message }, { status: 500 })
     if (!sc) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     if (sc.job_id !== job_id) return Response.json({ error: 'That subcontract is on a different job.' }, { status: 400 })
     if (isSubcontractSigned(sc)) return Response.json({ error: 'This subcontract is already signed.' }, { status: 409 })
+    subcontract = sc
   }
 
   let document_html = inlineHtml
@@ -64,6 +68,28 @@ export async function POST(request) {
     if (dlErr || !file) return Response.json({ error: 'Could not read the staged document. Try again.' }, { status: 502 })
     document_html = new TextDecoder().decode(await file.arrayBuffer())
     if (!document_html) return Response.json({ error: 'The staged document is empty.' }, { status: 400 })
+  }
+
+  // Prompt 97: exhibits { proposal, billing } (the job page sends what the user kept after the
+  // missing-exhibit warning). Exhibit A (bid proposal) and B (job billing schedule) are merged
+  // into one stored PDF and the contract gets their cover pages + a pointer to it, so the signer
+  // sees them on the signing page and the signed copy keeps them. A failure stops the send
+  // (nothing is emailed) rather than sending without exhibits the user expected.
+  let exhibits_included = []
+  if (subcontract && body.exhibits && typeof body.exhibits === 'object') {
+    const include = { proposal: body.exhibits.proposal !== false, billing: body.exhibits.billing !== false }
+    if (include.proposal || include.billing) {
+      let ex
+      try {
+        ex = await buildAndStoreExhibits(adminSupabase, subcontract, { include, subtitle: subcontract.vendor_name || '' })
+      } catch (e) {
+        ex = { error: e.message || 'unknown error' }
+      }
+      if (ex.error && !ex.path) return Response.json({ error: 'Nothing was sent: could not attach the exhibits (' + ex.error + ').' }, { status: 502 })
+      if (ex.unreadable?.length) return Response.json({ error: 'Nothing was sent: could not read ' + ex.unreadable.map(u => `Exhibit ${u.key === 'proposal' ? 'A' : 'B'} (${u.name})`).join(' and ') + '. Try again.' }, { status: 502 })
+      document_html = withExhibitAppendix(document_html, ex.appendix)
+      exhibits_included = ex.included || []
+    }
   }
 
   const { data: row, error: insertErr } = await adminSupabase
@@ -165,11 +191,11 @@ export async function POST(request) {
   if (subcontract_id) {
     const { data: old, error: voidErr } = await adminSupabase.from('signing_requests')
       .update({ status: 'voided' }).eq('subcontract_id', subcontract_id).eq('status', 'pending').neq('id', row.id).select('id')
-    if (voidErr) return Response.json({ data: rowMeta, saved_contract, warning: 'Sent, but older signing links could not be cancelled: ' + voidErr.message })
+    if (voidErr) return Response.json({ data: rowMeta, saved_contract, exhibits_included, warning: 'Sent, but older signing links could not be cancelled: ' + voidErr.message })
     voided = old?.length || 0
   }
 
-  return Response.json({ data: rowMeta, saved_contract, voided })
+  return Response.json({ data: rowMeta, saved_contract, voided, exhibits_included })
 }
 
 // PATCH { id, action: 'void' } — cancel a pending signing request (the link stops working).

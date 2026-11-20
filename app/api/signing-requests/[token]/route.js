@@ -7,6 +7,7 @@ import { getSiteUrl } from '../../../../lib/site-url'
 import { mbRequestByToken, loadPinnedPdf, completeMbSigning, preflightWorkflow, getPaymentInstructions } from '../../../../lib/mb-server'
 import { isMb } from '../../../../lib/mb-orders'
 import { streamedJsonResponse } from '../../../../lib/stream-response'
+import { exhibitsPathFromHtml } from '../../../../lib/subcontract-exhibits'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,7 +49,13 @@ export async function GET(request, { params }) {
   }
   // Subcontract: show the signer which company they sign for ("Signing on behalf of").
   const company_name = await subcontractCompany(data.subcontract_id)
-  const out = { data: company_name ? { ...data, company_name } : data }
+  // Prompt 97: the merged Exhibit A / B PDF this contract points to (served for this token only).
+  const exhibitsPath = includeHtml ? exhibitsPathFromHtml(data.document_html, data.subcontract_id) : null
+  const extra = {
+    ...(company_name ? { company_name } : {}),
+    ...(exhibitsPath && data.status !== 'voided' ? { exhibits_url: `/api/signing-requests/${encodeURIComponent(token)}/exhibits` } : {}),
+  }
+  const out = { data: Object.keys(extra).length ? { ...data, ...extra } : data }
   // ?html=1 carries the whole document: stream it (same JSON shape, no Content-Length) so a
   // large generated contract is not capped as a buffered response.
   if (includeHtml) return streamedJsonResponse(out)

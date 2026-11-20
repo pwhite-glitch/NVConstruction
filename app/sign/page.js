@@ -318,6 +318,23 @@ function SignPageInner() {
           </div>
         )}
 
+        {request?.document_kind !== 'pdf' && request?.exhibits_url && (
+          <div style={{ marginBottom: '20px' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
+              Exhibits (part of this contract)
+            </p>
+            <iframe
+              src={request.exhibits_url}
+              style={{ width: '100%', height: '600px', border: '1px solid #2a2a2a', borderRadius: '8px', background: '#fff', display: 'block' }}
+              title="Contract Exhibits"
+            />
+            <p style={{ margin: '10px 0 0', fontSize: '13px' }}>
+              <a href={request.exhibits_url} target="_blank" rel="noopener noreferrer" style={{ color: '#e8590c' }}>Open the exhibits PDF</a>
+              <span style={{ color: '#555' }}> — Exhibit A (your proposal) and Exhibit B (billing schedule). Review every page before signing.</span>
+            </p>
+          </div>
+        )}
+
         <div style={s.card}>
           <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#aaa', lineHeight: '1.6' }}>
             By typing your full legal name below and clicking Sign, you agree to electronically sign this document.

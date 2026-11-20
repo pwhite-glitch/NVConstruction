@@ -52,6 +52,8 @@ import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/ce
 import { getSiteUrl } from '../../lib/site-url'
 import RfiCommentThread from '../components/RfiCommentThread'
 import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib/job-doc-client'
+import { confirmExhibits, exhibitAppendixHtml, withExhibitAppendix, fileBaseName, BILLING_SCHEDULE_CATEGORY } from '../../lib/subcontract-exhibits'
+import { canUploadSignedContract, signedUploadPath, signedMethodLabel, SIGNED_UPLOAD_ACCEPT } from '../../lib/signed-upload'
 import { readJsonResponse, fetchJson, jsonInit, rawResponseError } from '../../lib/fetch-json'
 import { uploadThenSend, putToSignedUrl } from '../../lib/file-upload-client'
 import { exportOwnerReimbZip } from '../../lib/export-client'
@@ -685,6 +687,13 @@ function JobDetailInner() {
   const [signMsg, setSignMsg] = useState('')
   const [signingRequests, setSigningRequests] = useState([])
   const [signingLoadError, setSigningLoadError] = useState('')
+  // Prompt 97: office signed-contract upload + Exhibit B billing schedule (job document)
+  const [uploadingSignedFor, setUploadingSignedFor] = useState(null)
+  const [billingScheduleDoc, setBillingScheduleDoc] = useState(null) // newest job_documents row, category billing_schedule
+  const [exhibitBNotes, setExhibitBNotes] = useState('')
+  const [exhibitBPreview, setExhibitBPreview] = useState(null) // { url, bytes }
+  const [exhibitBBusy, setExhibitBBusy] = useState('')
+  const [exhibitBMsg, setExhibitBMsg] = useState('')
 
   // Lookahead state
   const [lookahead, setLookahead] = useState(null)
@@ -870,6 +879,8 @@ function JobDetailInner() {
     const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url, signed_at, bid_proposal_url, onedrive_url, status, company_id').eq('job_id', id)
     // Separate query: these columns come from migration 031 and this errors (gen = null) until it is applied
     const { data: gen } = await supabase.from('subcontracts').select('id, generated_contract_path, generated_at').eq('job_id', id)
+    // Separate query: signed_method comes from migration 080 (prompt 97); null until it is applied
+    const { data: signedMethods } = await supabase.from('subcontracts').select('id, signed_method').eq('job_id', id)
     // Fetch SOV line budget assignments so committedForItem can use them when no explicit budget_allocations are set
     const contractIds = summary.map(c => c.id)
     const { data: sovLines } = contractIds.length
@@ -901,10 +912,20 @@ function JobDetailInner() {
         company_id: rawRow?.company_id ?? c.company_id ?? null,
         generated_contract_path: genRow?.generated_contract_path ?? null,
         generated_at: genRow?.generated_at ?? null,
+        signed_method: signedMethods?.find(r => r.id === c.id)?.signed_method ?? null,
       }
     })
     setContracts(merged)
     return merged
+  }
+
+  // Newest Exhibit B billing schedule for this job (latest one wins).
+  async function loadBillingScheduleDoc() {
+    const { data, error } = await supabase.from('job_documents').select('id, storage_path, file_name, uploaded_at')
+      .eq('job_id', id).eq('category', BILLING_SCHEDULE_CATEGORY).order('uploaded_at', { ascending: false }).limit(1)
+    if (error) { console.warn('billing schedule:', error.message); return null }
+    setBillingScheduleDoc(data?.[0] || null)
+    return data?.[0] || null
   }
 
   async function loadBudgetItems() {
@@ -3008,8 +3029,8 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
 
   useEffect(() => {
     if (!id) return
-    if (activeTab === 'details') { loadNvSubcontracts() }
-    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob(); reloadSubs() }
+    if (activeTab === 'details') { loadNvSubcontracts(); loadBillingScheduleDoc() }
+    if (activeTab === 'contracts') { loadContracts(); loadBillingScheduleDoc();loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob(); reloadSubs() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadAllCOs(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations(); loadNvSubcontracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadSubDirectory(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
@@ -4737,8 +4758,41 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     return html
   }
 
+  // Prompt 97: Exhibit A (this sub's bid proposal) / Exhibit B (the job's billing schedule).
+  // Warn before going on without one (OK = Continue anyway, Cancel = Cancel); a missing one is left out.
+  function exhibitCheck(action) {
+    const contract = contracts.find(c => c.id === contractGenForm.contract_id)
+    if (!contract) return { proceed: true, include: { proposal: false, billing: false }, warnings: [] }
+    return confirmExhibits({ proposalPath: contract.bid_proposal_url, billingDoc: billingScheduleDoc }, msg => window.confirm(msg), action)
+  }
+
+  // Cover pages for the exhibits being attached (file names only; the merged PDF is stored by the server).
+  function exhibitCoversHtml(include) {
+    const contract = contracts.find(c => c.id === contractGenForm.contract_id)
+    return exhibitAppendixHtml({
+      proposal: include.proposal && contract?.bid_proposal_url ? { name: fileBaseName(contract.bid_proposal_url) } : null,
+      billing: include.billing && billingScheduleDoc ? { name: billingScheduleDoc.file_name || fileBaseName(billingScheduleDoc.storage_path) } : null,
+    })
+  }
+
+  // Newest stored exhibits PDF for a subcontract (kind 'latest') or the one its signed e-sign copy points to ('signed').
+  async function openSubcontractExhibits(contractId, kind = 'latest') {
+    let errText = ''
+    const url = await openFile(async () => {
+      const r = await fetchJson(authFetch, `/api/subcontract-exhibits?subcontract_id=${encodeURIComponent(contractId)}&kind=${kind}`)
+      if (!r.ok) errText = r.error
+      return r.ok ? r.data?.url || null : null
+    })
+    if (!url) alert('Could not open the exhibits PDF' + (errText ? ': ' + errText : '.'))
+  }
+
   function generateSubcontract() {
-    const html = buildSubcontractHtml(contractGenForm)
+    const check = exhibitCheck('generate the contract without it')
+    if (!check.proceed) { setContractGenMsg('Cancelled. Nothing was generated.'); return }
+    const include = check.include
+    const wantsExhibits = !!contractGenForm.contract_id && (include.proposal || include.billing)
+    const baseHtml = buildSubcontractHtml(contractGenForm)
+    const html = wantsExhibits ? withExhibitAppendix(baseHtml, exhibitCoversHtml(include)) : baseHtml
     saveGeneratorFields(contractGenForm)
     const toolbar = [
       '<style id="nv-edit-style">',
@@ -4751,6 +4805,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       '<span style="font-weight:700;color:#e8590c;font-size:15px;">&#9998; Editing Mode</span>',
       '<span style="color:#888;font-size:12px;">Click anywhere on the contract to edit — every word is changeable.</span>',
       '<div style="flex:1"></div>',
+      wantsExhibits ? '<span id="nv-exhibits-slot" style="color:#555;font-size:12px;">Attaching exhibits…</span>' : '',
       '<button id="nv-print-btn">Print / Save PDF</button>',
       '</div>',
       '<script>',
@@ -4783,23 +4838,127 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const contractId = contractGenForm.contract_id
     if (contractId) {
       const opened = !!win
-      // The HTML goes straight to Storage; the API only records the verified path.
-      uploadThenSend({
-        fetchFn: authFetch, putFn: fetch, target: 'generated-contract',
-        file: new File([html], 'contract.html', { type: 'text/html' }),
-        context: { job_id: id, record_id: contractId },
-        send: attachment => fetchJson(authFetch, '/api/subcontract-contract', jsonInit('POST', { subcontract_id: contractId, attachment })),
-      })
-        .then(r => {
-          if (!r.ok) throw new Error(r.error)
+      // Exhibits: the server merges Exhibit A + B into one stored PDF; the print window gets a
+      // button to open it and the saved copy points to it (same appendix the e-sign packet uses).
+      const exhibitsP = wantsExhibits
+        ? fetchJson(authFetch, '/api/subcontract-exhibits', jsonInit('POST', { subcontract_id: contractId, include, subtitle: contractGenForm.sub_name || '' }))
+        : Promise.resolve(null)
+      exhibitsP
+        .then(ex => {
+          let saveHtml = html
+          let exErr = ''
+          let exNote = ''
+          const slot = opened ? win.document?.getElementById?.('nv-exhibits-slot') : null
+          if (ex && !ex.ok) {
+            exErr = 'the exhibits could not be attached: ' + ex.error
+            if (slot) slot.textContent = 'Exhibits could not be attached.'
+          } else if (ex?.data?.path) {
+            saveHtml = withExhibitAppendix(baseHtml, ex.data.appendix)
+            const url = ex.data.url
+            if (slot) {
+              slot.textContent = ''
+              const b = win.document.createElement('button')
+              b.textContent = 'Open Exhibits PDF (A/B)'
+              b.addEventListener('click', () => { if (url) win.open(url, '_blank') })
+              slot.appendChild(b)
+            }
+            const parts = [...(ex.data.notes || []).map(n => `${n.name} is attached separately (${n.reason})`), ...(ex.data.unreadable || []).map(u => `${u.name} could not be read and was left out`)]
+            exNote = ' Exhibits PDF ready (Open exhibits below).' + (parts.length ? ' Note: ' + parts.join('; ') + '.' : '')
+          } else if (slot) slot.textContent = ''
+          // The HTML goes straight to Storage; the API only records the verified path.
+          return uploadThenSend({
+            fetchFn: authFetch, putFn: fetch, target: 'generated-contract',
+            file: new File([saveHtml], 'contract.html', { type: 'text/html' }),
+            context: { job_id: id, record_id: contractId },
+            send: attachment => fetchJson(authFetch, '/api/subcontract-contract', jsonInit('POST', { subcontract_id: contractId, attachment })),
+          }).then(r => ({ r, exErr, exNote }))
+        })
+        .then(({ r, exErr, exNote }) => {
+          if (!r.ok) throw new Error(r.error + (exErr ? '; ' + exErr : ''))
           markContractGenerated(contractId, r.data?.data)
-          if (opened) setContractGenMsg('Contract opened in a new window. A copy was saved ("Last generated contract" on the row).')
+          if (exErr) setContractGenMsg(`Error: contract ${opened ? 'opened and a copy was saved' : 'copy was saved'}, but ${exErr}`)
+          else if (opened) setContractGenMsg('Contract opened in a new window. A copy was saved ("Last generated contract" on the row).' + exNote)
         })
         .catch(e => {
           console.error('save generated contract:', e)
           setContractGenMsg(opened ? 'Error: contract opened, but saving a copy failed: ' + e.message : 'Error: the contract window was blocked, and saving a copy failed: ' + e.message)
         })
     }
+  }
+
+  // Prompt 97: office "Upload signed contract" (paper-signed instead of e-sign). The file goes to
+  // documents/contracts/<id>/ with a signed upload link (/api/sub-docs checks job access), then
+  // /api/subcontracts/signed-upload records it (signing fields only; never amounts or billing).
+  async function uploadOfficeSignedContract(c, file) {
+    if (!file) return
+    if (c.signed_contract_url && !window.confirm(`A signed contract is already on file for ${c.vendor_name || 'this subcontract'}. Replace it with "${file.name}"?`)) return
+    setUploadingSignedFor(c.id)
+    try {
+      const path = signedUploadPath(c.id, file.name)
+      const urlRes = await fetchJson(authFetch, '/api/sub-docs', jsonInit('POST', { action: 'upload-url', path }))
+      if (!urlRes.ok || !urlRes.data?.signedUrl) throw new Error(urlRes.ok ? 'Could not get an upload link.' : urlRes.error)
+      const up = await putToSignedUrl(fetch, urlRes.data.signedUrl, file)
+      if (!up.ok) throw new Error(up.error)
+      const r = await fetchJson(authFetch, '/api/subcontracts/signed-upload', jsonInit('POST', { subcontract_id: c.id, job_id: id, path, replace: !!c.signed_contract_url }))
+      if (!r.ok) throw new Error('The file uploaded, but it was not saved as the signed contract: ' + r.error)
+      await loadContracts()
+      if (r.data?.warning) alert(r.data.warning)
+    } catch (e) {
+      alert('Upload signed contract: ' + (e?.message || 'failed'))
+    } finally {
+      setUploadingSignedFor(null)
+    }
+  }
+
+  // Exhibit B billing schedule: built from the sub billing settings shown in Job Details.
+  function exhibitBJob() {
+    const src = { ...(job || {}), ...(form || {}) }
+    return {
+      project_name: src.project_name, job_number: src.job_number, location: src.location,
+      sub_billing_start: src.sub_billing_start, sub_billing_frequency: src.sub_billing_frequency,
+      sub_billing_due: src.sub_billing_due, sub_billing_anchor: src.sub_billing_anchor,
+    }
+  }
+
+  function clearExhibitBPreview() {
+    setExhibitBPreview(prev => { if (prev?.url) URL.revokeObjectURL(prev.url); return null })
+  }
+
+  async function previewExhibitB() {
+    setExhibitBBusy('preview')
+    setExhibitBMsg('')
+    try {
+      const { buildExhibitBPdf } = await import('../../lib/exhibit-b-pdf')
+      const bytes = await buildExhibitBPdf({ job: exhibitBJob(), notes: exhibitBNotes })
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+      setExhibitBPreview(prev => { if (prev?.url) URL.revokeObjectURL(prev.url); return { url, bytes } })
+    } catch (e) {
+      setExhibitBMsg('Error: could not build the billing schedule: ' + (e?.message || e))
+    } finally {
+      setExhibitBBusy('')
+    }
+  }
+
+  // Saved as this job's newest 'billing_schedule' job document (the newest one is Exhibit B).
+  async function saveExhibitBFile(file, label) {
+    setExhibitBBusy('save')
+    setExhibitBMsg('')
+    try {
+      const out = await uploadJobDocument({ fetchFn: authFetch, putFn: fetch, jobId: id, category: BILLING_SCHEDULE_CATEGORY, file })
+      if (out.error) setExhibitBMsg('Error: ' + out.error)
+      else setExhibitBMsg(`${label} saved as this job's Exhibit B. It is attached to subcontracts generated or sent from now on.`)
+      if (out.uploaded) { await loadBillingScheduleDoc(); if (activeTab === 'documents') loadJobDocs() }
+      return !out.error
+    } finally {
+      setExhibitBBusy('')
+    }
+  }
+
+  async function saveGeneratedExhibitB() {
+    if (!exhibitBPreview?.bytes) return
+    const { exhibitBFileName } = await import('../../lib/exhibit-b-pdf')
+    const file = new File([exhibitBPreview.bytes], exhibitBFileName(exhibitBJob()), { type: 'application/pdf' })
+    if (await saveExhibitBFile(file, 'Generated billing schedule')) clearExhibitBPreview()
   }
 
   async function loadSigningRequests() {
@@ -4837,6 +4996,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       setSignMsg('Error: This subcontract is a draft. Activate it before sending it for signature.')
       return
     }
+    const check = exhibitCheck('send it for signature without it')
+    if (!check.proceed) { setSignMsg('Cancelled. Nothing was sent.'); return }
     setSendingSign(true)
     setSignMsg('')
     saveGeneratorFields(contractGenForm)
@@ -4854,12 +5015,16 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           signer_name: signerName.trim(),
           document_attachment: attachment,
           document_title: `Subcontract — ${contractGenForm.sub_name} — Job #${contractGenForm.job_number}`,
+          // The server merges and attaches Exhibit A / B (prompt 97); a missing one the user
+          // continued without is false here and left out.
+          ...(contractGenForm.contract_id ? { exhibits: check.include } : {}),
         })),
       })
       if (!r.ok) { setSignMsg('Error: ' + (r.stage === 'upload' ? 'could not stage the document: ' : '') + r.error); await loadSigningRequests(); return }
       const json = r.data || {}
       markContractGenerated(contractGenForm.contract_id, json.saved_contract)
-      setSignMsg('Sent! The subcontractor will receive an email link to sign.' + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
+      const exList = (json.exhibits_included || []).map(k => (k === 'proposal' ? 'Exhibit A' : 'Exhibit B'))
+      setSignMsg('Sent! The subcontractor will receive an email link to sign.' + (exList.length ? ` ${exList.join(' and ')} attached.` : '') + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
       setShowSignPanel(false)
       setSignerEmail('')
       setSignerName('')
@@ -7263,6 +7428,52 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </>}
               </div>
 
+              {/* Prompt 97: Exhibit B, attached behind every subcontract generated or sent for e-sign */}
+              <div style={s.card}>
+                <p style={s.cardTitle}>Billing Schedule (Exhibit B)</p>
+                <p style={{ fontSize: '12px', color: '#4b5563', marginTop: '-0.75rem', marginBottom: '12px' }}>
+                  Attached behind every subcontract (after Exhibit A, the sub&apos;s proposal) when you generate it or send it for e-signature. The newest one saved here is used.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  {billingScheduleDoc ? (
+                    <>
+                      <span style={{ fontSize: '13px', color: '#111827', overflowWrap: 'anywhere' }}>📄 {billingScheduleDoc.file_name}</span>
+                      {billingScheduleDoc.uploaded_at && <span style={{ fontSize: '12px', color: '#6b7280' }}>saved {new Date(billingScheduleDoc.uploaded_at).toLocaleDateString('en-US', { timeZone: 'America/Chicago' })}</span>}
+                      <button type="button" style={s.btnSmall} onClick={() => openJobDoc(billingScheduleDoc.storage_path)}>Open</button>
+                    </>
+                  ) : (
+                    <span style={{ fontSize: '13px', color: '#b45309' }}>Not set. Subcontracts will warn that Exhibit B is missing.</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <label style={{ ...s.btnSmall, display: 'inline-flex', alignItems: 'center', cursor: exhibitBBusy ? 'not-allowed' : 'pointer', opacity: exhibitBBusy ? 0.6 : 1 }}>
+                    {exhibitBBusy === 'save' ? 'Saving…' : 'Upload my own (PDF or image)'}
+                    <input type="file" accept=".pdf,.png,.jpg,.jpeg,.heic,application/pdf,image/*" style={{ display: 'none' }} disabled={!!exhibitBBusy}
+                      onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) saveExhibitBFile(f, `"${f.name}"`) }} />
+                  </label>
+                  <button type="button" style={{ ...s.btnSmallOrange, opacity: exhibitBBusy ? 0.6 : 1 }} disabled={!!exhibitBBusy} onClick={previewExhibitB}>
+                    {exhibitBBusy === 'preview' ? 'Building…' : 'Generate from job billing settings'}
+                  </button>
+                </div>
+                <div style={{ marginTop: '10px' }}>
+                  <label style={s.label}>Notes printed on the generated schedule (optional)</label>
+                  <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical', fontFamily: 'inherit' }} value={exhibitBNotes} onChange={e => setExhibitBNotes(e.target.value)} placeholder="e.g. Submit pay apps through the sub portal. Lien waivers required with each application." />
+                  <p style={{ fontSize: '11px', color: '#6b7280', margin: '4px 0 0' }}>Uses the subcontractor billing settings above (frequency, first due date). Save the job first if you changed them.</p>
+                </div>
+                {exhibitBPreview && (
+                  <div style={{ marginTop: '12px' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '700', color: '#374151', margin: '0 0 6px' }}>Preview. Nothing is saved until you click Save.</p>
+                    <iframe src={exhibitBPreview.url} title="Exhibit B preview" style={{ width: '100%', height: '520px', border: '1px solid #e5e7eb', borderRadius: '8px', background: '#fff' }} />
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      <button type="button" style={{ ...s.btnSmall, background: '#16a34a', color: '#fff', border: '1px solid #16a34a', opacity: exhibitBBusy ? 0.6 : 1 }} disabled={!!exhibitBBusy} onClick={saveGeneratedExhibitB}>Save as Exhibit B</button>
+                      <button type="button" style={s.btnSmall} onClick={previewExhibitB} disabled={!!exhibitBBusy}>Refresh preview</button>
+                      <button type="button" style={s.btnSmall} onClick={clearExhibitBPreview}>Discard</button>
+                    </div>
+                  </div>
+                )}
+                {exhibitBMsg && <p style={{ fontSize: '12px', color: exhibitBMsg.startsWith('Error') ? '#dc2626' : '#16a34a', margin: '8px 0 0' }}>{exhibitBMsg}</p>}
+              </div>
+
               <div style={s.card}>
                 <p style={s.cardTitle}>{(form.nv_role || 'gc') === 'sub' ? 'General Contractor, design team & permits' : 'Owner, design team & permits'}</p>
                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>{(form.nv_role || 'gc') === 'sub' ? 'General Contractor' : 'Owner'}</p>
@@ -8526,10 +8737,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button style={{ ...s.btn, background: '#dcfce7', color: '#16a34a' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
                   <button style={s.btnGray} onClick={saveContractGenDetails} title="Remember these details on this subcontract">Save details</button>
+                  {contractGenForm.contract_id && <button style={s.btnGray} onClick={() => openSubcontractExhibits(contractGenForm.contract_id, 'latest')} title="The newest merged Exhibit A / B PDF for this subcontract">Open exhibits</button>}
                   <button style={{ ...s.btn, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => { if (showSignPanel) { setShowSignPanel(false); setSignMsg('') } else openSignPanel() }}>
                     {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
                   </button>
                 </div>
+                {contractGenForm.contract_id && (() => {
+                  const gc = contracts.find(c => c.id === contractGenForm.contract_id)
+                  return (
+                    <p style={{ fontSize: '12px', color: '#4b5563', marginTop: '8px' }}>
+                      Exhibit A (proposal): {gc?.bid_proposal_url ? <strong>{fileBaseName(gc.bid_proposal_url)}</strong> : <span style={{ color: '#b45309' }}>not uploaded</span>}
+                      {' · '}Exhibit B (billing schedule): {billingScheduleDoc ? <strong>{billingScheduleDoc.file_name}</strong> : <span style={{ color: '#b45309' }}>not set for this job (Job Details)</span>}
+                    </p>
+                  )
+                })()}
                 {contractGenMsg && (
                   <p style={{ fontSize: '12px', color: contractGenMsg.startsWith('Error') ? '#dc2626' : '#16a34a', marginTop: '8px' }}>{contractGenMsg}</p>
                 )}
@@ -8810,6 +9031,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {c.generated_contract_path && <button style={s.btnSmall} onClick={() => openLastGeneratedContract(c)} title={c.generated_at ? `Generated ${new Date(c.generated_at).toLocaleString('en-US')}` : undefined}>Last generated contract</button>}
                           {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#bfdbfe', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
                           {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #dcfce7' }} onClick={() => openSignedContractUrl(c)}>Signed Contract ↗</button>}
+                          {c.signed_contract_url && signedMethodLabel(c.signed_method) && (
+                            <span title={c.signed_method === 'manual_upload' ? 'Signed copy uploaded by the office' : 'Signed on the e-signature page'} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>
+                              {signedMethodLabel(c.signed_method)}
+                            </span>
+                          )}
+                          {c.signed_contract_url && c.signed_method === 'esign' && <button style={s.btnSmall} onClick={() => openSubcontractExhibits(c.id, 'signed')} title="Exhibit A / B as attached to the e-signed contract">Signed exhibits</button>}
+                          {canUploadSignedContract(userRole) && (
+                            <label style={{ ...s.btnSmall, display: 'inline-flex', alignItems: 'center', cursor: uploadingSignedFor === c.id ? 'not-allowed' : 'pointer', opacity: uploadingSignedFor === c.id ? 0.6 : 1 }}
+                              title={c.signed_contract_url ? 'Replace the signed contract on file (asks first)' : 'Signed on paper instead of e-sign? Upload the signed PDF or a photo.'}>
+                              {uploadingSignedFor === c.id ? 'Uploading…' : c.signed_contract_url ? 'Replace signed contract' : 'Upload signed contract'}
+                              <input type="file" accept={SIGNED_UPLOAD_ACCEPT} style={{ display: 'none' }} disabled={uploadingSignedFor === c.id}
+                                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadOfficeSignedContract(c, f) }} />
+                            </label>
+                          )}
                           <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10), bid_proposal_url: c.bid_proposal_url || '' }); setEditContractBidFile(null) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>
@@ -13242,7 +13477,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <span style={{ fontSize: '14px', color: '#111827' }}>📄 {d.file_name}</span>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
                         <span style={{ padding: '2px 8px', background: '#fff7ed', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
-                          {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : 'Other'}
+                          {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : d.category === 'billing_schedule' ? 'Billing Schedule (Exhibit B)' : 'Other'}
                         </span>
                         <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
                       </div>

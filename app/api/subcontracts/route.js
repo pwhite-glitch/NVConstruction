@@ -7,6 +7,7 @@ import { changedContractTerms, isSubcontractSigned } from '../../../lib/signing'
 import { stampSubcontractSigned } from '../../../lib/generated-contract'
 import { sanitizeGeneratorFields } from '../../../lib/subcontract-generator'
 import { writeWithMissingColumnRetry, isMissingColumnError, missingColumnName } from '../../../lib/missing-column-retry'
+import { sanitizeExhibitList, exhibitFileTypeError, fileBaseName, BILLING_SCHEDULE_CATEGORY } from '../../../lib/subcontract-exhibits'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -24,6 +25,50 @@ function pick(obj) {
 }
 
 const isDraftStatus = s => s === 'draft'
+
+// Prompt 103: a NEW or CHANGED bid proposal (Exhibit A) must be a PDF or image. Existing
+// .doc/.docx records keep saving as long as the path is unchanged.
+function bidProposalError(next, prev = null) {
+  const p = String(next || '').trim()
+  if (!p || p === String(prev || '').trim()) return null
+  const err = exhibitFileTypeError(fileBaseName(p))
+  return err ? `Bid proposal: ${err}` : null
+}
+
+// Prompt 103: extra exhibits (generator_fields.exhibits). Every id must be a job document of
+// this subcontract's job (inside "<job_id>/"), not the billing schedule (that is Exhibit B),
+// and a PDF / image. Returns { list } or { error }.
+async function validateExhibitList(raw, jobId) {
+  const list = sanitizeExhibitList(raw)
+  if (!list) return { error: 'exhibits must be a list.' }
+  if (!list.length) return { list }
+  const { data, error } = await adminSupabase.from('job_documents')
+    .select('id, job_id, category, storage_path, file_name').in('id', list.map(e => e.job_document_id))
+  if (error) return { error: error.message, status: 500 }
+  const byId = new Map((data || []).map(r => [String(r.id).toLowerCase(), r]))
+  for (const e of list) {
+    const row = byId.get(e.job_document_id)
+    const name = row ? (row.file_name || fileBaseName(row.storage_path)) : ''
+    if (!row || row.job_id !== jobId || !String(row.storage_path || '').toLowerCase().startsWith(String(jobId).toLowerCase() + '/')) {
+      return { error: `Exhibit ${name ? `"${name}"` : e.job_document_id} is not a document on this job.` }
+    }
+    if (row.category === BILLING_SCHEDULE_CATEGORY) return { error: `"${name}" is the billing schedule, which is already Exhibit B.` }
+    const typeErr = exhibitFileTypeError(name)
+    if (typeErr) return { error: `"${name}": ${typeErr}` }
+  }
+  return { list }
+}
+
+// Current generator_fields ({} when unset or when the column is missing).
+async function currentGeneratorFields(id) {
+  const { data, error } = await adminSupabase.from('subcontracts').select('generator_fields').eq('id', id).maybeSingle()
+  if (error) {
+    if (isMissingColumnError(error) || /generator_fields/.test(error.message || '')) return { gf: {} }
+    return { error: error.message }
+  }
+  const gf = data?.generator_fields
+  return { gf: gf && typeof gf === 'object' && !Array.isArray(gf) ? gf : {} }
+}
 
 // A non-draft contract puts its sub on the job with billing off unless they already billed
 // on this job (server-side, so Bid
@@ -79,6 +124,8 @@ export async function POST(request) {
     const body = pick(await request.json())
     const denied = await denyJob(adminSupabase, auth, body.job_id)
     if (denied) return denied
+    const bidErr = bidProposalError(body.bid_proposal_url)
+    if (bidErr) return Response.json({ error: bidErr }, { status: 400 })
     const { error, data } = await adminSupabase.from('subcontracts').insert(body).select('id').single()
     if (error) return Response.json({ error: error.message }, { status: 500 })
     if (body.job_id && !isDraftStatus(body.status)) {
@@ -138,14 +185,37 @@ export async function PUT(request) {
       fields.generator_fields = gf
     }
 
+    if ('exhibits' in raw && !Array.isArray(raw.exhibits)) return Response.json({ error: 'exhibits must be a list.' }, { status: 400 })
+
     // Fetch current values for auditing changed fields
     const { data: current, error: curErr } = await adminSupabase.from('subcontracts')
-      .select('contract_value, description, special_terms, status, signed_at, vendor_name, job_id, company_id, sub_id, signed_contract_url').eq('id', id).maybeSingle()
+      .select('contract_value, description, special_terms, status, signed_at, vendor_name, job_id, company_id, sub_id, signed_contract_url, bid_proposal_url').eq('id', id).maybeSingle()
     if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
     if (!current) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     const denied = await denyJob(adminSupabase, auth, current?.job_id) ||
       (fields.job_id && fields.job_id !== current?.job_id ? await denyJob(adminSupabase, auth, fields.job_id) : null)
     if (denied) return denied
+
+    if ('bid_proposal_url' in fields) {
+      const bidErr = bidProposalError(fields.bid_proposal_url, current.bid_proposal_url)
+      if (bidErr) return Response.json({ error: bidErr }, { status: 400 })
+    }
+
+    // Prompt 103: extra exhibits live in generator_fields.exhibits. A text-only save keeps the
+    // saved list; an exhibits-only save keeps the text fields. Not a contract term (allowed on
+    // signed contracts; it doesn't change what was signed).
+    if ('exhibits' in raw || 'generator_fields' in fields) {
+      const cur = await currentGeneratorFields(id)
+      if (cur.error) return Response.json({ error: cur.error }, { status: 500 })
+      let exhibits = Array.isArray(cur.gf.exhibits) ? sanitizeExhibitList(cur.gf.exhibits) : undefined
+      if ('exhibits' in raw) {
+        const v = await validateExhibitList(raw.exhibits, current.job_id)
+        if (v.error) return Response.json({ error: v.error }, { status: v.status || 400 })
+        exhibits = v.list
+      }
+      const base = 'generator_fields' in fields ? fields.generator_fields : (() => { const { exhibits: _x, ...rest } = cur.gf; return rest })()
+      fields.generator_fields = exhibits !== undefined ? { ...base, exhibits } : base
+    }
 
     // Draft → active is the "Activate" step; stamp who did it and when
     if (fields.status === 'active' && current?.status === 'draft') {

@@ -54,7 +54,8 @@ import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/ce
 import { getSiteUrl } from '../../lib/site-url'
 import RfiCommentThread from '../components/RfiCommentThread'
 import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib/job-doc-client'
-import { confirmExhibits, exhibitAppendixHtml, withExhibitAppendix, fileBaseName, BILLING_SCHEDULE_CATEGORY } from '../../lib/subcontract-exhibits'
+import { confirmExhibits, exhibitAppendixHtml, withExhibitAppendix, fileBaseName, BILLING_SCHEDULE_CATEGORY, sanitizeExhibitList, exhibitFileTypeError, exhibitListForContract, exhibitListHtml, exhibitLettersText, extraExhibitLetter, EXTRA_EXHIBIT_CATEGORY, MAX_EXTRA_EXHIBITS, MAX_EXHIBIT_TITLE, EXHIBIT_FILE_ACCEPT } from '../../lib/subcontract-exhibits'
+import { docCategoryLabel } from '../../lib/job-docs'
 import { canUploadSignedContract, signedUploadPath, signedMethodLabel, SIGNED_UPLOAD_ACCEPT } from '../../lib/signed-upload'
 import { isSignwellOpen, signwellStatusLabel } from '../../lib/signwell-status'
 import { readJsonResponse, fetchJson, jsonInit, rawResponseError } from '../../lib/fetch-json'
@@ -695,6 +696,12 @@ function JobDetailInner() {
   // Directory row matched for the open subcontract (prompt 102): { contract_id, id, address } or null id.
   const [contractGenSub, setContractGenSub] = useState(null)
   const [contractGenAddrSaving, setContractGenAddrSaving] = useState('')
+  // Prompt 103: extra exhibits C, D, … of the open subcontract (generator_fields.exhibits),
+  // separate from contractGenForm. ready once the saved list has loaded; savedRef = last saved list.
+  const [contractGenExhibits, setContractGenExhibits] = useState({ contract_id: null, list: [], ready: false })
+  const contractGenExhibitsSavedRef = useRef([])
+  const [contractGenExhibitBusy, setContractGenExhibitBusy] = useState('')
+  const [jobDocsLoaded, setJobDocsLoaded] = useState(false)
   const [sendingSign, setSendingSign] = useState(false)
   const [signMsg, setSignMsg] = useState('')
   const [signingRequests, setSigningRequests] = useState([])
@@ -3770,8 +3777,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function loadJobDocs() {
-    const { data } = await supabase.from('job_documents').select('*').eq('job_id', id).order('uploaded_at', { ascending: false })
+    const { data, error } = await supabase.from('job_documents').select('*').eq('job_id', id).order('uploaded_at', { ascending: false })
     setJobDocs(data || [])
+    if (!error) setJobDocsLoaded(true)
   }
 
   // Canonical document flow (same as residential/field): signed upload via
@@ -4326,6 +4334,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     if (!contractForm.dir_id || !contractForm.contract_value || !contractForm.description) {
       setErrMsg('Pick a subcontractor and enter a contract value and description.'); setTimeout(() => setErrMsg(''), 4000); return
     }
+    // Prompt 103: the proposal is Exhibit A, so PDF / image only (nothing uploaded or saved otherwise).
+    const bidTypeErr = contractBidFile ? exhibitFileTypeError(contractBidFile.name, contractBidFile.type) : null
+    if (bidTypeErr) { setErrMsg('Bid proposal: ' + bidTypeErr); setTimeout(() => setErrMsg(''), 8000); return }
     setAddingContract(true)
     const { data: { session } } = await supabase.auth.getSession()
     const dirEntry = subDirectory.find(d => d.id === contractForm.dir_id)
@@ -4454,6 +4465,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const validAllocs = normalizeBudgetAllocations(editContractForm.budget_allocations)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (editContractForm.budget_item_id || null)
     let bidProposalUrl = editContractForm.bid_proposal_url || null
+    // Prompt 103: a new proposal file is Exhibit A, so PDF / image only (nothing uploaded or saved otherwise).
+    const bidTypeErr = editContractBidFile ? exhibitFileTypeError(editContractBidFile.name, editContractBidFile.type) : null
+    if (bidTypeErr) { setErrMsg('Bid proposal: ' + bidTypeErr); setTimeout(() => setErrMsg(''), 8000); return }
     if (editContractBidFile) {
       const ext = editContractBidFile.name.split('.').pop()
       const path = `bid-proposals/${id}/${Date.now()}.${ext}`
@@ -4528,6 +4542,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setContractGenSub({ contract_id: contract.id, id: initialInputs.sub?.id || null, address: initialInputs.sub?.address || '' })
     setContractGenForm(initial)
     contractGenOpenedRef.current = { contract_id: contract.id, form: initial }
+    setContractGenExhibits({ contract_id: contract.id, list: [], ready: false })
+    contractGenExhibitsSavedRef.current = []
+    if (!jobDocsLoaded) loadJobDocs() // extra exhibits are picked from / checked against the job's documents
     setShowSignPanel(false)
     setSignMsg('')
     setContractGenMsg('')
@@ -4541,6 +4558,12 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       loadGeneratorRows(contract).catch(e => { console.warn('subcontract generator:', e?.message || e); return [] }),
     ])
     if (seq !== contractGenSeqRef.current) return // another subcontract was opened meanwhile
+    // Extra exhibits: only editable once this subcontract's own row loaded (never save over a
+    // list that could not be read).
+    const ownRow = rows.find(r => r.id === contract.id)
+    const savedExhibits = sanitizeExhibitList(ownRow?.generator_fields?.exhibits) || []
+    contractGenExhibitsSavedRef.current = savedExhibits
+    setContractGenExhibits({ contract_id: contract.id, list: savedExhibits, ready: !!ownRow, loadFailed: !ownRow })
     const fullInputs = generatorInputs(contract, { directory, contacts, rows })
     const full = buildGeneratorDefaults(fullInputs)
     setContractGenSub({ contract_id: contract.id, id: fullInputs.sub?.id || null, address: fullInputs.sub?.address || '' })
@@ -4701,6 +4724,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   <div class="sub-num">Subcontract #: ${f.subcontract_number}</div>
   <p class="section-lg">CONTRACT DOCUMENTS:</p>
   <p>${contractDocLines}</p>
+  ${exhibitListHtml(f.exhibit_list || [])}
   <br>
   <p><strong>SUBMITTALS</strong><br>Provide materials and equipment per plans and specifications. No substitutions allowed. Subcontractor is responsible for any delay arising from substitution requests. Submittal documents for Owner's records to be provided via overnight delivery to NV Construction, 2000 N. Eastman Road Longview, Texas 75601 – Phone: 903-331-8895.</p>
   <p>Completion of submittal requirements in their entirety is required within one week of contract issuance. Approval of submittals within one week of receipt will be requested from Architect.</p>
@@ -4793,19 +4817,111 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   // Prompt 97: Exhibit A (this sub's bid proposal) / Exhibit B (the job's billing schedule).
   // Warn before going on without one (OK = Continue anyway, Cancel = Cancel); a missing one is left out.
+  // Prompt 103: extra exhibits C, D, … with what the job's documents say about each:
+  // [{ job_document_id, title, source, doc, name, missing, typeError, letter }]. Letters go over the
+  // ones that will be attached (not missing, right type), so there is never a gap. Before the job's
+  // documents have loaded nothing is flagged missing (the server skips missing ones anyway).
+  function contractGenExtras() {
+    const list = contractGenExhibits.contract_id === contractGenForm.contract_id ? contractGenExhibits.list : []
+    let n = 0
+    return list.map(e => {
+      const doc = jobDocs.find(d => String(d.id).toLowerCase() === e.job_document_id) || null
+      const name = doc ? (doc.file_name || fileBaseName(doc.storage_path)) : ''
+      const missing = jobDocsLoaded ? !doc : false
+      const typeError = doc ? exhibitFileTypeError(name) : null
+      const letter = missing || typeError ? null : extraExhibitLetter(n++)
+      return { ...e, title: e.title || (doc ? docCategoryLabel(doc.category) : '') || 'Exhibit', doc, name, missing, typeError, letter }
+    })
+  }
+
   function exhibitCheck(action) {
     const contract = contracts.find(c => c.id === contractGenForm.contract_id)
-    if (!contract) return { proceed: true, include: { proposal: false, billing: false }, warnings: [] }
-    return confirmExhibits({ proposalPath: contract.bid_proposal_url, billingDoc: billingScheduleDoc }, msg => window.confirm(msg), action)
+    if (!contract) return { proceed: true, include: { proposal: false, billing: false, extras: false }, warnings: [], extras: [] }
+    const extras = contractGenExtras()
+    const check = confirmExhibits({ proposalPath: contract.bid_proposal_url, billingDoc: billingScheduleDoc, extras }, msg => window.confirm(msg), action)
+    return { ...check, extras: extras.filter(e => e.letter) }
+  }
+
+  // The "EXHIBITS:" list in the contract body for what the user kept (not saved in generator_fields).
+  function exhibitListFor(check) {
+    return exhibitListForContract({ proposal: !!check.include.proposal, billing: !!check.include.billing, extras: check.include.extras === false ? [] : check.extras || [] })
   }
 
   // Cover pages for the exhibits being attached (file names only; the merged PDF is stored by the server).
-  function exhibitCoversHtml(include) {
+  function exhibitCoversHtml(include, extras = []) {
     const contract = contracts.find(c => c.id === contractGenForm.contract_id)
     return exhibitAppendixHtml({
       proposal: include.proposal && contract?.bid_proposal_url ? { name: fileBaseName(contract.bid_proposal_url) } : null,
       billing: include.billing && billingScheduleDoc ? { name: billingScheduleDoc.file_name || fileBaseName(billingScheduleDoc.storage_path) } : null,
+      extras: include.extras === false ? [] : extras.map(e => ({ letter: e.letter, title: e.title, name: e.name })),
     })
+  }
+
+  // Save the extra-exhibit list right away (PUT /api/subcontracts { id, exhibits }); on failure
+  // the list goes back to the last saved one and the error shows in contractGenMsg.
+  async function saveContractGenExhibits(next, okMsg = '') {
+    const cur = contractGenExhibits
+    if (!cur.contract_id || !cur.ready) return false
+    const list = sanitizeExhibitList(next) || []
+    const prev = contractGenExhibitsSavedRef.current
+    setContractGenExhibits(x => (x.contract_id === cur.contract_id ? { ...x, list } : x))
+    setContractGenExhibitBusy('save')
+    const r = await fetchJson(authFetch, '/api/subcontracts', jsonInit('PUT', { id: cur.contract_id, exhibits: list }))
+    setContractGenExhibitBusy('')
+    const err = !r.ok ? r.error : r.data?.generator_fields_skipped ? 'migration 079 is not applied' : ''
+    if (err) {
+      setContractGenExhibits(x => (x.contract_id === cur.contract_id ? { ...x, list: prev } : x))
+      setContractGenMsg('Error: exhibits not saved: ' + err)
+      return false
+    }
+    contractGenExhibitsSavedRef.current = list
+    if (okMsg) setContractGenMsg(okMsg)
+    return true
+  }
+  function addExhibitFromJobDoc(docId) {
+    const doc = jobDocs.find(d => d.id === docId)
+    if (!doc) return
+    const list = contractGenExhibits.list
+    if (list.length >= MAX_EXTRA_EXHIBITS || list.some(e => e.job_document_id === String(doc.id).toLowerCase())) return
+    const err = exhibitFileTypeError(doc.file_name || fileBaseName(doc.storage_path))
+    if (err) { setContractGenMsg('Error: ' + err); return }
+    saveContractGenExhibits([...list, { job_document_id: String(doc.id).toLowerCase(), title: docCategoryLabel(doc.category), source: 'job_document' }], 'Exhibit added.')
+  }
+  async function uploadContractExhibit(file) {
+    if (!file) return
+    const err = exhibitFileTypeError(file.name, file.type)
+    if (err) { setContractGenMsg('Error: ' + err); return }
+    if (contractGenExhibits.list.length >= MAX_EXTRA_EXHIBITS) return
+    setContractGenExhibitBusy('upload')
+    setContractGenMsg('')
+    try {
+      const out = await uploadJobDocument({ fetchFn: authFetch, putFn: fetch, jobId: id, category: EXTRA_EXHIBIT_CATEGORY, file })
+      if (out.uploaded) await loadJobDocs()
+      if (out.error || !out.document?.id) { setContractGenMsg('Error: ' + (out.error || 'the exhibit was not saved.')); return }
+      const title = String(file.name || '').replace(/\.[^.]+$/, '').trim().slice(0, MAX_EXHIBIT_TITLE) || 'Exhibit'
+      await saveContractGenExhibits([...contractGenExhibits.list, { job_document_id: String(out.document.id).toLowerCase(), title, source: 'upload' }], `Exhibit "${title}" uploaded and added.`)
+    } finally {
+      setContractGenExhibitBusy(b => (b === 'upload' ? '' : b))
+    }
+  }
+  function moveContractExhibit(i, dir) {
+    const list = [...contractGenExhibits.list]
+    const j = i + dir
+    if (j < 0 || j >= list.length) return
+    ;[list[i], list[j]] = [list[j], list[i]]
+    saveContractGenExhibits(list)
+  }
+  function removeContractExhibit(i) {
+    saveContractGenExhibits(contractGenExhibits.list.filter((_, k) => k !== i), 'Exhibit removed (the file stays in the job’s documents).')
+  }
+  function setContractExhibitTitle(i, title) {
+    setContractGenExhibits(x => ({ ...x, list: x.list.map((e, k) => (k === i ? { ...e, title: title.slice(0, MAX_EXHIBIT_TITLE) } : e)) }))
+  }
+  function saveContractExhibitTitle(i) {
+    const list = contractGenExhibits.list
+    const saved = contractGenExhibitsSavedRef.current
+    if (saved[i] && list[i] && saved[i].job_document_id === list[i].job_document_id && (saved[i].title || '') === String(list[i].title || '').trim()) return
+    saveContractGenExhibits(list)
   }
 
   // Newest stored exhibits PDF for a subcontract (kind 'latest') or the one its signed e-sign copy points to ('signed').
@@ -4871,9 +4987,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const check = exhibitCheck('generate the contract without it')
     if (!check.proceed) { setContractGenMsg('Cancelled. Nothing was generated.'); return }
     const include = check.include
-    const wantsExhibits = !!contractGenForm.contract_id && (include.proposal || include.billing)
-    const baseHtml = buildSubcontractHtml(contractGenForm)
-    const html = wantsExhibits ? withExhibitAppendix(baseHtml, exhibitCoversHtml(include)) : baseHtml
+    const wantsExhibits = !!contractGenForm.contract_id && (include.proposal || include.billing || (include.extras !== false && check.extras.length > 0))
+    // The contract body lists the exhibits kept (A, B, C …); not saved in generator_fields.
+    const baseHtml = buildSubcontractHtml({ ...contractGenForm, exhibit_list: exhibitListFor(check) })
+    const html = wantsExhibits ? withExhibitAppendix(baseHtml, exhibitCoversHtml(include, check.extras)) : baseHtml
     saveGeneratorFields(contractGenForm)
     const toolbar = [
       '<style id="nv-edit-style">',
@@ -4939,12 +5056,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
             if (slot) {
               slot.textContent = ''
               const b = win.document.createElement('button')
-              b.textContent = 'Open Exhibits PDF (A/B)'
+              b.textContent = 'Open Exhibits PDF'
               b.addEventListener('click', () => { if (url) win.open(url, '_blank') })
               slot.appendChild(b)
             }
             const parts = [...(ex.data.notes || []).map(n => `${n.name} is attached separately (${n.reason})`), ...(ex.data.unreadable || []).map(u => `${u.name} could not be read and was left out`)]
-            exNote = ' Exhibits PDF ready (Open exhibits below).' + (parts.length ? ' Note: ' + parts.join('; ') + '.' : '')
+            const letters = (ex.data.included_exhibits || []).map(e => e.letter)
+            exNote = ` Exhibits PDF ready${letters.length ? ` (Exhibit${letters.length > 1 ? 's' : ''} ${exhibitLettersText(letters)})` : ''}; use Open exhibits below.` + (parts.length ? ' Note: ' + parts.join('; ') + '.' : '')
           } else if (slot) slot.textContent = ''
           // The HTML goes straight to Storage; the API only records the verified path.
           return uploadThenSend({
@@ -5106,7 +5224,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setSignMsg('')
     saveGeneratorFields(contractGenForm)
     try {
-      const html = buildSubcontractHtml(contractGenForm)
+      // The contract body lists the exhibits kept (A, B, C …); not saved in generator_fields.
+      const html = buildSubcontractHtml({ ...contractGenForm, exhibit_list: contractGenForm.contract_id ? exhibitListFor(check) : [] })
       // The document is staged in Storage (direct upload); the API gets only its path + receipt.
       const r = await uploadThenSend({
         fetchFn: authFetch, putFn: fetch, target: 'signing-html',
@@ -5119,19 +5238,21 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           signer_name: signerName.trim(),
           document_attachment: attachment,
           document_title: `Subcontract — ${contractGenForm.sub_name} — Job #${contractGenForm.job_number}`,
-          // The server merges and attaches Exhibit A / B (prompt 97); a missing one the user
-          // continued without is false here and left out.
+          // The server merges and attaches Exhibit A / B (prompt 97) and the extras C, D, …
+          // (prompt 103, include.extras); a missing one the user continued without is left out.
           ...(contractGenForm.contract_id ? { exhibits: check.include } : {}),
         })),
       })
       if (!r.ok) { setSignMsg('Error: ' + (r.stage === 'upload' ? 'could not stage the document: ' : '') + r.error); await loadSigningRequests(); return }
       const json = r.data || {}
       markContractGenerated(contractGenForm.contract_id, json.saved_contract)
-      const exList = (json.exhibits_included || []).map(k => (k === 'proposal' ? 'Exhibit A' : 'Exhibit B'))
+      const exLetters = json.exhibits_included_letters?.length
+        ? json.exhibits_included_letters
+        : (json.exhibits_included || []).map(k => (k === 'proposal' ? 'A' : k === 'billing' ? 'B' : null)).filter(Boolean)
       const lead = json.provider === 'signwell'
         ? `Sent through SignWell${json.data?.test_mode ? ' (TEST MODE — not legally binding)' : ''}. The subcontractor will receive a SignWell email to sign.`
         : 'Sent! The subcontractor will receive an email link to sign.'
-      setSignMsg(lead + (exList.length ? ` ${exList.join(' and ')} attached.` : '') + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
+      setSignMsg(lead + (exLetters.length ? ` Exhibit${exLetters.length > 1 ? 's' : ''} ${exhibitLettersText(exLetters)} attached.` : '') + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
       setShowSignPanel(false)
       setSignerEmail('')
       setSignerName('')
@@ -8866,18 +8987,85 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button style={{ ...s.btn, background: '#dcfce7', color: '#16a34a' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
                   <button style={s.btnGray} onClick={saveContractGenDetails} title="Remember these details on this subcontract">Save details</button>
-                  {contractGenForm.contract_id && <button style={s.btnGray} onClick={() => openSubcontractExhibits(contractGenForm.contract_id, 'latest')} title="The newest merged Exhibit A / B PDF for this subcontract">Open exhibits</button>}
+                  {contractGenForm.contract_id && <button style={s.btnGray} onClick={() => openSubcontractExhibits(contractGenForm.contract_id, 'latest')} title="The newest merged exhibits PDF for this subcontract">Open exhibits</button>}
                   <button style={{ ...s.btn, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => { if (showSignPanel) { setShowSignPanel(false); setSignMsg('') } else openSignPanel() }}>
                     {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
                   </button>
                 </div>
                 {contractGenForm.contract_id && (() => {
+                  // Prompt 103: Exhibits A, B and the extras C, D, … (saved on the subcontract right away).
                   const gc = contracts.find(c => c.id === contractGenForm.contract_id)
+                  const ex = contractGenExhibits.contract_id === contractGenForm.contract_id ? contractGenExhibits : { list: [], ready: false }
+                  const extras = contractGenExtras()
+                  const busy = !!contractGenExhibitBusy
+                  const canEdit = ex.ready && !busy
+                  const full = ex.list.length >= MAX_EXTRA_EXHIBITS
+                  const listed = new Set(ex.list.map(e => e.job_document_id))
+                  const pickable = jobDocs.filter(d => d.category !== BILLING_SCHEDULE_CATEGORY && !listed.has(String(d.id).toLowerCase()))
+                  const rowStyle = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', padding: '6px 0', borderTop: '1px solid #f3f4f6', minWidth: 0 }
+                  const smallBtn = { ...s.btnGray, padding: '4px 8px', fontSize: '12px' }
+                  const proposalTypeErr = gc?.bid_proposal_url ? exhibitFileTypeError(fileBaseName(gc.bid_proposal_url)) : null
                   return (
-                    <p style={{ fontSize: '12px', color: '#4b5563', marginTop: '8px' }}>
-                      Exhibit A (proposal): {gc?.bid_proposal_url ? <strong>{fileBaseName(gc.bid_proposal_url)}</strong> : <span style={{ color: '#b45309' }}>not uploaded</span>}
-                      {' · '}Exhibit B (billing schedule): {billingScheduleDoc ? <strong>{billingScheduleDoc.file_name}</strong> : <span style={{ color: '#b45309' }}>not set for this job (Job Details)</span>}
-                    </p>
+                    <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '10px', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 10px', background: '#fafafa', maxWidth: '100%', boxSizing: 'border-box' }}>
+                      <p style={{ fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Exhibits</p>
+                      <div style={{ ...rowStyle, borderTop: 'none' }}>
+                        <span style={{ overflowWrap: 'anywhere' }}>A – Subcontractor Proposal: {gc?.bid_proposal_url ? <strong>{fileBaseName(gc.bid_proposal_url)}</strong> : <span style={{ color: '#b45309' }}>not uploaded</span>}
+                          {proposalTypeErr && <span style={{ color: '#b45309' }}> (not a PDF or image: re-upload it as PDF)</span>}</span>
+                      </div>
+                      <div style={rowStyle}>
+                        <span style={{ overflowWrap: 'anywhere' }}>B – Billing Schedule: {billingScheduleDoc ? <strong>{billingScheduleDoc.file_name}</strong> : <span style={{ color: '#b45309' }}>not set (Job Details)</span>}</span>
+                      </div>
+                      {extras.map((e, i) => (
+                        <div key={e.job_document_id} style={rowStyle}>
+                          <span style={{ fontWeight: 700, minWidth: '14px' }}>{e.letter || '–'}</span>
+                          <span>–</span>
+                          <input
+                            style={{ ...s.input, flex: '1 1 140px', minWidth: 0, padding: '4px 6px', fontSize: '12px' }}
+                            value={ex.list[i]?.title ?? ''}
+                            placeholder={e.title}
+                            maxLength={MAX_EXHIBIT_TITLE}
+                            disabled={!ex.ready}
+                            aria-label={`Exhibit ${e.letter || ''} title`}
+                            onChange={ev => setContractExhibitTitle(i, ev.target.value)}
+                            onBlur={() => saveContractExhibitTitle(i)}
+                          />
+                          <span style={{ overflowWrap: 'anywhere', flex: '1 1 120px', minWidth: 0 }}>
+                            {e.missing ? <span style={{ color: '#ea580c' }}>file no longer on the job</span>
+                              : e.typeError ? <span style={{ color: '#ea580c' }}>{e.name || 'file'}: PDF or image only</span>
+                              : <>· {e.name || (jobDocsLoaded ? 'file' : 'loading…')}</>}
+                          </span>
+                          <span style={{ display: 'flex', gap: '4px' }}>
+                            <button type="button" style={smallBtn} disabled={!canEdit || i === 0} onClick={() => moveContractExhibit(i, -1)} aria-label="Move up">↑</button>
+                            <button type="button" style={smallBtn} disabled={!canEdit || i === extras.length - 1} onClick={() => moveContractExhibit(i, 1)} aria-label="Move down">↓</button>
+                            <button type="button" style={{ ...smallBtn, color: '#dc2626' }} disabled={!canEdit} onClick={() => removeContractExhibit(i)}>Remove</button>
+                          </span>
+                        </div>
+                      ))}
+                      {ex.loadFailed && <p style={{ color: '#b45309', margin: '6px 0 0' }}>The saved extra exhibits could not be loaded. Close and reopen the generator to edit them.</p>}
+                      {full ? (
+                        <p style={{ color: '#6b7280', margin: '6px 0 0' }}>Up to {MAX_EXTRA_EXHIBITS} extra exhibits.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', alignItems: 'center' }}>
+                          <select
+                            style={{ ...s.input, flex: '1 1 200px', minWidth: 0, maxWidth: '100%', padding: '4px 6px', fontSize: '12px' }}
+                            value=""
+                            disabled={!canEdit}
+                            onChange={ev => { if (ev.target.value) addExhibitFromJobDoc(ev.target.value) }}
+                          >
+                            <option value="">{jobDocsLoaded ? (pickable.length ? '+ Add from job documents' : '+ Add from job documents (none available)') : 'Loading job documents…'}</option>
+                            {pickable.map(d => {
+                              const name = d.file_name || fileBaseName(d.storage_path)
+                              const bad = !!exhibitFileTypeError(name)
+                              return <option key={d.id} value={d.id} disabled={bad}>{docCategoryLabel(d.category)} · {name}{bad ? ' (PDF or image only)' : ''}</option>
+                            })}
+                          </select>
+                          <label style={{ ...smallBtn, display: 'inline-block', cursor: canEdit ? 'pointer' : 'not-allowed', opacity: canEdit ? 1 : 0.6 }}>
+                            {contractGenExhibitBusy === 'upload' ? 'Uploading…' : '+ Upload exhibit (PDF or image)'}
+                            <input type="file" accept={EXHIBIT_FILE_ACCEPT} disabled={!canEdit} style={{ display: 'none' }} onChange={ev => { const f = ev.target.files?.[0] || null; ev.target.value = ''; uploadContractExhibit(f) }} />
+                          </label>
+                        </div>
+                      )}
+                    </div>
                   )
                 })()}
                 {contractGenMsg && (
@@ -9039,7 +9227,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={s.label}>Bid proposal PDF (optional)</label>
-                    <input type="file" accept=".pdf,.doc,.docx" onChange={e => setContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#374151' }} />
+                    <input type="file" accept={EXHIBIT_FILE_ACCEPT} onChange={e => setContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#374151' }} />
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button style={{ ...s.btn, opacity: addingContract ? 0.6 : 1 }} disabled={addingContract} onClick={() => addContract(false)}>{addingContract ? 'Saving...' : 'Save & activate'}</button>
@@ -9318,7 +9506,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
                           <label style={s.label}>Replace bid proposal PDF (optional)</label>
                           {editContractForm.bid_proposal_url && <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Current file on record — upload a new one to replace it</p>}
-                          <input type="file" accept=".pdf,.doc,.docx" onChange={e => setEditContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#374151' }} />
+                          <input type="file" accept={EXHIBIT_FILE_ACCEPT} onChange={e => setEditContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#374151' }} />
                         </div>
                         <button style={s.btnSmallOrange} onClick={updateContract}>Save changes</button>
                       </div>
@@ -13620,7 +13808,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <span style={{ fontSize: '14px', color: '#111827' }}>📄 {d.file_name}</span>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
                         <span style={{ padding: '2px 8px', background: '#fff7ed', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
-                          {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : d.category === 'billing_schedule' ? 'Billing Schedule (Exhibit B)' : 'Other'}
+                          {docCategoryLabel(d.category)}
                         </span>
                         <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
                       </div>

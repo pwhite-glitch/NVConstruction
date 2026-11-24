@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { safeFileName } from '../../lib/storage-path'
+import { addressPartsError, ADDRESS_LIMITS } from '../../lib/sub-address'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -71,7 +72,7 @@ export default function Apply() {
   // Shown on the success screen: what happened with the W-9 / COI files.
   const [docsNote, setDocsNote] = useState('')
 
-  const [company, setCompany] = useState({ company_name: '', trade: '', phone: '', address: '', scope_description: '' })
+  const [company, setCompany] = useState({ company_name: '', trade: '', phone: '', street: '', city: '', state: '', zip: '', scope_description: '' })
   const [account, setAccount] = useState({ full_name: '', email: '', password: '', confirm: '' })
   const [docs, setDocs] = useState({ coi_expiration: '', license_number: '' })
   const [w9File, setW9File] = useState(null)
@@ -86,6 +87,9 @@ export default function Apply() {
     if (step === 1) {
       if (!company.company_name.trim()) return setError('Company name is required.')
       if (!company.trade) return setError('Please select your primary trade.')
+      // Checked here: the login is created before /api/register-company runs.
+      const addrErr = addressPartsError(company)
+      if (addrErr) return setError(addrErr)
     }
     if (step === 2) {
       if (!account.full_name.trim()) return setError('Your name is required.')
@@ -136,7 +140,7 @@ export default function Apply() {
           full_name: account.full_name.trim(),
           email,
           phone: company.phone || null,
-          address: company.address || null,
+          address_parts: { street: company.street, city: company.city, state: company.state, zip: company.zip },
           trade: company.trade || null,
           scope_description: company.scope_description || null,
           coi_expiration: docs.coi_expiration || null,
@@ -237,8 +241,24 @@ export default function Apply() {
                 </select>
               </div>
               <div style={{ marginBottom: '12px' }}>
-                <label style={s.label}>Address</label>
-                <input style={s.input} value={company.address} onChange={e => setC('address', e.target.value)} placeholder="123 Main St, City, TX 75001" />
+                <label style={s.label}>Street address<span style={s.required}>*</span></label>
+                <input style={s.input} value={company.street} onChange={e => setC('street', e.target.value)} placeholder="123 Main St" maxLength={ADDRESS_LIMITS.street} autoComplete="street-address" />
+              </div>
+              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                <div>
+                  <label style={s.label}>City<span style={s.required}>*</span></label>
+                  <input style={s.input} value={company.city} onChange={e => setC('city', e.target.value)} placeholder="Dallas" maxLength={ADDRESS_LIMITS.city} autoComplete="address-level2" />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={s.label}>State<span style={s.required}>*</span></label>
+                    <input style={s.input} value={company.state} onChange={e => setC('state', e.target.value.toUpperCase())} placeholder="TX" maxLength={2} autoCapitalize="characters" autoComplete="address-level1" />
+                  </div>
+                  <div>
+                    <label style={s.label}>ZIP<span style={s.required}>*</span></label>
+                    <input style={s.input} value={company.zip} onChange={e => setC('zip', e.target.value)} placeholder="75001" maxLength={10} inputMode="numeric" autoComplete="postal-code" />
+                  </div>
+                </div>
               </div>
               <div style={{ marginBottom: '12px' }}>
                 <label style={s.label}>Scope / services description</label>

@@ -4,6 +4,7 @@ import { sameCompany } from '../../../lib/company-name'
 import { Resend } from 'resend'
 import { escapeHtml } from '../../../lib/email'
 import { ilikeExact } from '../../../lib/roles'
+import { addressPartsError, composeAddress, isBlankAddress } from '../../../lib/sub-address'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -62,8 +63,21 @@ async function resolveRegistrant(request, user_id, email) {
 //   sign-in through /api/sub-docs (paths under <directory id>/).
 export async function POST(request) {
   try {
-    const { user_id, company_name, contact_name, full_name, email, phone, address, trade, scope_description, coi_expiration, license_number } = await request.json()
+    const { user_id, company_name, contact_name, full_name, email, phone, address, address_parts, trade, scope_description, coi_expiration, license_number } = await request.json()
     if (!company_name) return Response.json({ error: 'company_name required' }, { status: 400 })
+
+    // Company address (prompt 102): street / city / state / ZIP from the forms, stored
+    // composed in sub_directory.address. A plain non-blank `address` string is still
+    // accepted. Checked before anything is written.
+    let companyAddress = null
+    if (address_parts && typeof address_parts === 'object') {
+      const addrErr = addressPartsError(address_parts)
+      if (addrErr) return Response.json({ error: addrErr }, { status: 400 })
+      companyAddress = composeAddress(address_parts)
+    } else if (typeof address === 'string' && !isBlankAddress(address)) {
+      companyAddress = address.trim().slice(0, 400)
+    }
+    if (!companyAddress) return Response.json({ error: 'Company address is required.' }, { status: 400 })
 
     const who = await resolveRegistrant(request, user_id, email)
     if (who.error) return who.error
@@ -94,7 +108,7 @@ export async function POST(request) {
       contact_name: contact_name || company_name.trim(),
       email: loginEmail,
       phone: phone || null,
-      address: address || null,
+      address: companyAddress,
       trade: trade || null,
       scope_description: scope_description || null,
       coi_expiration: coi_expiration || null,

@@ -188,7 +188,7 @@ describe('manage-sub-user', () => {
 describe('register-company', () => {
   test('ignores browser w9_url / coi_url, inserts pending, returns directory id, notifies office', async () => {
     const res = await registerCompany.POST(req('POST', {
-      user_id: 'u-new', email: 'new@sub.co', company_name: 'New Sub LLC', w9_url: `${DIR}/someone-elses.pdf`, coi_url: 'w9/x.pdf',
+      user_id: 'u-new', email: 'new@sub.co', company_name: 'New Sub LLC', address_parts: { street: '1 Main St', city: 'Dallas', state: 'TX', zip: '75201' }, w9_url: `${DIR}/someone-elses.pdf`, coi_url: 'w9/x.pdf',
     }))
     const body = await json(res)
     expect(res.status).toBe(200)
@@ -202,7 +202,7 @@ describe('register-company', () => {
 
   test('registration still succeeds when the office email fails', async () => {
     mockSendResult = { data: null, error: { message: 'resend down' } }
-    const res = await registerCompany.POST(req('POST', { user_id: 'u-new', email: 'new@sub.co', company_name: 'Other Sub' }))
+    const res = await registerCompany.POST(req('POST', { user_id: 'u-new', email: 'new@sub.co', company_name: 'Other Sub', address: '2 Elm St, Tyler, TX 75701' }))
     expect(res.status).toBe(200)
   })
 })

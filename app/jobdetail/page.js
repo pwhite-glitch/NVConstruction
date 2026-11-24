@@ -63,6 +63,7 @@ import { exportOwnerReimbZip } from '../../lib/export-client'
 import { createSubmittal, addSubmittalFiles, runSubmittalSave } from '../../lib/submittal-client'
 import { isPrincipal, atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { canWriteJobDetails } from '../../lib/job-details'
+import { isBlankAddress } from '../../lib/sub-address'
 import { closeoutStatus, closeoutList, CLOSEOUT_SOURCE_LABELS } from '../../lib/closeout'
 import { findDuplicateBillings, duplicateTooltip, duplicateDate, duplicateMoney } from '../../lib/billing-duplicates'
 import { signedWaiverTerms, throughLabel, safeSignatureSrc, LEGACY_WAIVER_NOTE, waiverTermChanges } from '../../lib/lien-waiver-terms'
@@ -229,6 +230,8 @@ function JobDetailInner() {
   const [userRole, setUserRole] = useState(null)
   // Complete Job uses the Details API, which refuses supers (and anyone else not a writer).
   const canCompleteJob = canWriteJobDetails(userRole)
+  // /api/sub-docs office path (PM_ROLES in lib/server-auth.js).
+  const canSaveSubAddrToDir = ['principal', 'pm', 'apm', 'super', 'admin'].includes(userRole)
   const [currentUserName, setCurrentUserName] = useState('')
   const [hideBudget, setHideBudget] = useState(false)
 
@@ -689,6 +692,9 @@ function JobDetailInner() {
   const contractGenRef = useRef(null)
   const contractGenOpenedRef = useRef(null) // { contract_id, form } as last filled, for "changed?" checks
   const contractGenSeqRef = useRef(0)
+  // Directory row matched for the open subcontract (prompt 102): { contract_id, id, address } or null id.
+  const [contractGenSub, setContractGenSub] = useState(null)
+  const [contractGenAddrSaving, setContractGenAddrSaving] = useState('')
   const [sendingSign, setSendingSign] = useState(false)
   const [signMsg, setSignMsg] = useState('')
   const [signingRequests, setSigningRequests] = useState([])
@@ -4517,7 +4523,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
   async function openContractGenerator(contract) {
     const seq = ++contractGenSeqRef.current
-    const initial = buildGeneratorDefaults(generatorInputs(contract, { directory: subDirectory, contacts: jobContacts, rows: [] }))
+    const initialInputs = generatorInputs(contract, { directory: subDirectory, contacts: jobContacts, rows: [] })
+    const initial = buildGeneratorDefaults(initialInputs)
+    setContractGenSub({ contract_id: contract.id, id: initialInputs.sub?.id || null, address: initialInputs.sub?.address || '' })
     setContractGenForm(initial)
     contractGenOpenedRef.current = { contract_id: contract.id, form: initial }
     setShowSignPanel(false)
@@ -4533,7 +4541,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       loadGeneratorRows(contract).catch(e => { console.warn('subcontract generator:', e?.message || e); return [] }),
     ])
     if (seq !== contractGenSeqRef.current) return // another subcontract was opened meanwhile
-    const full = buildGeneratorDefaults(generatorInputs(contract, { directory, contacts, rows }))
+    const fullInputs = generatorInputs(contract, { directory, contacts, rows })
+    const full = buildGeneratorDefaults(fullInputs)
+    setContractGenSub({ contract_id: contract.id, id: fullInputs.sub?.id || null, address: fullInputs.sub?.address || '' })
     // Fill only fields still as they opened (the user may have started typing).
     setContractGenForm(f => {
       if (f.contract_id !== contract.id) return f
@@ -4809,7 +4819,55 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     if (!url) alert('Could not open the exhibits PDF' + (errText ? ': ' + errText : '.'))
   }
 
+  // Prompt 102: a blank owner / sub address only warns (OK continues).
+  function confirmContractAddresses() {
+    const missing = []
+    if (isBlankAddress(contractGenForm.owner_address)) missing.push('owner')
+    if (isBlankAddress(contractGenForm.sub_address)) missing.push('subcontractor')
+    if (!missing.length) return true
+    return window.confirm(`The contract has no ${missing.join(' or ')} address. Continue anyway?`)
+  }
+
+  // Save-back of a typed address: owner → the job (/api/jobs/details), sub → the matched
+  // Directory row (/api/sub-docs, office path).
+  async function saveOwnerAddressToJob() {
+    const owner_address = String(contractGenForm.owner_address || '').trim()
+    if (!owner_address) return
+    setContractGenAddrSaving('job')
+    try {
+      const res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields: { owner_address } }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.job) throw new Error(data.error || `HTTP ${res.status}`)
+      setJob(j => ({ ...j, ...data.job }))
+      setForm(f => ({ ...f, owner_address: data.job.owner_address ?? owner_address }))
+      setContractGenMsg('Owner address saved to the job.')
+    } catch (e) {
+      setContractGenMsg('Error: owner address not saved to the job: ' + (e?.message || e))
+    } finally {
+      setContractGenAddrSaving('')
+    }
+  }
+  async function saveSubAddressToDirectory() {
+    const address = String(contractGenForm.sub_address || '').trim()
+    const dirId = contractGenSub?.contract_id === contractGenForm.contract_id ? contractGenSub.id : null
+    if (!address || !dirId) return
+    setContractGenAddrSaving('dir')
+    try {
+      const res = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, address }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setSubDirectory(rows => rows.map(r => (r.id === dirId ? { ...r, address } : r)))
+      setContractGenSub(m => (m && m.id === dirId ? { ...m, address } : m))
+      setContractGenMsg('Sub address saved to the Directory.')
+    } catch (e) {
+      setContractGenMsg('Error: sub address not saved to the Directory: ' + (e?.message || e))
+    } finally {
+      setContractGenAddrSaving('')
+    }
+  }
+
   function generateSubcontract() {
+    if (!confirmContractAddresses()) { setContractGenMsg('Cancelled. Nothing was generated.'); return }
     const check = exhibitCheck('generate the contract without it')
     if (!check.proceed) { setContractGenMsg('Cancelled. Nothing was generated.'); return }
     const include = check.include
@@ -5041,6 +5099,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       setSignMsg('Error: This subcontract is a draft. Activate it before sending it for signature.')
       return
     }
+    if (!confirmContractAddresses()) { setSignMsg('Cancelled. Nothing was sent.'); return }
     const check = exhibitCheck('send it for signature without it')
     if (!check.proceed) { setSignMsg('Cancelled. Nothing was sent.'); return }
     setSendingSign(true)
@@ -8742,7 +8801,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {contracts.map(c => { const n = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown'; return <option key={c.id} value={c.id}>{n}{c.description ? ` — ${c.description}` : ''}</option> })}
                     </select>
                   </div>
-                  <div><label style={s.label}>Sub address</label><input style={s.input} value={contractGenForm.sub_address} onChange={e => setContractGenForm(f => ({ ...f, sub_address: e.target.value }))} placeholder="123 Main St, City, TX 75000" /></div>
+                  <div><label style={s.label}>Sub address</label><input style={s.input} value={contractGenForm.sub_address} onChange={e => setContractGenForm(f => ({ ...f, sub_address: e.target.value }))} placeholder="123 Main St, City, TX 75000" />
+                    {canSaveSubAddrToDir && !isBlankAddress(contractGenForm.sub_address) && (() => {
+                      const m = contractGenSub?.contract_id === contractGenForm.contract_id ? contractGenSub : null
+                      if (!m?.id) return <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#9ca3af' }}>No Directory entry matched this sub</p>
+                      if (contractGenForm.sub_address.trim() === String(m.address || '').trim()) return null
+                      return <button type="button" style={{ ...s.btnSmall, marginTop: '4px', padding: '3px 8px', fontSize: '11px' }} disabled={!!contractGenAddrSaving} onClick={saveSubAddressToDirectory}>{contractGenAddrSaving === 'dir' ? 'Saving…' : 'Save to Directory'}</button>
+                    })()}
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div><label style={s.label}>Trade / work type</label><input style={s.input} value={contractGenForm.trade} onChange={e => setContractGenForm(f => ({ ...f, trade: e.target.value }))} placeholder="Plumbing" /></div>
@@ -8755,7 +8821,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div><label style={s.label}>Owner name</label><input style={s.input} value={contractGenForm.owner_name} onChange={e => setContractGenForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="Braum's Ice Cream and Dairy" /></div>
-                  <div><label style={s.label}>Owner address</label><input style={s.input} value={contractGenForm.owner_address} onChange={e => setContractGenForm(f => ({ ...f, owner_address: e.target.value }))} placeholder="1420 West Loop 281, Longview TX 75603" /></div>
+                  <div><label style={s.label}>Owner address</label><input style={s.input} value={contractGenForm.owner_address} onChange={e => setContractGenForm(f => ({ ...f, owner_address: e.target.value }))} placeholder="1420 West Loop 281, Longview TX 75603" />
+                    {canCompleteJob && !isBlankAddress(contractGenForm.owner_address) && contractGenForm.owner_address.trim() !== String(job?.owner_address || '').trim() && (
+                      <button type="button" style={{ ...s.btnSmall, marginTop: '4px', padding: '3px 8px', fontSize: '11px' }} disabled={!!contractGenAddrSaving} onClick={saveOwnerAddressToJob}>{contractGenAddrSaving === 'job' ? 'Saving…' : 'Save to job'}</button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div><label style={s.label}>Job number</label><input style={s.input} value={contractGenForm.job_number} onChange={e => setContractGenForm(f => ({ ...f, job_number: e.target.value }))} /></div>

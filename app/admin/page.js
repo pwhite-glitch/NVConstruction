@@ -21,6 +21,7 @@ import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentM
 import { signedWaiverTerms, waiverTermChanges } from '../../lib/lien-waiver-terms'
 import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, dcAmountInputState, dcCreditInputState, signedDcAmount } from '../../lib/dc-amount'
 import { STATUS_LABELS as PO_PAY_LABELS, STATUS_COLORS as PO_PAY_COLORS, MIGRATION_082_SHORT, invoiceRemaining } from '../../lib/po-invoices'
+import { isBlankAddress } from '../../lib/sub-address'
 
 // Tab keys a ?tab= / bell link may open (same keys as navItems below; 'bots' only for
 // partners) and the Purchase Orders chip keys a ?view= may pick (prompt 104).
@@ -1757,7 +1758,8 @@ export default function AdminPortal() {
                 if (filterDirTrade && d.trade !== filterDirTrade) return false
                 if (filterDirDocs === 'missing-w9') return !d.w9_url
                 if (filterDirDocs === 'missing-coi') { const st = coiStatus(d.coi_expiration); return !d.coi_url || st === 'expired' || st === 'warning' || st === 'none' }
-                if (filterDirDocs === 'issues') { const st = coiStatus(d.coi_expiration); return !d.w9_url || !d.coi_url || st === 'expired' || st === 'warning' || st === 'none' }
+                if (filterDirDocs === 'missing-address') return isBlankAddress(d.address)
+                if (filterDirDocs === 'issues') { const st = coiStatus(d.coi_expiration); return !d.w9_url || !d.coi_url || st === 'expired' || st === 'warning' || st === 'none' || isBlankAddress(d.address) }
                 return true
               })
               return (
@@ -1776,6 +1778,7 @@ export default function AdminPortal() {
                         <option value="issues">Issues only</option>
                         <option value="missing-w9">Missing W-9</option>
                         <option value="missing-coi">COI missing/expired</option>
+                        <option value="missing-address">Missing address</option>
                       </select>
                       <span style={{ fontSize: '12px', color: '#6b7280' }}>{dirFiltered.length} sub{dirFiltered.length !== 1 ? 's' : ''}</span>
                     </div>
@@ -1836,6 +1839,7 @@ export default function AdminPortal() {
                                 {d.email && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '10px' }}>{d.email}</span>}
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                {isBlankAddress(d.address) && <span style={{ ...s.badge('warning'), fontSize: '10px' }}>No address</span>}
                                 <span style={{ ...s.badge(hasW9 ? 'approved' : 'rejected'), fontSize: '10px' }}>{hasW9 ? 'W-9 ✓' : 'W-9 ✗'}</span>
                                 <span style={{ ...s.badge(st === 'active' ? 'approved' : st === 'expired' ? 'rejected' : st === 'warning' ? 'warning' : 'none'), fontSize: '10px' }}>
                                   COI {st === 'active' ? '✓' : st === 'expired' ? 'Exp' : st === 'warning' ? '~30d' : '✗'}

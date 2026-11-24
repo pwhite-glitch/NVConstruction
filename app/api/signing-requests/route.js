@@ -28,6 +28,10 @@ const logoSrc = () => `${getSiteUrl()}/logo.png`
 // (POST /api/file-upload, target signing-html → documents/signing-drafts/<job>/<user>/<uuid>.html)
 // and sends document_attachment: { path, uploadReceipt }; only that exact, verified object is read.
 const MAX_INLINE_SIGNING_HTML = 512 * 1024
+// SignWell's documented per-file limit (prompt 103): checked before anything is sent there.
+const SIGNWELL_MAX_FILE_BYTES = 25 * 1024 * 1024
+// Merging up to 12 exhibits from Storage can take a while.
+export const maxDuration = 60
 const SIGNING_ROW_COLS = 'id, token, job_id, subcontract_id, signer_email, signer_name, document_title, status, created_at'
 
 export async function POST(request) {
@@ -56,7 +60,7 @@ export async function POST(request) {
   if (denied) return denied
   let subcontract = null
   if (subcontract_id) {
-    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, status, signed_at, signed_contract_url, bid_proposal_url, vendor_name').eq('id', subcontract_id).maybeSingle()
+    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, status, signed_at, signed_contract_url, bid_proposal_url, vendor_name, generator_fields').eq('id', subcontract_id).maybeSingle()
     if (scErr) return Response.json({ error: scErr.message }, { status: 500 })
     if (!sc) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     if (sc.job_id !== job_id) return Response.json({ error: 'That subcontract is on a different job.' }, { status: 400 })
@@ -90,27 +94,38 @@ export async function POST(request) {
   // into one stored PDF and the contract gets their cover pages + a pointer to it, so the signer
   // sees them on the signing page and the signed copy keeps them. A failure stops the send
   // (nothing is emailed) rather than sending without exhibits the user expected.
+  // Prompt 103: extras (C, D, …) saved on the subcontract are attached too unless
+  // exhibits.extras is false; letters come from the server build.
   let exhibits_included = []
+  let exhibits_included_letters = []
   let exhibitsBytes = null
   if (subcontract && body.exhibits && typeof body.exhibits === 'object') {
-    const include = { proposal: body.exhibits.proposal !== false, billing: body.exhibits.billing !== false }
-    if (include.proposal || include.billing) {
+    const include = { proposal: body.exhibits.proposal !== false, billing: body.exhibits.billing !== false, extras: body.exhibits.extras !== false }
+    if (include.proposal || include.billing || include.extras) {
       let ex
       try {
         ex = await buildAndStoreExhibits(adminSupabase, subcontract, { include, subtitle: subcontract.vendor_name || '' })
       } catch (e) {
         ex = { error: e.message || 'unknown error' }
       }
-      if (ex.error && !ex.path) return Response.json({ error: 'Nothing was sent: could not attach the exhibits (' + ex.error + ').' }, { status: 502 })
-      if (ex.unreadable?.length) return Response.json({ error: 'Nothing was sent: could not read ' + ex.unreadable.map(u => `Exhibit ${u.key === 'proposal' ? 'A' : 'B'} (${u.name})`).join(' and ') + '. Try again.' }, { status: 502 })
+      if (ex.error && !ex.path) return Response.json({ error: 'Nothing was sent: could not attach the exhibits (' + ex.error + ').', ...(ex.code ? { code: ex.code } : {}) }, { status: ex.code === 'too_large' ? 413 : 502 })
+      if (ex.unreadable?.length) {
+        const letterOf = u => u.letter || (u.key === 'proposal' ? 'A' : u.key === 'billing' ? 'B' : '?')
+        return Response.json({ error: 'Nothing was sent: could not read ' + ex.unreadable.map(u => `Exhibit ${letterOf(u)} (${u.name})`).join(' and ') + '. Try again.' }, { status: 502 })
+      }
       document_html = withExhibitAppendix(document_html, ex.appendix)
       exhibits_included = ex.included || []
+      exhibits_included_letters = (ex.included_exhibits || []).map(e => e.letter)
       exhibitsBytes = ex.bytes || null
     }
   }
 
   if (viaSignwell) {
-    const packet = buildSignwellPacket({ html: document_html, exhibitsBytes, vendorName: subcontract.vendor_name })
+    if (exhibitsBytes && exhibitsBytes.length > SIGNWELL_MAX_FILE_BYTES) {
+      const mb = Math.ceil(exhibitsBytes.length / (1024 * 1024))
+      return Response.json({ error: `Nothing was sent: the exhibits PDF is ${mb} MB and SignWell accepts up to 25 MB per file. Remove or shrink an exhibit, or send with the built-in e-sign link.`, code: 'exhibits_too_large' }, { status: 413 })
+    }
+    const packet = buildSignwellPacket({ html: document_html, exhibitsBytes, vendorName: subcontract.vendor_name, exhibitLetters: exhibits_included_letters })
     const sent = await sendSubcontractViaSignwell(adminSupabase, {
       sc: subcontract, packet, signerName, signerEmail: signer_email.trim().toLowerCase(),
       title: document_title || 'Subcontract Agreement', jobId: job_id,
@@ -129,7 +144,7 @@ export async function POST(request) {
     return Response.json({
       provider: 'signwell',
       data: { subcontract_id: subcontract.id, signwell_document_id: sent.document_id, signwell_status: sent.signwell_status, test_mode: !!sent.test_mode },
-      saved_contract, voided: old?.length || 0, exhibits_included,
+      saved_contract, voided: old?.length || 0, exhibits_included, exhibits_included_letters,
     })
   }
 
@@ -232,11 +247,11 @@ export async function POST(request) {
   if (subcontract_id) {
     const { data: old, error: voidErr } = await adminSupabase.from('signing_requests')
       .update({ status: 'voided' }).eq('subcontract_id', subcontract_id).eq('status', 'pending').neq('id', row.id).select('id')
-    if (voidErr) return Response.json({ data: rowMeta, saved_contract, exhibits_included, warning: 'Sent, but older signing links could not be cancelled: ' + voidErr.message })
+    if (voidErr) return Response.json({ data: rowMeta, saved_contract, exhibits_included, exhibits_included_letters, warning: 'Sent, but older signing links could not be cancelled: ' + voidErr.message })
     voided = old?.length || 0
   }
 
-  return Response.json({ data: rowMeta, saved_contract, voided, exhibits_included })
+  return Response.json({ data: rowMeta, saved_contract, voided, exhibits_included, exhibits_included_letters })
 }
 
 // PATCH { id, action: 'void' } — cancel a pending signing request (the link stops working).

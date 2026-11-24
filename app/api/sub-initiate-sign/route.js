@@ -12,6 +12,9 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// Merging the exhibits reads every file from Storage server-side.
+export const maxDuration = 60
+
 export async function POST(request) {
   // Sub must be authenticated — derive identity from session, never from body
   const auth = await requireAuth(request)
@@ -102,17 +105,23 @@ export async function POST(request) {
       scope_notes: '* Change Orders: You must receive written authorization from the Project Manager before you begin the work.\n* Daily broom swept clean-up of all trash & debris\n* Comply with all OSHA regulations.',
     }
 
-    const baseUrl = getSiteUrl()
-    let document_html = buildSubcontractHtml(f, baseUrl)
-    // Prompt 97: attach Exhibit A (proposal) / B (job billing schedule) when on file. The sub
-    // can't choose here, so missing ones are skipped and a failure only leaves them off (logged).
+    // Prompt 97: attach Exhibit A (proposal) / B (job billing schedule) when on file, and
+    // (prompt 103) the extra exhibits C, D, … saved on the subcontract. The sub can't choose
+    // here, so missing ones are skipped and a failure only leaves them off (logged). Built
+    // first so the contract body lists exactly the exhibits attached.
+    let ex = null
     try {
-      const ex = await buildAndStoreExhibits(adminSupabase, sc, { subtitle: sc.vendor_name || '' })
-      if (ex.path) document_html = withExhibitAppendix(document_html, ex.appendix)
-      else if (ex.error) console.error('sub-initiate-sign: exhibits not attached:', ex.error)
+      ex = await buildAndStoreExhibits(adminSupabase, sc, { subtitle: sc.vendor_name || '' })
+      if (!ex.path && ex.error) console.error('sub-initiate-sign: exhibits not attached:', ex.error)
     } catch (e) {
+      ex = null
       console.error('sub-initiate-sign: exhibits not attached:', e.message)
     }
+    f.exhibit_list = ex?.path ? (ex.included_exhibits || []).map(e => ({ letter: e.letter, title: e.title })) : []
+
+    const baseUrl = getSiteUrl()
+    let document_html = buildSubcontractHtml(f, baseUrl)
+    if (ex?.path) document_html = withExhibitAppendix(document_html, ex.appendix)
     const document_title = `Subcontract — ${sc.vendor_name || 'Sub'} · #${jobNum}`
 
     // The signer is the logged-in person (profiles.full_name), never the company.

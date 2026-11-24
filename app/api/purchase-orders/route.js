@@ -7,6 +7,7 @@ import { logChange } from '../../../lib/change-log'
 import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 import { normalizePayerOverride, effectivePOPayer, jobPOPayer, paymentTypeForPayer, PO_PAYER_LABELS } from '../../../lib/po-invoices'
 import { isMissingColumnError, missingColumnName } from '../../../lib/missing-column-retry'
+import { payerChangeGuard } from '../../../lib/po-payer-change'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -213,7 +214,8 @@ export async function PUT(request) {
     let newAttachmentUrl = undefined
 
     // attachment omitted / null keeps the saved attachment.
-    const { id, items, attachment, ...fields } = parsed.body
+    // applyTo ('new_only' confirms a payer change, prompt 108) is never a PO field.
+    const { id, items, attachment, applyTo, ...fields } = parsed.body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const { po, denied } = await loadPOForCaller(auth, id)
     if (denied) return denied
@@ -238,6 +240,7 @@ export async function PUT(request) {
     if (payerOverride === 'invalid') return Response.json({ error: 'Who pays must be "nv", "owner" or blank (follow the job).' }, { status: 400 })
     let oldPayerOverride = null
     let payerWarning = null
+    let payerImpact = null
     if (payerOverride !== undefined) {
       const { data: cur, error: curErr } = await adminSupabase.from('purchase_orders').select('payer_override').eq('id', id).maybeSingle()
       if (curErr && !isMissingColumnError(curErr)) return Response.json({ error: curErr.message }, { status: 500 })
@@ -248,6 +251,16 @@ export async function PUT(request) {
         updates.payer_override = payerOverride
         const { data: jobRow, error: jobErr } = await adminSupabase.from('jobs').select('*').eq('id', po.job_id).maybeSingle()
         if (jobErr) return Response.json({ error: jobErr.message }, { status: 500 })
+        // Prompt 108: approved/paid invoices keep their payer. If the EFFECTIVE payer changes
+        // and some would now differ, ask first (409) — before any write or upload check. The
+        // edit form resends payer_override on every save, so same-payer saves skip this.
+        const oldEff = effectivePOPayer({ payer_override: cur?.payer_override ?? null, payment_type: po.payment_type }, jobRow)
+        const newEff = effectivePOPayer({ payer_override: payerOverride, payment_type: po.payment_type }, jobRow)
+        if (oldEff !== newEff) {
+          const g = await payerChangeGuard(adminSupabase, { poIds: [po.id], newPayer: newEff, scope: 'po', applyTo })
+          if (!g.ok) return g.response
+          payerImpact = g.impact
+        }
         if (jobPOPayer(jobRow)) updates.payment_type = paymentTypeForPayer(effectivePOPayer({ payer_override: payerOverride }, jobRow))
       }
     }
@@ -325,14 +338,15 @@ export async function PUT(request) {
 
     // change_log (server-only). Only real changes; logChange never throws.
     const diffs = []
-    const add = (field_name, oldV, newV) => {
+    const add = (field_name, oldV, newV, note) => {
       const o = oldV == null || oldV === '' ? null : String(oldV)
       const n = newV == null || newV === '' ? null : String(newV)
-      if (o !== n) diffs.push({ field_name, old_value: o, new_value: n })
+      if (o !== n) diffs.push({ field_name, old_value: o, new_value: n, ...(note ? { note } : {}) })
     }
     if ('vendor_name' in updates) add('vendor_name', po.vendor_name, updates.vendor_name)
     if ('payment_type' in updates && !warning) add('payment_type', po.payment_type, updates.payment_type)
-    if ('payer_override' in updates && oldPayerOverride !== updates.payer_override) add('payer_override', payerText(oldPayerOverride), payerText(updates.payer_override))
+    if ('payer_override' in updates && oldPayerOverride !== updates.payer_override) add('payer_override', payerText(oldPayerOverride), payerText(updates.payer_override),
+      payerImpact?.locked_keep > 0 ? ` (${payerImpact.locked_keep} approved/paid invoice(s) kept their payer)` : undefined)
     if ('budget_item_id' in updates) add('budget_item_id', po.budget_item_id, updates.budget_item_id)
     if ('status' in updates) add('status', po.status, updates.status)
     if (items !== undefined) {

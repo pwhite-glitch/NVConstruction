@@ -146,7 +146,8 @@ describe('statuses, partial pay, over amount', () => {
     expect(lib.invoiceStatus(ready, 'nv')).toBe('ready_to_pay')
     expect(lib.invoiceStatus({ ...ready, paid_amount: 400 }, 'nv')).toBe('ready_to_pay')
     expect(lib.invoiceStatus({ ...ready, paid_amount: 1000, paid_at: 'x' }, 'nv')).toBe('paid')
-    expect(lib.invoiceStatus(ready, 'owner')).toBe('owner_to_pay') // never ready_to_pay for owner-pays
+    // prompt 108: an approved invoice keeps NV as payer (was 'owner_to_pay' — the payer-switch bug)
+    expect(lib.invoiceStatus(ready, 'owner')).toBe('ready_to_pay')
     expect(lib.invoiceStatus({ amount: 5, paid_by_owner: true }, 'owner')).toBe('paid_by_owner')
     expect(lib.poPaymentStatus([], 'nv')).toBe('no_invoice')
     expect(lib.poPaymentStatus([ready, { amount: 5 }], 'nv')).toBe('needs_approval')
@@ -175,7 +176,8 @@ describe('statuses, partial pay, over amount', () => {
     const rows = lib.buildInvoiceRows([
       { id: 'late', po_id: 'P1', amount: 5, paid_amount: 0, ready_to_pay: true, approved_at: '2026-11-01T10:00:00Z', due_date: '2026-11-10' },
       { id: 'later', po_id: 'P1', amount: 5, paid_amount: 0, due_date: '2026-12-30', created_at: '2026-11-15T00:00:00Z' },
-      { id: 'owner', po_id: 'P2', amount: 5, paid_amount: 0, ready_to_pay: true, approved_at: '2026-11-01T00:00:00Z', due_date: '2026-11-01' },
+      // prompt 108: an untouched owner-pays invoice (an approved one is locked to NV — see prompt108 tests)
+      { id: 'owner', po_id: 'P2', amount: 5, paid_amount: 0, due_date: '2026-11-01' },
     ], posById, jobsById, '2026-11-20')
     expect(rows.map(r => r.id)).toEqual(['owner', 'late', 'later'])
     expect(rows.find(r => r.id === 'owner').status).toBe('owner_to_pay')
@@ -422,7 +424,7 @@ describe('cash outlook', () => {
   })
   test('owner-paid invoices are not NV cash', () => {
     const posById = { P1: { id: 'P1', job_id: 'J1' }, P2: { id: 'P2', job_id: 'J2' } }
-    expect(lib.paidInvoiceAmountByPO([{ po_id: 'P1', paid_amount: 100 }, { po_id: 'P1', paid_amount: 50.5 }, { po_id: 'P2', paid_amount: 500 }], posById, jobsById)).toEqual({ P1: 150.5 })
+    expect(lib.paidInvoiceAmountByPO([{ po_id: 'P1', paid_amount: 100 }, { po_id: 'P1', paid_amount: 50.5 }, { po_id: 'P2', paid_amount: 500, paid_by_owner: true }], posById, jobsById)).toEqual({ P1: 150.5 }) // prompt 108: P2 row is an owner-paid row (NV checks now count per invoice)
   })
   test('outlook route probes 082 and passes paid invoice amounts', () => {
     const src = read('app/api/cash-outlook/route.js')

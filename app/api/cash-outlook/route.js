@@ -104,7 +104,7 @@ export async function GET(request) {
   let invoicePaidByPO = {}
   if (poInvoices.ok && posRes.data.length) {
     const poIds = posRes.data.map(p => p.id)
-    const invRes = await inChunks(poIds, chunk => adminSupabase.from('po_invoices').select('id, po_id, paid_amount').in('po_id', chunk).order('id'))
+    const invRes = await inChunks(poIds, chunk => adminSupabase.from('po_invoices').select('id, po_id, paid_amount, paid_by_owner, approved_at, ready_to_pay, paid_at').in('po_id', chunk).order('id'))
     if (invRes.error && !isMissingRelation(invRes.error)) return fail('PO invoices', invRes.error)
     const posById = Object.fromEntries(posRes.data.map(p => [p.id, p]))
     invoicePaidByPO = invRes.error ? {} : paidInvoiceAmountByPO(invRes.data, posById, jobsById)

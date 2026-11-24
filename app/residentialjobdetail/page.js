@@ -632,7 +632,15 @@ function ResidentialJobDetailInner() {
       // No new file = attachment omitted, which keeps the saved one.
       const r = await uploadThenSend({
         fetchFn: authFetch, putFn: fetch, file: editPOFile, target: 'po-attachment', context: { job_id: id, record_id: editingPOId },
-        send: attachment => fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', attachment ? { ...payload, attachment } : payload)),
+        // Prompt 108: a payer change that leaves approved/paid invoices on their old payer asks
+        // first (409 needs_payer_confirm); OK resends the same save with applyTo: 'new_only'.
+        send: async attachment => {
+          const body = attachment ? { ...payload, attachment } : payload
+          const first = await fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', body))
+          if (first.ok || !first.data?.needs_payer_confirm) return first
+          if (!window.confirm(first.error)) return { ok: false, error: 'Not saved — who pays was not changed.' }
+          return fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', { ...body, applyTo: 'new_only' }))
+        },
       })
       if (!r.ok) { flash(false, (r.stage === 'upload' ? 'PO attachment upload failed: ' : 'PO update failed: ') + r.error); return }
       if (r.data?.warning) alert(r.data.warning)

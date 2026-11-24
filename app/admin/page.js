@@ -1621,7 +1621,7 @@ export default function AdminPortal() {
                                       </td>
                                       <td style={s.td}><span style={{ fontWeight: '600' }}>{inv.po?.vendor_name || '—'}</span></td>
                                       <td style={s.td}><span style={{ cursor: 'pointer', color: '#111827' }} onClick={() => router.push(jobHrefById(inv.po?.job_id, jobs, 'po'))}>#{inv.job?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{inv.job?.project_name}</span></td>
-                                      <td style={s.td}>{inv.po?.po_number}{inv.payer_source === 'override' && <div style={{ fontSize: '10px', color: '#6b7280' }}>payer set on PO</div>}</td>
+                                      <td style={s.td}>{inv.po?.po_number}{inv.payer_source === 'override' && <div style={{ fontSize: '10px', color: '#6b7280' }}>payer set on PO</div>}{inv.payer_kept && <div style={{ fontSize: '10px', color: '#6b7280' }}>payer kept from before a change</div>}</td>
                                       <td style={s.td}>{inv.invoice_number}<div style={{ fontSize: '11px', color: '#6b7280' }}>{fmtD(inv.invoice_date)}</div></td>
                                       <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', fontFamily: 'monospace' }}>
                                         {fmtAmt(poView === 'ready_to_pay' ? remaining : inv.amount)}

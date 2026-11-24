@@ -3202,7 +3202,15 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     // No new file = attachment omitted, which keeps the saved one.
     const r = await uploadThenSend({
       fetchFn: authFetch, putFn: fetch, file: editPOFile, target: 'po-attachment', context: { job_id: id, record_id: editingPOId },
-      send: attachment => fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', attachment ? { ...payload, attachment } : payload)),
+      // Prompt 108: a payer change that leaves approved/paid invoices on their old payer asks
+      // first (409 needs_payer_confirm); OK resends the same save with applyTo: 'new_only'.
+      send: async attachment => {
+        const body = attachment ? { ...payload, attachment } : payload
+        const first = await fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', body))
+        if (first.ok || !first.data?.needs_payer_confirm) return first
+        if (!window.confirm(first.error)) return { ok: false, error: 'Not saved — who pays was not changed.' }
+        return fetchJson(authFetch, '/api/purchase-orders', jsonInit('PUT', { ...body, applyTo: 'new_only' }))
+      },
     })
     if (!r.ok) {
       setErrMsg((r.stage === 'upload' ? 'PO attachment upload failed: ' : 'PO update failed: ') + r.error)
@@ -6483,8 +6491,18 @@ ${(budgets || []).length > 0 ? `
     if (jobPOPayer(job) && form.po_payer && form.po_payer !== job.po_payer) fields.po_payer = form.po_payer
     try {
       let data = {}
-      const res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
+      let res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
       data = await res.json().catch(() => ({}))
+      // Prompt 108: switching who pays leaves approved/paid invoices on their payer — confirm,
+      // then resend with applyTo: 'new_only'; cancel saves nothing.
+      if (res.status === 409 && data.needs_payer_confirm) {
+        if (!window.confirm(data.error)) {
+          setErrMsg('Not saved — Who pays vendors was not changed.'); setTimeout(() => setErrMsg(''), 8000)
+          return
+        }
+        res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields, applyTo: 'new_only' }) })
+        data = await res.json().catch(() => ({}))
+      }
       if (!res.ok || !data.job) throw new Error(data.error || `HTTP ${res.status}`)
       const saved = data.job
       // Log high-value field changes (from the saved row, once).

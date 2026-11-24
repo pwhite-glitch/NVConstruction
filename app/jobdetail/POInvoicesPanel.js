@@ -221,6 +221,7 @@ export default function POInvoicesPanel({ s, po, job, invoices = [], can = {}, i
               <span style={{ fontSize: '12px', color: '#6b7280' }}>dated {fmtDate(inv.invoice_date)} · due {fmtDate(inv.due_date)}</span>
               <span style={{ marginLeft: 'auto', fontSize: '14px', fontWeight: '800', color: '#111827', fontFamily: 'monospace' }}>{fmt(inv.amount)}</span>
             </div>
+            {inv.payer_kept && <div style={{ fontSize: '11px', color: '#6b7280' }}>{inv.payer === 'owner' ? 'Owner pays' : 'NV pays'} (kept — approved/paid before the payer changed)</div>}
             {Number(inv.paid_amount) > 0 && inv.status !== 'paid' && <div style={{ fontSize: '12px', color: '#b45309', marginTop: '4px' }}>Partially paid {fmt(inv.paid_amount)} · {fmt(inv.remaining)} remaining</div>}
             {inv.check_number && <div style={{ fontSize: '12px', color: '#374151', marginTop: '4px' }}>Check # {inv.check_number}{inv.last_payment_date ? ` · ${fmtDate(inv.last_payment_date)}` : ''}</div>}
             {inv.sent_back_reason && !inv.approved_at && <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '4px' }}>Sent back {fmtDate(inv.sent_back_at)}: {inv.sent_back_reason}</div>}

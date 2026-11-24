@@ -9,7 +9,7 @@ import { todayCentral } from '../../../lib/central-date'
 import { isMissingRelation, fetchAll } from '../../../lib/budget-line-refs'
 import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
 import {
-  MIGRATION_082, MIGRATION_082_MESSAGE, MAX_NOTE, effectivePOPayer, jobPOPayer, invoiceStatus,
+  MIGRATION_082, MIGRATION_082_MESSAGE, MAX_NOTE, invoicePayer, jobPOPayer, invoiceStatus,
   invoiceRemaining, isSettled, validateInvoiceInput, validatePayment, overPOAmount, hasOwnerOverride,
   appendCheckNumber, buildInvoiceRows, summarizeInvoiceRows, defaultDueDate, r2, STATUS_LABELS,
 } from '../../../lib/po-invoices'
@@ -245,7 +245,8 @@ export async function POST(request) {
   const { data, error } = await adminSupabase.from('po_invoices').insert(row).select('*').single()
   if (error) return isMissingRelation(error) ? needs082() : bad(error.message, 500)
   const j = await loadJob(po.job_id)
-  const payer = effectivePOPayer(po, j.job)
+  // A new invoice is unlocked, so this is the PO/job payer — same path as PATCH (prompt 108).
+  const payer = invoicePayer(data, po, j.job)
   await log(auth, po, data, {
     field_name: 'payment_status', old_value: null, new_value: invoiceStatus(data, payer),
     note: `Invoice added: ${label(po, data)} for ${money(data.amount)}, due ${data.due_date || defaultDueDate(data.invoice_date)}.${over.override ? ` Owner override (over PO amount by ${money(over.o.by)}): ${over.override.over_po_override_note}` : ''}`,
@@ -271,7 +272,9 @@ export async function PATCH(request) {
   const po = p.po
   const j = await loadJob(po.job_id)
   if (j.error) return j.error
-  const payer = effectivePOPayer(po, j.job)
+  // Prompt 108: an approved/paid invoice keeps its own payer (lib/po-invoices.js
+  // lockedInvoicePayer); only an untouched invoice follows the current PO/job setting.
+  const payer = invoicePayer(inv, po, j.job)
   const before = invoiceStatus(inv, payer)
   const nowIso = new Date().toISOString()
   const today = todayCentral()
@@ -328,7 +331,7 @@ export async function PATCH(request) {
       Object.assign(update, over.override)
     }
     const { data, error } = await adminSupabase.from('po_invoices').update(update)
-      .eq('id', inv.id).eq('ready_to_pay', false).is('paid_at', null).select('*')
+      .eq('id', inv.id).eq('ready_to_pay', false).is('paid_at', null).eq('paid_by_owner', false).select('*')
     if (error) return bad(error.message, 500)
     if (!data?.length) return changed()
     await log(auth, po, inv, { field_name: 'payment_status', old_value: before, new_value: 'ready_to_pay', note: `Approved → Ready to pay: ${label(po, inv)} (${money(inv.amount)}, due ${inv.due_date || '—'}).${update.over_po_override_note ? ` Owner override: ${update.over_po_override_note}` : ''}` })
@@ -336,6 +339,8 @@ export async function PATCH(request) {
     return json({ invoice: { ...data[0], status: invoiceStatus(data[0], payer) }, email_error })
   }
 
+  // A sent-back invoice is unlocked again (approval cleared, no payment), so it follows the
+  // current PO/job payer from here on (prompt 108 — intended).
   if (action === 'send_back') {
     const reason = String(body.reason ?? '').trim()
     if (!reason) return bad('A reason is required to send an invoice back.')
@@ -348,8 +353,9 @@ export async function PATCH(request) {
       .eq('id', inv.id).is('paid_at', null).eq('paid_amount', inv.paid_amount ?? 0).select('*')
     if (error) return bad(error.message, 500)
     if (!data?.length) return changed()
-    await log(auth, po, inv, { field_name: 'payment_status', old_value: before, new_value: 'needs_approval', note: `Sent back: ${label(po, inv)}. Reason: ${update.sent_back_reason}` })
-    return json({ invoice: { ...data[0], status: invoiceStatus(data[0], payer) } })
+    const after = invoiceStatus(data[0], invoicePayer(data[0], po, j.job))
+    await log(auth, po, inv, { field_name: 'payment_status', old_value: before, new_value: after, note: `Sent back: ${label(po, inv)}. Reason: ${update.sent_back_reason}` })
+    return json({ invoice: { ...data[0], status: after } })
   }
 
   if (action === 'mark_paid') {
@@ -373,7 +379,7 @@ export async function PATCH(request) {
     }
     // Guarded on the paid amount we read: two clicks / two admins can't both record a check.
     const { data, error } = await adminSupabase.from('po_invoices').update(update)
-      .eq('id', inv.id).eq('ready_to_pay', true).is('paid_at', null).eq('paid_amount', inv.paid_amount ?? 0).select('*')
+      .eq('id', inv.id).eq('ready_to_pay', true).is('paid_at', null).eq('paid_amount', inv.paid_amount ?? 0).eq('paid_by_owner', false).select('*')
     if (error) return bad(error.message, 500)
     if (!data?.length) return changed()
     const after = invoiceStatus(data[0], payer)
@@ -383,6 +389,9 @@ export async function PATCH(request) {
   }
 
   if (action === 'mark_paid_by_owner') {
+    // Prompt 108: NV money or an NV approval on the row means NV pays it, whatever the PO says now.
+    if (Number(inv.paid_amount) > 0) return bad(`NV has already recorded ${money(inv.paid_amount)} in checks on this invoice${inv.check_number ? ` (check ${inv.check_number})` : ''}, so it can't be marked paid by the owner.`, 409)
+    if (inv.ready_to_pay || inv.approved_at) return bad('This invoice was approved for NV to pay and is on the office Ready to pay list. Send it back first if the owner is paying it.', 409)
     if (payer !== 'owner') return bad('NV pays this vendor. Approve the invoice so the office can pay it.', 409)
     const denied = await denyUnlessApprover(adminSupabase, auth, po.job_id)
     if (denied) return denied
@@ -392,7 +401,7 @@ export async function PATCH(request) {
     const note = String(body.payment_notes ?? '').trim().slice(0, MAX_NOTE)
     const update = { paid_by_owner: true, paid_at: nowIso, last_payment_date: date, paid_by: auth.userId, payment_notes: (inv.payment_notes ? inv.payment_notes + '\n' : '') + `${date}: paid by owner${note ? ` — ${note}` : ''}` }
     const { data, error } = await adminSupabase.from('po_invoices').update(update)
-      .eq('id', inv.id).eq('paid_by_owner', false).is('paid_at', null).select('*')
+      .eq('id', inv.id).eq('paid_by_owner', false).is('paid_at', null).eq('paid_amount', 0).eq('ready_to_pay', false).select('*')
     if (error) return bad(error.message, 500)
     if (!data?.length) return changed()
     await log(auth, po, inv, { field_name: 'payment_status', old_value: before, new_value: 'paid_by_owner', note: `Paid by owner: ${label(po, inv)} (${money(inv.amount)}) on ${date}.` })

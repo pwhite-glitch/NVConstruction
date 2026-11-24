@@ -7,6 +7,7 @@ import { writeWithMissingColumnRetry, isMissingColumnError, missingColumnName } 
 import { CONTRACT_DATE_NEEDS_069, CONTRACT_TIME_MIGRATION } from '../../../../lib/contract-time'
 import { PO_PAYER_NEEDS_082, PO_PAYER_LABELS } from '../../../../lib/po-invoices'
 import { logChange } from '../../../../lib/change-log'
+import { payerChangeGuard } from '../../../../lib/po-payer-change'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,7 +29,7 @@ export async function POST(request) {
 
   let body
   try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
-  const { id, fields } = body || {}
+  const { id, fields, applyTo } = body || {}
   if (!id || !fields || typeof fields !== 'object' || Array.isArray(fields)) return Response.json({ error: 'id and fields required' }, { status: 400 })
   const denied = await denyJob(adminSupabase, auth, id)
   if (denied) return denied
@@ -55,6 +56,25 @@ export async function POST(request) {
   }
 
   if (!Object.keys(update).length) return Response.json({ ok: true, job })
+
+  // Prompt 108: switching "Who pays vendors (POs)" never moves approved/paid invoices (they
+  // keep the payer their row proves). If some would now differ from the new setting, ask
+  // first (409 needs_payer_confirm) unless the caller resent with applyTo: 'new_only'.
+  // POs with their own payer_override don't change, so their invoices aren't counted.
+  let payerImpact = null
+  if ('po_payer' in update && update.po_payer !== job.po_payer && (job.po_payer === 'nv' || job.po_payer === 'owner')) {
+    let { data: pos, error: posErr } = await adminSupabase.from('purchase_orders').select('id, payer_override').eq('job_id', id)
+    if (posErr && isMissingColumnError(posErr)) {
+      // No payer_override column: every PO follows the job.
+      ({ data: pos, error: posErr } = await adminSupabase.from('purchase_orders').select('id').eq('job_id', id))
+    }
+    if (posErr) return Response.json({ error: posErr.message }, { status: 500 })
+    const poIds = (pos || []).filter(p => p.payer_override === null || p.payer_override === undefined || p.payer_override === '').map(p => p.id)
+    const g = await payerChangeGuard(adminSupabase, { poIds, newPayer: update.po_payer, scope: 'job', applyTo })
+    if (!g.ok) return g.response
+    payerImpact = g.impact
+  }
+
   // contract_completion_date needs migration 069 and owner_address migration 079: before
   // them, the update is retried without the missing column only, and the answer carries
   // a warning (200, rest saved).
@@ -84,7 +104,9 @@ export async function POST(request) {
   // Who pays PO vendors decides whether this job's PO invoices reach the admin check list.
   if ('po_payer' in update && !dropped.includes('po_payer') && job.po_payer !== data[0].po_payer) {
     await logChange({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'po_payer', old_value: job.po_payer ?? null, new_value: data[0].po_payer, changed_by: auth.userId,
-      note: `Who pays vendors (POs): ${PO_PAYER_LABELS[job.po_payer] || 'not set'} → ${PO_PAYER_LABELS[data[0].po_payer] || data[0].po_payer}` })
+      note: `Who pays vendors (POs): ${PO_PAYER_LABELS[job.po_payer] || 'not set'} → ${PO_PAYER_LABELS[data[0].po_payer] || data[0].po_payer}`
+        + (payerImpact?.locked_keep > 0 ? ` — ${payerImpact.locked_keep} approved/paid invoice(s) kept their payer` : '')
+        + (payerImpact?.open_move > 0 ? ` — ${payerImpact.open_move} open invoice(s) moved` : '') })
   }
   return Response.json({
     ok: true, job: data[0], unarchived: update.archived === false,

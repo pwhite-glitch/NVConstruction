@@ -5,6 +5,7 @@ import { getSiteUrl } from '../../../lib/site-url'
 import { withExhibitAppendix } from '../../../lib/subcontract-exhibits'
 import { buildAndStoreExhibits } from '../../../lib/subcontract-exhibits-server'
 import { isSignwellOpen } from '../../../lib/signwell-status'
+import { matchDirectoryEntry, resolveContractAddresses } from '../../../lib/subcontract-generator'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,7 +26,7 @@ export async function POST(request) {
     // Verify the subcontract belongs to this sub (or their company)
     const { data: sc } = await adminSupabase
       .from('subcontracts')
-      .select('*, jobs(job_number, project_name, location, owner_name, owner_company)')
+      .select('*, jobs(*)')
       .eq('id', subcontract_id)
       .single()
 
@@ -58,20 +59,37 @@ export async function POST(request) {
 
     if (existing) return Response.json({ token: existing.token, status: existing.status })
 
+    // Get sub email from auth — never from profiles.email which may be stale
+    const { data: authUser } = await adminSupabase.auth.admin.getUserById(sub_user_id)
+    const signer_email = authUser?.user?.email || ''
+
+    // Prompt 102: the same sub / owner addresses the Gen Contract form would start with
+    // (saved generator_fields → Directory row / job). A failed Directory read only leaves
+    // the sub address blank.
+    let dirSub = null
+    try {
+      const { data: dirRows, error: dirErr } = await adminSupabase.from('sub_directory').select('*').eq('status', 'approved')
+      if (dirErr) console.error('sub-initiate-sign: directory read failed:', dirErr.message)
+      else dirSub = matchDirectoryEntry(dirRows, { subId: sc.sub_id, email: signer_email, names: [sc.vendor_name] })
+    } catch (e) {
+      console.error('sub-initiate-sign: directory read failed:', e.message)
+    }
+
     // Build subcontract HTML
     const job = sc.jobs || {}
+    const addr = resolveContractAddresses({ saved: sc.generator_fields, sub: dirSub, job })
     const yr = new Date().getFullYear()
     const jobNum = job.job_number || '000'
     const f = {
       date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
       sub_name: sc.vendor_name || 'Subcontractor',
-      sub_address: '',
+      sub_address: addr.sub_address,
       entity_type: 'sole proprietorship',
       trade: sc.description || '',
       project_name: job.project_name || '',
       project_address: job.location || '',
       owner_name: job.owner_company || job.owner_name || '',
-      owner_address: '',
+      owner_address: addr.owner_address,
       contract_amount: String(sc.contract_value || 0),
       pay_pct: '100',
       scope_of_work: sc.description || '',
@@ -96,10 +114,6 @@ export async function POST(request) {
       console.error('sub-initiate-sign: exhibits not attached:', e.message)
     }
     const document_title = `Subcontract — ${sc.vendor_name || 'Sub'} · #${jobNum}`
-
-    // Get sub email from auth — never from profiles.email which may be stale
-    const { data: authUser } = await adminSupabase.auth.admin.getUserById(sub_user_id)
-    const signer_email = authUser?.user?.email || ''
 
     // The signer is the logged-in person (profiles.full_name), never the company.
     // No name on file: store null so the sign page accepts their typed full name.

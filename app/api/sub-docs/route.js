@@ -4,6 +4,7 @@ import { getSubContracts } from '../../../lib/sub-access'
 import { denyJobOf, accessibleJobIds } from '../../../lib/roles'
 import { resolveUniqueCompany, renameImpact, sameExactName } from '../../../lib/company-identity'
 import { coiUploadError } from '../../../lib/coi-status'
+import { addressPartsError, composeAddress } from '../../../lib/sub-address'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -170,6 +171,13 @@ export async function POST(request) {
     for (const key of ['w9_url', 'coi_url']) {
       if (updates[key] && updates[key] !== dir[key] && !updates[key].startsWith(`${dir.id}/`)) return forbidden()
     }
+    // Company address (prompt 102): subs send street / city / state / ZIP only (a raw
+    // `address` from a sub is ignored); stored composed in the one address column.
+    if (body.address_parts !== undefined) {
+      const addrErr = addressPartsError(body.address_parts)
+      if (addrErr) return Response.json({ error: addrErr }, { status: 400 })
+      updates.address = composeAddress(body.address_parts)
+    }
   }
 
   // Company-name change: only as a confirmed rename (Directory shows the
@@ -235,5 +243,5 @@ export async function POST(request) {
     return Response.json({ error: msg }, { status: error ? 500 : 409 })
   }
 
-  return Response.json({ ok: true, renamed: rename ? { from: rename.oldName, to: rename.next, company_renamed: !!oldCompanyName } : null })
+  return Response.json({ ok: true, renamed: rename ? { from: rename.oldName, to: rename.next, company_renamed: !!oldCompanyName } : null, ...('address' in updates ? { address: updates.address } : {}) })
 }

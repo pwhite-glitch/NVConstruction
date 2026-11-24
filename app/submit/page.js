@@ -10,6 +10,7 @@ import { workingDaysOf, rangeLabel } from '../../lib/lookahead-dates'
 import { openStorageFile } from '../../lib/open-file'
 import { openSignedContract, openBidPlan, startSigning, printSubcontract } from '../../lib/portal-openers'
 import { isCoLine, contractsWithBaseSov } from '../../lib/sov-lines'
+import { addressPartsError, parseAddress, isBlankAddress, ADDRESS_LIMITS } from '../../lib/sub-address'
 import { todayCentral, addDaysCentral } from '../../lib/central-date'
 import { billingPaymentSummary, billingPaidAmount } from '../../lib/billing-payment'
 import { billingDraftKey, LEGACY_BILLING_DRAFT_KEY, restoreBillingDraft, applyDraftPcts, draftToPersist, loadOpenDraws, drawAfterLoad } from '../../lib/billing-draft'
@@ -156,6 +157,10 @@ export default function Submit() {
   const [docsCoiExpiry, setDocsCoiExpiry] = useState('')
   const [savingDocs, setSavingDocs] = useState(false)
   const [docsSaved, setDocsSaved] = useState(false)
+  // Company address on the sub's Directory row (prompt 102): edited as parts.
+  const [addrEdit, setAddrEdit] = useState(null)
+  const [addrSaving, setAddrSaving] = useState(false)
+  const [addrMsg, setAddrMsg] = useState('')
   const [jobSovContracts, setJobSovContracts] = useState([])
   const [sovForm, setSovForm] = useState([])
   const [pendingDraft, setPendingDraft] = useState(null) // { form, sovPct } waiting to be restored
@@ -518,6 +523,26 @@ export default function Submit() {
     setDocsCoiFile(null)
     setDocsSaved(true)
     setTimeout(() => setDocsSaved(false), 3000)
+  }
+
+  // Separate from saveDocs: sends only the address, so it never touches the documents.
+  async function saveCompanyAddress() {
+    if (!dirEntry || !addrEdit) return
+    const err = addressPartsError(addrEdit)
+    if (err) { setAddrMsg(err); return }
+    setAddrSaving(true)
+    setAddrMsg('')
+    try {
+      const res = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id, address_parts: addrEdit }) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setAddrMsg(j.error || 'Save failed. Please try again.'); return }
+      setDirEntry(prev => ({ ...prev, address: j.address }))
+      setAddrEdit(null)
+    } catch (e) {
+      setAddrMsg('Save failed: ' + (e?.message || 'network error'))
+    } finally {
+      setAddrSaving(false)
+    }
   }
 
   async function loadBidPackageDetail(bidPackageId) {
@@ -2154,6 +2179,45 @@ export default function Submit() {
               <p style={{ color: '#6b7280', fontSize: '14px' }}>No directory record found for your account. Contact NV Construction to get set up.</p>
             ) : (
               <>
+                <div style={{ marginBottom: '1.5rem', paddingBottom: '1.25rem', borderBottom: '1px solid #f3f4f6' }}>
+                  <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Company address</p>
+                  {!addrEdit ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      {isBlankAddress(dirEntry.address)
+                        ? <span style={{ fontSize: '13px', color: '#e8590c' }}>Not on file</span>
+                        : <span style={{ fontSize: '13px', color: '#111827' }}>{dirEntry.address}</span>}
+                      <button type="button" style={{ padding: '6px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }} onClick={() => { setAddrMsg(''); setAddrEdit(parseAddress(dirEntry.address)) }}>Edit</button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label style={s.label}>Street address *</label>
+                        <input style={s.input} value={addrEdit.street} maxLength={ADDRESS_LIMITS.street} autoComplete="street-address" placeholder="123 Main St" onChange={e => setAddrEdit(a => ({ ...a, street: e.target.value }))} />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }} className="rx-grid-2">
+                        <div>
+                          <label style={s.label}>City *</label>
+                          <input style={s.input} value={addrEdit.city} maxLength={ADDRESS_LIMITS.city} autoComplete="address-level2" placeholder="Dallas" onChange={e => setAddrEdit(a => ({ ...a, city: e.target.value }))} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: '12px' }}>
+                          <div>
+                            <label style={s.label}>State *</label>
+                            <input style={s.input} value={addrEdit.state} maxLength={2} autoCapitalize="characters" autoComplete="address-level1" placeholder="TX" onChange={e => setAddrEdit(a => ({ ...a, state: e.target.value.toUpperCase() }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>ZIP *</label>
+                            <input style={s.input} value={addrEdit.zip} maxLength={10} inputMode="numeric" autoComplete="postal-code" placeholder="75001" onChange={e => setAddrEdit(a => ({ ...a, zip: e.target.value }))} />
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <button type="button" style={{ ...s.btn, opacity: addrSaving ? 0.6 : 1 }} disabled={addrSaving} onClick={saveCompanyAddress}>{addrSaving ? 'Saving...' : 'Save address'}</button>
+                        <button type="button" style={{ padding: '10px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }} disabled={addrSaving} onClick={() => { setAddrEdit(null); setAddrMsg('') }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {addrMsg && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#dc2626' }}>{addrMsg}</p>}
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }} className="rx-grid-2">
                   <div>
                     <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>W-9</p>

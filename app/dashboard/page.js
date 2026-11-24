@@ -45,6 +45,7 @@ import { findDuplicateBillings, duplicateTooltip } from '../../lib/billing-dupli
 import { confirmCoiForCompany } from '../../lib/coi-warning'
 import { currentCompletionDate, daysLeftFromToday, completionFlag } from '../../lib/contract-time'
 import { DEFAULT_BILLING_TYPE } from '../../lib/billing-type'
+import { isBlankAddress } from '../../lib/sub-address'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -4767,6 +4768,7 @@ ${planLinks.map(p => p.url
                                 {isBeforeTodayCentral(sub.coi_expiration) ? 'COI EXPIRED' : 'COI EXPIRING'} {new Date(sub.coi_expiration + 'T00:00:00').toLocaleDateString()}
                               </span>
                             )}
+                            {isBlankAddress(sub.address) && <span style={{ fontSize: '11px', color: '#c2410c', fontWeight: '700', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 8px' }}>No address</span>}
                             <span style={s.badge(sub.status)}>{sub.status}</span>
                           </div>
                         </div>

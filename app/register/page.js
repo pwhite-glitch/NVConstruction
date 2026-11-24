@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { addressPartsError, ADDRESS_LIMITS } from '../../lib/sub-address'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -29,7 +30,7 @@ const s = {
 
 export default function Register() {
   const router = useRouter()
-  const [form, setForm] = useState({ full_name: '', company_name: '', phone: '', email: '', password: '', trade: '', coi_expiration: '' })
+  const [form, setForm] = useState({ full_name: '', company_name: '', phone: '', street: '', city: '', state: '', zip: '', email: '', password: '', trade: '', coi_expiration: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
@@ -38,6 +39,9 @@ export default function Register() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    // Before signUp, so a bad address never leaves a login with no company.
+    const addrErr = addressPartsError(form)
+    if (addrErr) { setError(addrErr); setLoading(false); return }
     const { data, error } = await supabase.auth.signUp({
       email: form.email, password: form.password,
       options: { data: { full_name: form.full_name, role: 'subcontractor' } }
@@ -54,6 +58,7 @@ export default function Register() {
           full_name: form.full_name,
           email: form.email.toLowerCase().trim(),
           phone: form.phone || null,
+          address_parts: { street: form.street, city: form.city, state: form.state, zip: form.zip },
           trade: form.trade || null,
           coi_expiration: form.coi_expiration || null,
         }),
@@ -78,6 +83,14 @@ export default function Register() {
             <div><label style={s.label}>Company</label><input style={s.input} value={form.company_name} onChange={e => update('company_name', e.target.value)} required placeholder="ABC Concrete" /></div>
           </div>
           <div style={{ marginBottom: '1rem' }}><label style={s.label}>Phone</label><input style={s.input} value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="(555) 555-5555" /></div>
+          <div style={{ marginBottom: '1rem' }}><label style={s.label}>Street address *</label><input style={s.input} value={form.street} onChange={e => update('street', e.target.value)} required maxLength={ADDRESS_LIMITS.street} placeholder="123 Main St" autoComplete="street-address" /></div>
+          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
+            <div><label style={s.label}>City *</label><input style={s.input} value={form.city} onChange={e => update('city', e.target.value)} required maxLength={ADDRESS_LIMITS.city} placeholder="Dallas" autoComplete="address-level2" /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: '12px' }}>
+              <div><label style={s.label}>State *</label><input style={s.input} value={form.state} onChange={e => update('state', e.target.value.toUpperCase())} required maxLength={2} autoCapitalize="characters" placeholder="TX" autoComplete="address-level1" /></div>
+              <div><label style={s.label}>ZIP *</label><input style={s.input} value={form.zip} onChange={e => update('zip', e.target.value)} required maxLength={10} inputMode="numeric" placeholder="75001" autoComplete="postal-code" /></div>
+            </div>
+          </div>
           <div style={{ marginBottom: '1rem' }}>
             <label style={s.label}>Primary trade</label>
             <select style={s.input} value={form.trade} onChange={e => update('trade', e.target.value)}>

@@ -2641,6 +2641,24 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
     await loadScopeItems(bidId)
   }
 
+  // Prompt 105: the awarded sub's bid PDF becomes Exhibit A (copied server-side into the job's
+  // proposal folder). Only fills an empty Exhibit A; never blocks the save that called it.
+  async function attachBidAsExhibitA(subcontractId, submission) {
+    if (!subcontractId || !submission?.doc_url) return { ok: true, skipped: true }
+    try {
+      const res = await fetch('/api/subcontracts/attach-bid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subcontract_id: subcontractId, source: 'bid_submission', id: submission.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) return { ok: false, error: data.error || `HTTP ${res.status}`, code: data.code || null }
+      return { ok: true, ...data }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e), code: null }
+    }
+  }
+
   async function createJobFromBid(pkg) {
     if (!createJobFromBidForm.job_number.trim()) { setCreateJobFromBidError('Job number is required.'); return }
     if (!(await confirmJobNumberFree(createJobFromBidForm.job_number))) return
@@ -2683,11 +2701,20 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
           ? coveredItems.map(i => (i.trade ? `[${i.trade}] ` : '') + i.description).join('\n')
           : pkg.scope_of_work || null
         const { data: { session } } = await supabase.auth.getSession()
-        await fetch('/api/subcontracts', {
+        const scRes = await fetch('/api/subcontracts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
           body: JSON.stringify({ job_id: job.id, vendor_name: awardedSub.company_name, description: scopeDesc, contract_value: Number(awardedSub.amount), status: 'active', created_by: session.user.id }),
         })
+        const scData = await scRes.json().catch(() => ({ error: `HTTP ${scRes.status}` }))
+        if (scData.error) {
+          alert('Job created, but the subcontract was not saved: ' + scData.error)
+        } else if (scData.id && awardedSub.doc_url) {
+          const att = await attachBidAsExhibitA(scData.id, awardedSub)
+          if (!att.ok && att.code !== 'has_proposal') {
+            alert(`Job created, but the bid PDF was not attached as Exhibit A: ${att.error}. Use "Choose Exhibit A" in Gen Contract.`)
+          }
+        }
       }
 
       setCreatingJobFromBid(false)
@@ -2766,6 +2793,11 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
       if (data.assignment_error) alert('Subcontract saved, but the sub was not added to the job: ' + data.assignment_error)
       id = data.id
       setSubcontractRowId(id)
+    }
+    // Prompt 105: the bid PDF becomes Exhibit A when the contract has none yet ('has_proposal' is silent).
+    if (id && pkg.job_id && sub?.doc_url) {
+      const att = await attachBidAsExhibitA(id, sub)
+      if (!att.ok && att.code !== 'has_proposal') alert('Subcontract saved, but the bid PDF was not attached as Exhibit A: ' + att.error)
     }
     setSavingSubcontract(false)
     return id

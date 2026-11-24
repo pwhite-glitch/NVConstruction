@@ -192,6 +192,8 @@ const emptyContract = { dir_id: '', contract_value: '', description: '', onedriv
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub', sov: [] }
 const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [], days_added: '' }
 const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
+// Prompt 105: "Choose Exhibit A" picker state (busy = key of the item being saved).
+const EMPTY_EXHIBIT_A_PICKER = { contract_id: null, open: false, loading: false, error: '', data: null, busy: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
 const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', invoice_number: '', invoice_date: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', auto_approve: false, nv_reimbursement: false }
 
@@ -690,6 +692,8 @@ function JobDetailInner() {
   const [signerName, setSignerName] = useState('')
   const [showSignPanel, setShowSignPanel] = useState(false)
   const [contractGenMsg, setContractGenMsg] = useState('')
+  // Prompt 105: "Choose Exhibit A" picker (the sub's bids, unlinked proposal files, job documents).
+  const [exhibitAPicker, setExhibitAPicker] = useState(EMPTY_EXHIBIT_A_PICKER)
   const contractGenRef = useRef(null)
   const contractGenOpenedRef = useRef(null) // { contract_id, form } as last filled, for "changed?" checks
   const contractGenSeqRef = useRef(0)
@@ -4544,6 +4548,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     contractGenOpenedRef.current = { contract_id: contract.id, form: initial }
     setContractGenExhibits({ contract_id: contract.id, list: [], ready: false })
     contractGenExhibitsSavedRef.current = []
+    setExhibitAPicker(EMPTY_EXHIBIT_A_PICKER)
     if (!jobDocsLoaded) loadJobDocs() // extra exhibits are picked from / checked against the job's documents
     setShowSignPanel(false)
     setSignMsg('')
@@ -4834,6 +4839,66 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     })
   }
 
+  // ── Prompt 105: "Choose Exhibit A" ─────────────────────────────────────────
+  // The server (/api/subcontracts/attach-bid) decides who may change it and what is allowed.
+  async function openExhibitAPicker() {
+    const contractId = contractGenForm.contract_id
+    if (!contractId) return
+    setExhibitAPicker({ ...EMPTY_EXHIBIT_A_PICKER, contract_id: contractId, open: true, loading: true })
+    try {
+      const res = await fetch(`/api/subcontracts/attach-bid?subcontract_id=${encodeURIComponent(contractId)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`)
+      setExhibitAPicker(p => (p.contract_id === contractId && p.open ? { ...p, loading: false, data } : p))
+    } catch (e) {
+      setExhibitAPicker(p => (p.contract_id === contractId && p.open ? { ...p, loading: false, error: e?.message || String(e) } : p))
+    }
+  }
+
+  function closeExhibitAPicker() { setExhibitAPicker(EMPTY_EXHIBIT_A_PICKER) }
+
+  // item: { key, source, id | path, name }. Only fills an empty Exhibit A; replacing asks first.
+  async function chooseExhibitA(item) {
+    const contractId = exhibitAPicker.contract_id
+    if (!contractId || exhibitAPicker.busy) return
+    const payload = { subcontract_id: contractId, source: item.source, ...(item.path ? { path: item.path } : { id: item.id }) }
+    const post = async replace => {
+      const res = await fetch('/api/subcontracts/attach-bid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(replace ? { ...payload, replace: true } : payload),
+      })
+      return { ok: res.ok, status: res.status, data: await res.json().catch(() => ({})) }
+    }
+    setExhibitAPicker(p => ({ ...p, busy: item.key, error: '' }))
+    try {
+      let r = await post(false)
+      if (r.status === 409 && r.data.code === 'has_proposal') {
+        if (!window.confirm(`Replace Exhibit A (${r.data.current || 'the current file'}) with ${item.name}?`)) {
+          setExhibitAPicker(p => ({ ...p, busy: '' }))
+          return
+        }
+        r = await post(true)
+      }
+      if (!r.ok || r.data.error) {
+        // 409 'signed' and every other refusal: show the server's message.
+        const msg = r.data.error || `HTTP ${r.status}`
+        setExhibitAPicker(p => ({ ...p, busy: '', error: msg }))
+        setContractGenMsg('Error: ' + msg)
+        return
+      }
+      await loadContracts()
+      setContractGenMsg(`Exhibit A set to ${item.name}.`)
+      closeExhibitAPicker()
+    } catch (e) {
+      const msg = e?.message || String(e)
+      setExhibitAPicker(p => ({ ...p, busy: '', error: msg }))
+      setContractGenMsg('Error: ' + msg)
+    }
+  }
+
+  const missingExhibitA = check => (check.warnings || []).some(w => w.key === 'proposal' || w.key === 'proposal_type')
+
   function exhibitCheck(action) {
     const contract = contracts.find(c => c.id === contractGenForm.contract_id)
     if (!contract) return { proceed: true, include: { proposal: false, billing: false, extras: false }, warnings: [], extras: [] }
@@ -4985,7 +5050,14 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   function generateSubcontract() {
     if (!confirmContractAddresses()) { setContractGenMsg('Cancelled. Nothing was generated.'); return }
     const check = exhibitCheck('generate the contract without it')
-    if (!check.proceed) { setContractGenMsg('Cancelled. Nothing was generated.'); return }
+    if (!check.proceed) {
+      if (missingExhibitA(check)) {
+        openExhibitAPicker()
+        setContractGenMsg('Cancelled. Nothing was generated. Choose Exhibit A below, or generate again to continue without it.')
+        return
+      }
+      setContractGenMsg('Cancelled. Nothing was generated.'); return
+    }
     const include = check.include
     const wantsExhibits = !!contractGenForm.contract_id && (include.proposal || include.billing || (include.extras !== false && check.extras.length > 0))
     // The contract body lists the exhibits kept (A, B, C …); not saved in generator_fields.
@@ -5219,7 +5291,14 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
     if (!confirmContractAddresses()) { setSignMsg('Cancelled. Nothing was sent.'); return }
     const check = exhibitCheck('send it for signature without it')
-    if (!check.proceed) { setSignMsg('Cancelled. Nothing was sent.'); return }
+    if (!check.proceed) {
+      if (missingExhibitA(check)) {
+        openExhibitAPicker()
+        setSignMsg('Cancelled. Nothing was sent. Choose Exhibit A below, or send again to continue without it.')
+        return
+      }
+      setSignMsg('Cancelled. Nothing was sent.'); return
+    }
     setSendingSign(true)
     setSignMsg('')
     saveGeneratorFields(contractGenForm)
@@ -9011,7 +9090,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ ...rowStyle, borderTop: 'none' }}>
                         <span style={{ overflowWrap: 'anywhere' }}>A – Subcontractor Proposal: {gc?.bid_proposal_url ? <strong>{fileBaseName(gc.bid_proposal_url)}</strong> : <span style={{ color: '#b45309' }}>not uploaded</span>}
                           {proposalTypeErr && <span style={{ color: '#b45309' }}> (not a PDF or image: re-upload it as PDF)</span>}</span>
+                        {gc?.bid_proposal_url
+                          ? <button style={smallBtn} onClick={openExhibitAPicker} title="Pick a different file for Exhibit A">Change</button>
+                          : <button style={smallBtn} onClick={openExhibitAPicker} title="Use the sub's bid PDF, a proposal file or a job document">Choose Exhibit A</button>}
                       </div>
+                      {exhibitAPicker.open && exhibitAPicker.contract_id === contractGenForm.contract_id && (() => {
+                        const pk = exhibitAPicker
+                        const d = pk.data || {}
+                        const day = v => (v ? String(v).slice(0, 10) : '')
+                        const groups = [
+                          { title: "This sub's bids", items: (d.bids || []).map(b => ({ key: 'bid:' + b.id, source: 'bid_submission', id: b.id, name: b.name, type_ok: b.type_ok, meta: [b.package_title, b.status, day(b.submitted_at)].filter(Boolean).join(' · ') })) },
+                          { title: 'Unlinked proposal files on this job', items: (d.proposal_files || []).map(f => ({ key: 'file:' + f.path, source: 'proposal_file', path: f.path, name: f.name, type_ok: f.type_ok, meta: day(f.created_at) })) },
+                          { title: 'Job documents', items: (d.job_documents || []).map(j => ({ key: 'doc:' + j.id, source: 'job_document', id: j.id, name: j.name, type_ok: j.type_ok, meta: [j.category ? docCategoryLabel(j.category) : '', day(j.uploaded_at)].filter(Boolean).join(' · ') })) },
+                        ]
+                        return (
+                          <div style={{ margin: '2px 0 6px', padding: '8px', border: '1px solid #bfdbfe', borderRadius: '8px', background: '#fff', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '6px', minWidth: 0 }}>
+                              <strong style={{ color: '#111827' }}>Choose Exhibit A</strong>
+                              <button style={smallBtn} onClick={closeExhibitAPicker}>Close</button>
+                            </div>
+                            {pk.loading && <p style={{ margin: '6px 0' }}>Loading…</p>}
+                            {pk.error && <p style={{ margin: '6px 0', color: '#b91c1c', overflowWrap: 'anywhere' }}>Error: {pk.error}</p>}
+                            {pk.data && groups.map(g => (
+                              <div key={g.title} style={{ marginTop: '8px', minWidth: 0 }}>
+                                <p style={{ fontWeight: 700, margin: '0 0 2px', color: '#374151' }}>{g.title}</p>
+                                {g.items.length === 0
+                                  ? <p style={{ margin: 0, color: '#9ca3af' }}>None</p>
+                                  : g.items.map(it => (
+                                    <div key={it.key} style={rowStyle}>
+                                      <span style={{ flex: '1 1 160px', minWidth: 0, overflowWrap: 'anywhere' }}>
+                                        <strong>{it.name}</strong>{it.meta ? <span style={{ color: '#6b7280' }}> — {it.meta}</span> : null}
+                                      </span>
+                                      {it.type_ok
+                                        ? <button style={smallBtn} disabled={!!pk.busy} onClick={() => chooseExhibitA(it)}>{pk.busy === it.key ? 'Saving…' : 'Use as Exhibit A'}</button>
+                                        : <button style={{ ...smallBtn, opacity: 0.6, cursor: 'not-allowed' }} disabled title="Exhibit A must be a PDF or a JPG/PNG image">PDF or image only</button>}
+                                    </div>
+                                  ))}
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
                       <div style={rowStyle}>
                         <span style={{ overflowWrap: 'anywhere' }}>B – Billing Schedule: {billingScheduleDoc ? <strong>{billingScheduleDoc.file_name}</strong> : <span style={{ color: '#b45309' }}>not set (Job Details)</span>}</span>
                       </div>

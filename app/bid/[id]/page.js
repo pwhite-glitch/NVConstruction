@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { authFetch } from '../../../lib/client-fetch'
+import { openFile } from '../../../lib/open-file'
+import { uploadBidPlan, bidPlanSignedUrl, deleteBidPlan } from '../../../lib/bid-plan-upload'
 import { exportItbZip } from '../../../lib/export-client'
 import { canEditBidPackage, isBidManager, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
 import { jobHref } from '../../../lib/job-links'
@@ -185,25 +187,31 @@ function DocumentsSection({ bidId, plans, reload, canEdit }) {
     if (!file) return
     setUploading(true); setErr('')
     try {
-      const path = `${bidId}/${Date.now()}_${file.name}`
-      const { error: upErr } = await supabase.storage.from('bid-plans').upload(path, file)
-      if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('bid_plans').insert({ bid_package_id: bidId, file_name: file.name, storage_path: path })
-      if (dbErr) throw dbErr
+      // Through /api/bid-plan (service role): upload-url → PUT to the signed URL → insert.
+      const r = await uploadBidPlan(authFetch, fetch, bidId, file)
+      if (!r.ok) { setErr(r.error); return }
       await reload()
-    } catch (e) { setErr(e.message || 'Upload failed') }
+    } catch (e) { setErr('Upload failed: ' + (e?.message || 'unknown error')) }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }
 
+  // openFile reserves the window inside the tap (iOS popup blocker), so call it before any await.
   async function openPlan(path) {
-    const { data } = await supabase.storage.from('bid-plans').createSignedUrl(path, 120)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    setErr('')
+    let msg = null
+    const url = await openFile(async () => {
+      const r = await bidPlanSignedUrl(authFetch, path)
+      if (!r.ok) msg = r.error
+      return r.url
+    })
+    if (!url) setErr('Could not open file: ' + (msg || 'no link returned.'))
   }
 
   async function deletePlan(plan) {
     if (!confirm(`Remove "${plan.file_name}"?`)) return
-    await supabase.storage.from('bid-plans').remove([plan.storage_path])
-    await supabase.from('bid_plans').delete().eq('id', plan.id)
+    setErr('')
+    const r = await deleteBidPlan(authFetch, plan.storage_path)
+    if (!r.ok) { setErr('Could not remove file: ' + r.error); return }
     await reload()
   }
 
@@ -305,8 +313,13 @@ function ScopesSection({ bidId, scopeItems, plans, reload, canEdit }) {
   }
 
   async function openPlan(path) {
-    const { data } = await supabase.storage.from('bid-plans').createSignedUrl(path, 120)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    let msg = null
+    const url = await openFile(async () => {
+      const r = await bidPlanSignedUrl(authFetch, path)
+      if (!r.ok) msg = r.error
+      return r.url
+    })
+    if (!url) alert('Could not open file: ' + (msg || 'no link returned.'))
   }
 
   return (

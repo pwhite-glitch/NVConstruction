@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM, isSub } from '../../../lib/server-auth'
 import { denyJobs, isJobLimited } from '../../../lib/roles'
 import { canReadBidPackage, canEditBidPackage, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
+import { jobIdFromPath } from '../../../lib/storage-path'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -79,6 +80,7 @@ export async function POST(request) {
     const expiry = isPM(auth.role) ? (body.expiry || 3600) : Math.min(Number(body.expiry) || 3600, 3600)
 
     if (body.action === 'upload-url') {
+      if (!jobIdFromPath(body.path)) return Response.json({ error: 'Path must be "<bid package id>/<file name>".' }, { status: 400 })
       const { data, error } = await adminSupabase.storage
         .from('bid-plans')
         .createSignedUploadUrl(body.path)
@@ -115,8 +117,11 @@ export async function POST(request) {
     }
 
     if (body.action === 'delete') {
-      await adminSupabase.storage.from('bid-plans').remove([body.path])
-      await adminSupabase.from('bid_plans').delete().eq('storage_path', body.path)
+      // remove() of an object that is already gone returns no error (empty data), so that is fine.
+      const { error: rmErr } = await adminSupabase.storage.from('bid-plans').remove([body.path])
+      if (rmErr) return Response.json({ error: rmErr.message || 'Could not remove the file.' }, { status: 500 })
+      const { error: dbErr } = await adminSupabase.from('bid_plans').delete().eq('storage_path', body.path)
+      if (dbErr) return Response.json({ error: dbErr.message || 'Could not remove the file record.' }, { status: 500 })
       return Response.json({ ok: true })
     }
 

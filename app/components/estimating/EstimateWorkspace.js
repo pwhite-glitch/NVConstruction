@@ -352,11 +352,23 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   async function uploadDoc(file) {
     if (!file) return
     setUploading(true)
-    const path = `${estimate.id}/${Date.now()}_${file.name}`
-    await supabase.storage.from('estimate-docs').upload(path, file)
-    await supabase.from('estimate_docs').insert({ estimate_id: estimate.id, file_name: file.name, storage_path: path })
-    await loadDocs()
-    setUploading(false)
+    try {
+      const path = `${estimate.id}/${Date.now()}_${file.name}`
+      const { error: upErr } = await supabase.storage.from('estimate-docs').upload(path, file)
+      if (upErr) { alert('Upload failed: ' + upErr.message); return }
+      const { error: dbErr } = await supabase.from('estimate_docs').insert({ estimate_id: estimate.id, file_name: file.name, storage_path: path })
+      if (dbErr) {
+        // Best effort: don't leave an orphaned file behind.
+        try { await supabase.storage.from('estimate-docs').remove([path]) } catch { /* ignore */ }
+        alert('Upload failed: ' + dbErr.message)
+        return
+      }
+      await loadDocs()
+    } catch (e) {
+      alert('Upload failed: ' + (e?.message || 'unknown error'))
+    } finally {
+      setUploading(false)
+    }
   }
 
   function openDoc(path) {
@@ -365,8 +377,10 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
 
   async function deleteDoc(doc) {
     if (!window.confirm(`Delete "${doc.file_name}"?`)) return
-    await supabase.storage.from('estimate-docs').remove([doc.storage_path])
-    await supabase.from('estimate_docs').delete().eq('id', doc.id)
+    const { error: rmErr } = await supabase.storage.from('estimate-docs').remove([doc.storage_path])
+    if (rmErr) { alert('Delete failed: ' + rmErr.message); return }
+    const { error: dbErr } = await supabase.from('estimate_docs').delete().eq('id', doc.id)
+    if (dbErr) { alert('Delete failed: ' + dbErr.message); return }
     setDocs(prev => prev.filter(d => d.id !== doc.id))
   }
 

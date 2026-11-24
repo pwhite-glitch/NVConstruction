@@ -463,7 +463,7 @@ describe('wiring', () => {
     expect(page).toContain('+ Add from job documents')
     expect(page).toContain('+ Upload exhibit (PDF or image)')
     expect(page).toContain('file no longer on the job')
-    expect(page).toContain("'Open Exhibits PDF'")
+    expect(page).toContain("'Open exhibits PDF'") // prompt 107: banner button text
     expect(page).not.toContain('Open Exhibits PDF (A/B)')
     expect(page).not.toContain('accept=".pdf,.doc,.docx"')
     expect(page.match(/accept=\{EXHIBIT_FILE_ACCEPT\}/g).length).toBeGreaterThanOrEqual(3)

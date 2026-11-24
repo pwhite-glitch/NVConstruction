@@ -59,6 +59,7 @@ import { docCategoryLabel } from '../../lib/job-docs'
 import { canUploadSignedContract, signedUploadPath, signedMethodLabel, SIGNED_UPLOAD_ACCEPT } from '../../lib/signed-upload'
 import { isSignwellOpen, signwellStatusLabel } from '../../lib/signwell-status'
 import { readJsonResponse, fetchJson, jsonInit, rawResponseError } from '../../lib/fetch-json'
+import { prepareEditedContract, hasEmptySignatureSlot, editedAt, chooseContractForSend, stripEditorChrome, sanitizeContractHtml, formatCentralDateTime, formatCentralTime, MAX_EDITED_CONTRACT_LENGTH } from '../../lib/edited-contract'
 import { uploadThenSend, putToSignedUrl } from '../../lib/file-upload-client'
 import { exportOwnerReimbZip } from '../../lib/export-client'
 import { createSubmittal, addSubmittalFiles, runSubmittalSave } from '../../lib/submittal-client'
@@ -705,6 +706,14 @@ function JobDetailInner() {
   const [contractGenExhibits, setContractGenExhibits] = useState({ contract_id: null, list: [], ready: false })
   const contractGenExhibitsSavedRef = useRef([])
   const [contractGenExhibitBusy, setContractGenExhibitBusy] = useState('')
+  // Prompt 107: edits made in the Edit & Print window. { [contract_id]: { html, at } } (cleaned,
+  // marked data-nv-edited); the open print window; this session's exhibits appendix per contract;
+  // when the generator details were last saved with changes (for the "changed after" note).
+  const [editedContracts, setEditedContracts] = useState({})
+  const printWinRef = useRef({ win: null, contract_id: null })
+  const lastExhibitsAppendixRef = useRef({})
+  const generatorSavedAtRef = useRef({ contract_id: null, saved_at: null })
+  const contractEditsHandlerRef = useRef(null)
   const [jobDocsLoaded, setJobDocsLoaded] = useState(false)
   const [sendingSign, setSendingSign] = useState(false)
   const [signMsg, setSignMsg] = useState('')
@@ -786,6 +795,14 @@ function JobDetailInner() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [fieldLightbox])
+
+  // Prompt 107: one listener for "Save edits" / "Send for e-Signature" in the Edit & Print window.
+  // The handler (re-assigned each render, so it sees current state) checks origin and source.
+  useEffect(() => {
+    const onMessage = event => { contractEditsHandlerRef.current?.(event) }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   useEffect(() => {
     if (!id) return
@@ -1359,8 +1376,9 @@ function JobDetailInner() {
 
   // The API returns a short-lived signed link to the exact stored file; the HTML is read
   // straight from Storage (plain fetch, no portal token), after checking the HTTP status.
-  async function fetchStoredContractHtml(contractId, kind) {
-    const fail = msg => { setErrMsg('Could not open contract: ' + msg); setTimeout(() => setErrMsg(''), 5000); return null }
+  // quiet: a failure returns null without the page error (prompt 107 edited-version lookup).
+  async function fetchStoredContractHtml(contractId, kind, { quiet = false } = {}) {
+    const fail = msg => { if (!quiet) { setErrMsg('Could not open contract: ' + msg); setTimeout(() => setErrMsg(''), 5000) } return null }
     const r = await fetchJson(authFetch, `/api/subcontract-contract?subcontract_id=${contractId}&kind=${kind}`)
     if (!r.ok || !r.data?.url) return fail(r.ok ? 'no link returned' : r.error)
     let file
@@ -4568,6 +4586,13 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const ownRow = rows.find(r => r.id === contract.id)
     const savedExhibits = sanitizeExhibitList(ownRow?.generator_fields?.exhibits) || []
     contractGenExhibitsSavedRef.current = savedExhibits
+    {
+      // Prompt 107: the later of the stored saved_at and a changed save made this session.
+      const loadedAt = ownRow?.generator_fields?.saved_at || null
+      const cur = generatorSavedAtRef.current
+      const sessionAt = cur.contract_id === contract.id ? cur.saved_at : null
+      generatorSavedAtRef.current = { contract_id: contract.id, saved_at: !sessionAt || (loadedAt && Date.parse(loadedAt) > Date.parse(sessionAt)) ? loadedAt : sessionAt }
+    }
     setContractGenExhibits({ contract_id: contract.id, list: savedExhibits, ready: !!ownRow, loadFailed: !ownRow })
     const fullInputs = generatorInputs(contract, { directory, contacts, rows })
     const full = buildGeneratorDefaults(fullInputs)
@@ -4588,15 +4613,17 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   // Before 079 the server skips it; this never blocks generating. Returns true when saved.
   async function saveGeneratorFields(f, { onlyIfChanged = false } = {}) {
     if (!f?.contract_id) return false
-    if (onlyIfChanged) {
-      const opened = contractGenOpenedRef.current
-      if (opened && opened.contract_id === f.contract_id && JSON.stringify(serializeGeneratorFields(opened.form, new Date(0))) === JSON.stringify(serializeGeneratorFields(f, new Date(0)))) return false
-    }
+    const opened = contractGenOpenedRef.current
+    const unchanged = !!opened && opened.contract_id === f.contract_id && JSON.stringify(serializeGeneratorFields(opened.form, new Date(0))) === JSON.stringify(serializeGeneratorFields(f, new Date(0)))
+    if (onlyIfChanged && unchanged) return false
     try {
-      const res = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: f.contract_id, generator_fields: serializeGeneratorFields(f) }) })
+      const fields = serializeGeneratorFields(f)
+      const res = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: f.contract_id, generator_fields: fields }) })
       const out = await res.json().catch(() => ({}))
       if (!res.ok || out.error) { console.warn('subcontract generator: fields not saved:', out.error || `HTTP ${res.status}`); return false }
       if (out.generator_fields_skipped) { console.warn('subcontract generator: fields not saved (migration 079 not applied).'); return false }
+      // Prompt 107: only a save that changed the details counts for "changed after these edits".
+      if (!unchanged) generatorSavedAtRef.current = { contract_id: f.contract_id, saved_at: fields.saved_at }
       if (contractGenOpenedRef.current?.contract_id === f.contract_id) contractGenOpenedRef.current = { contract_id: f.contract_id, form: f }
       return true
     } catch (e) {
@@ -4614,10 +4641,11 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   // Prefill the e-signature recipient from the contract's sub, else the company's contact on file
-  async function openSignPanel() {
+  // forContract: the subcontract when the generator is being switched to it in the same tick (prompt 107).
+  async function openSignPanel(forContract = null) {
     setShowSignPanel(true)
     setSignMsg('')
-    const contract = contracts.find(c => c.id === contractGenForm.contract_id)
+    const contract = forContract || contracts.find(c => c.id === contractGenForm.contract_id)
     let company = null
     if (contract?.company_id) {
       const { data } = await supabase.from('companies').select('name, email').eq('id', contract.company_id).maybeSingle()
@@ -5047,6 +5075,96 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
   }
 
+  // The contract copy goes straight to Storage; the API only records the verified path.
+  function saveContractCopy(contractId, html) {
+    return uploadThenSend({
+      fetchFn: authFetch, putFn: fetch, target: 'generated-contract',
+      file: new File([html], 'contract.html', { type: 'text/html' }),
+      context: { job_id: id, record_id: contractId },
+      send: attachment => fetchJson(authFetch, '/api/subcontract-contract', jsonInit('POST', { subcontract_id: contractId, attachment })),
+    })
+  }
+
+  // Prompt 107: orange banner in the Edit & Print window once the exhibits PDF is built, and one
+  // attempt to open the PDF in a new tab. Never navigates the contract window.
+  const EXHIBITS_BANNER_TIP = 'Print or save this contract, then print the exhibits PDF. Send for e-Signature attaches the exhibits automatically.'
+  function showExhibitsBanner(win, url, letters) {
+    const doc = win.document
+    const bar = doc.getElementById('nv-bar')
+    if (!bar || doc.getElementById('nv-exhibits-banner')) return
+    const s = letters.length === 1 ? '' : 's'
+    const banner = doc.createElement('div')
+    banner.id = 'nv-exhibits-banner'
+    banner.title = EXHIBITS_BANNER_TIP
+    banner.setAttribute('style', 'flex-basis:100%;background:#e8590c;color:#fff;font-weight:700;font-size:14px;padding:10px 14px;border-radius:6px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px')
+    const text = doc.createElement('span')
+    text.textContent = `Exhibit${s} ${letters.length ? exhibitLettersText(letters) : 'A/B'} ${letters.length === 1 ? 'is' : 'are'} in a separate PDF — `
+    const btn = doc.createElement('button')
+    btn.type = 'button'
+    btn.textContent = 'Open exhibits PDF'
+    btn.addEventListener('click', () => { if (url) win.open(url, '_blank') })
+    const blocked = doc.createElement('span')
+    const tip = doc.createElement('div')
+    tip.setAttribute('style', 'flex-basis:100%;font-weight:400;font-size:12px')
+    tip.textContent = EXHIBITS_BANNER_TIP
+    banner.append(text, btn, blocked, tip)
+    bar.appendChild(banner)
+    try { win.nvFit?.() } catch {}
+    if (!url) return
+    let opened = null
+    try { opened = win.open(url, '_blank') } catch { opened = null }
+    if (!opened) blocked.textContent = ' (pop-up blocked — click Open exhibits PDF)'
+  }
+
+  // Prompt 107: "Save edits" / "Send for e-Signature" from the Edit & Print window.
+  async function handleContractEditsMessage(event) {
+    const pw = printWinRef.current
+    const data = event?.data
+    const valid = !!pw.win && event.origin === window.location.origin && event.source === printWinRef.current.win &&
+      !!data && data.type === 'nv-contract-edits' && !!pw.contract_id && data.contract_id === printWinRef.current.contract_id
+    if (!valid) return
+    const win = pw.win
+    const setWinStatus = t => { try { const el = win.document.getElementById('nv-status'); if (el) el.textContent = t; win.nvFit?.() } catch {} }
+    if (typeof data.html !== 'string' || data.html.length >= MAX_EDITED_CONTRACT_LENGTH) {
+      setWinStatus('Error: the edited contract is too large to save (over 3 MB).')
+      return
+    }
+    const contractId = data.contract_id
+    const contract = contracts.find(c => c.id === contractId) || null
+    const iso = new Date().toISOString()
+    const edited = prepareEditedContract(data.html, iso)
+    const sigWarn = hasEmptySignatureSlot(edited) ? '' : ' The signature line was edited or removed; SignWell will add its own signature page.'
+    setEditedContracts(m => ({ ...m, [contractId]: { html: edited, at: iso } }))
+    const sending = data.action === 'send'
+    const sendNote = ' Your edited version will be sent. Enter the signer and click Send Link.'
+    if (sigWarn) setWinStatus('Saving…' + sigWarn)
+    if (sending) {
+      try { window.focus() } catch {}
+      if (contract && contractGenForm.contract_id !== contractId) openContractGenerator(contract)
+      else if (!showContractGen) setShowContractGen(true)
+      openSignPanel(contract)
+      setContractGenMsg(sendNote.trim() + sigWarn)
+    }
+    const appendix = lastExhibitsAppendixRef.current[contractId]
+    let r
+    try {
+      r = await saveContractCopy(contractId, appendix ? withExhibitAppendix(edited, appendix) : edited)
+    } catch (e) {
+      r = { ok: false, error: e?.message || String(e) }
+    }
+    if (r.ok) {
+      markContractGenerated(contractId, r.data?.data)
+      const msg = `Edits saved ${formatCentralTime(r.data?.data?.generated_at || iso)}.`
+      setWinStatus(msg + sigWarn + (sending ? ' Go back to the portal tab, enter the signer and click Send Link.' : ''))
+      setContractGenMsg(msg + sigWarn + (sending ? sendNote : ''))
+    } else {
+      const msg = 'Error: edits not saved: ' + r.error + '.'
+      setWinStatus(msg + (sending ? ' The edited version can still be sent from the portal tab.' : ''))
+      setContractGenMsg(msg + sigWarn + (sending ? sendNote : ''))
+    }
+  }
+  contractEditsHandlerRef.current = handleContractEditsMessage
+
   function generateSubcontract() {
     if (!confirmContractAddresses()) { setContractGenMsg('Cancelled. Nothing was generated.'); return }
     const check = exhibitCheck('generate the contract without it')
@@ -5064,23 +5182,33 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const baseHtml = buildSubcontractHtml({ ...contractGenForm, exhibit_list: exhibitListFor(check) })
     const html = wantsExhibits ? withExhibitAppendix(baseHtml, exhibitCoversHtml(include, check.extras)) : baseHtml
     saveGeneratorFields(contractGenForm)
+    const contractId = contractGenForm.contract_id
+    // Prompt 107: "Save edits" / "Send for e-Signature" post the edited contract back to this tab
+    // (window.opener.postMessage to this tab's origin; the about:blank window inherits it).
+    const jsStr = v => JSON.stringify(v).replace(/</g, '\\u003c')
     const toolbar = [
       '<style id="nv-edit-style">',
-      '#nv-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#f0f0f0;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;font-family:sans-serif;font-size:13px;border-bottom:2px solid #e8590c;box-shadow:0 2px 8px rgba(0,0,0,.4)}',
+      '#nv-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#f0f0f0;color:#fff;padding:10px 20px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;font-family:sans-serif;font-size:13px;border-bottom:2px solid #e8590c;box-shadow:0 2px 8px rgba(0,0,0,.4)}',
       '#nv-bar button{border:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;background:#e8590c;color:#fff}',
       '#nv-bar button:hover{background:#d44d00}',
-      '@media print{#nv-bar{display:none!important}body{margin-top:0!important}}',
+      '#nv-bar #nv-exhibits-banner button{background:#fff;color:#e8590c;padding:6px 14px}',
+      '@media print{#nv-bar,#nv-exhibits-banner{display:none!important}body{margin-top:0!important}}',
       '</style>',
       '<div id="nv-bar" contenteditable="false">',
       '<span style="font-weight:700;color:#e8590c;font-size:15px;">&#9998; Editing Mode</span>',
       '<span style="color:#888;font-size:12px;">Click anywhere on the contract to edit — every word is changeable.</span>',
       '<div style="flex:1"></div>',
       wantsExhibits ? '<span id="nv-exhibits-slot" style="color:#555;font-size:12px;">Attaching exhibits…</span>' : '',
+      contractId ? '<span id="nv-status" style="color:#333;font-size:12px;max-width:340px;"></span>' : '',
       '<button id="nv-print-btn">Print / Save PDF</button>',
+      contractId ? '<button id="nv-save-btn" title="Save your edits as this subcontract\'s contract (Last generated contract)">Save edits</button>' : '',
+      contractId ? '<button id="nv-send-btn" title="Save your edits and send this edited version for e-signature">Send for e-Signature</button>' : '',
       '</div>',
       '<script>',
+      'function nvFit(){var b=document.getElementById("nv-bar");document.body.style.marginTop=(b&&b.style.display!=="none"?Math.max(50,b.offsetHeight+8):50)+"px";}',
+      'window.nvFit=nvFit;',
       'document.designMode="on";',
-      'document.body.style.marginTop="50px";',
+      'nvFit();',
       'document.getElementById("nv-print-btn").addEventListener("click",function(){',
       '  document.designMode="off";',
       '  document.getElementById("nv-bar").style.display="none";',
@@ -5089,9 +5217,26 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       '  setTimeout(function(){',
       '    document.designMode="on";',
       '    document.getElementById("nv-bar").style.display="flex";',
-      '    document.body.style.marginTop="50px";',
+      '    nvFit();',
       '  },1500);',
       '});',
+      ...(contractId ? [
+        `var NV_ORIGIN=${jsStr(window.location.origin)};`,
+        `var NV_CONTRACT_ID=${jsStr(contractId)};`,
+        'function nvStatus(t){var s=document.getElementById("nv-status");if(s)s.textContent=t;nvFit();}',
+        'function nvEdits(action){',
+        '  if(!window.opener||window.opener.closed){nvStatus("The portal tab was closed; reopen Edit & Print.");return;}',
+        '  var c=document.documentElement.cloneNode(true);',
+        '  ["nv-bar","nv-edit-style"].forEach(function(id){var e=c.querySelector("#"+id);if(e&&e.parentNode)e.parentNode.removeChild(e);});',
+        '  var ss=c.querySelectorAll("script");for(var i=0;i<ss.length;i++){if(ss[i].parentNode)ss[i].parentNode.removeChild(ss[i]);}',
+        '  var html="<!DOCTYPE html>"+c.outerHTML;',
+        '  nvStatus("Saving…");',
+        '  try{window.opener.postMessage({type:"nv-contract-edits",action:action,contract_id:NV_CONTRACT_ID,html:html},NV_ORIGIN);}',
+        '  catch(e){nvStatus("The portal tab was closed; reopen Edit & Print.");}',
+        '}',
+        'document.getElementById("nv-save-btn").addEventListener("click",function(){nvEdits("save");});',
+        'document.getElementById("nv-send-btn").addEventListener("click",function(){nvEdits("send");});',
+      ] : []),
       '<\/script>',
     ].join('\n')
     const editHtml = html.replace('</body>', toolbar + '\n</body>')
@@ -5100,13 +5245,15 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       win.document.open()
       win.document.write(editHtml)
       win.document.close()
+      printWinRef.current = { win, contract_id: contractId || null }
       setContractGenMsg('Contract opened in a new window.')
     } else {
       setContractGenMsg('Error: the contract window was blocked. Allow pop-ups for this site and try again.')
     }
-    // Keep a copy of the contract as generated (edits made in the print window aren't captured)
-    const contractId = contractGenForm.contract_id
+    // Keep a copy of the contract as generated. Edits come back through "Save edits" / "Send for
+    // e-Signature" in the window (handleContractEditsMessage); a fresh window starts from the form.
     if (contractId) {
+      setEditedContracts(m => { if (!m[contractId]) return m; const { [contractId]: _drop, ...rest } = m; return rest })
       const opened = !!win
       // Exhibits: the server merges Exhibit A + B into one stored PDF; the print window gets a
       // button to open it and the saved copy points to it (same appendix the e-sign packet uses).
@@ -5124,25 +5271,17 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
             if (slot) slot.textContent = 'Exhibits could not be attached.'
           } else if (ex?.data?.path) {
             saveHtml = withExhibitAppendix(baseHtml, ex.data.appendix)
+            if (ex.data.appendix) lastExhibitsAppendixRef.current[contractId] = ex.data.appendix
             const url = ex.data.url
+            const letters = (ex.data.included_exhibits || []).map(e => e.letter)
             if (slot) {
               slot.textContent = ''
-              const b = win.document.createElement('button')
-              b.textContent = 'Open Exhibits PDF'
-              b.addEventListener('click', () => { if (url) win.open(url, '_blank') })
-              slot.appendChild(b)
+              try { showExhibitsBanner(win, url, letters) } catch (e) { console.warn('exhibits banner:', e) }
             }
             const parts = [...(ex.data.notes || []).map(n => `${n.name} is attached separately (${n.reason})`), ...(ex.data.unreadable || []).map(u => `${u.name} could not be read and was left out`)]
-            const letters = (ex.data.included_exhibits || []).map(e => e.letter)
             exNote = ` Exhibits PDF ready${letters.length ? ` (Exhibit${letters.length > 1 ? 's' : ''} ${exhibitLettersText(letters)})` : ''}; use Open exhibits below.` + (parts.length ? ' Note: ' + parts.join('; ') + '.' : '')
           } else if (slot) slot.textContent = ''
-          // The HTML goes straight to Storage; the API only records the verified path.
-          return uploadThenSend({
-            fetchFn: authFetch, putFn: fetch, target: 'generated-contract',
-            file: new File([saveHtml], 'contract.html', { type: 'text/html' }),
-            context: { job_id: id, record_id: contractId },
-            send: attachment => fetchJson(authFetch, '/api/subcontract-contract', jsonInit('POST', { subcontract_id: contractId, attachment })),
-          }).then(r => ({ r, exErr, exNote }))
+          return saveContractCopy(contractId, saveHtml).then(r => ({ r, exErr, exNote }))
         })
         .then(({ r, exErr, exNote }) => {
           if (!r.ok) throw new Error(r.error + (exErr ? '; ' + exErr : ''))
@@ -5281,6 +5420,19 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await loadSigningRequests()
   }
 
+  // Prompt 107: { html, at } of the edited contract for a subcontract, or null. A failed load of
+  // the stored copy is quiet (the send falls back to a fresh contract).
+  async function findEditedContract(contractId) {
+    const session = editedContracts[contractId]
+    if (session?.html) return session
+    const row = contracts.find(c => c.id === contractId)
+    if (!row?.generated_contract_path) return null
+    let stored = null
+    try { stored = await fetchStoredContractHtml(contractId, 'generated', { quiet: true }) } catch { stored = null }
+    const at = stored ? editedAt(stored) : null
+    return at ? { html: stored, at } : null
+  }
+
   async function sendForESign() {
     if (!signerEmail.trim()) return
     // The person who will sign (not the company); there is no fallback to the sub's company name.
@@ -5301,10 +5453,28 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
     setSendingSign(true)
     setSignMsg('')
+    // Prompt 107: read before this send's own save of the details.
+    const savedAt = generatorSavedAtRef.current
+    const generatorSavedAtIso = savedAt.contract_id && savedAt.contract_id === contractGenForm.contract_id ? savedAt.saved_at : null
     saveGeneratorFields(contractGenForm)
     try {
-      // The contract body lists the exhibits kept (A, B, C …); not saved in generator_fields.
-      const html = buildSubcontractHtml({ ...contractGenForm, exhibit_list: contractGenForm.contract_id ? exhibitListFor(check) : [] })
+      // Prompt 107: the version edited in the Edit & Print window (this session, else the stored
+      // generated copy when it carries the data-nv-edited marker), if the user picks it.
+      let useEdited = false
+      let html = null
+      const edited = contractGenForm.contract_id ? await findEditedContract(contractGenForm.contract_id) : null
+      const chosen = chooseContractForSend({
+        editedHtml: edited?.html || null, editedAtIso: edited?.at || null, generatorSavedAtIso,
+        confirmFn: msg => window.confirm(msg), formatTime: formatCentralDateTime,
+      })
+      if (chosen.useEdited) {
+        useEdited = true
+        // The exhibit cover appendix is removed here; the server adds a fresh one with the exhibits.
+        html = sanitizeContractHtml(stripEditorChrome(chosen.html))
+      } else {
+        // The contract body lists the exhibits kept (A, B, C …); not saved in generator_fields.
+        html = buildSubcontractHtml({ ...contractGenForm, exhibit_list: contractGenForm.contract_id ? exhibitListFor(check) : [] })
+      }
       // The document is staged in Storage (direct upload); the API gets only its path + receipt.
       const r = await uploadThenSend({
         fetchFn: authFetch, putFn: fetch, target: 'signing-html',
@@ -5328,9 +5498,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       const exLetters = json.exhibits_included_letters?.length
         ? json.exhibits_included_letters
         : (json.exhibits_included || []).map(k => (k === 'proposal' ? 'A' : k === 'billing' ? 'B' : null)).filter(Boolean)
+      const editedTag = useEdited ? ' (edited version)' : ''
       const lead = json.provider === 'signwell'
-        ? `Sent through SignWell${json.data?.test_mode ? ' (TEST MODE — not legally binding)' : ''}. The subcontractor will receive a SignWell email to sign.`
-        : 'Sent! The subcontractor will receive an email link to sign.'
+        ? `Sent through SignWell${editedTag}${json.data?.test_mode ? ' (TEST MODE — not legally binding)' : ''}. The subcontractor will receive a SignWell email to sign.`
+        : `Sent${editedTag}! The subcontractor will receive an email link to sign.`
       setSignMsg(lead + (exLetters.length ? ` Exhibit${exLetters.length > 1 ? 's' : ''} ${exhibitLettersText(exLetters)} attached.` : '') + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
       setShowSignPanel(false)
       setSignerEmail('')

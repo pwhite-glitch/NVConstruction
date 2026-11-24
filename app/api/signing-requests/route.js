@@ -9,6 +9,7 @@ import { escapeHtml } from '../../../lib/email'
 import { isSubcontractSigned } from '../../../lib/signing'
 import { getSiteUrl } from '../../../lib/site-url'
 import { withExhibitAppendix } from '../../../lib/subcontract-exhibits'
+import { sanitizeContractHtml } from '../../../lib/edited-contract'
 import { buildAndStoreExhibits } from '../../../lib/subcontract-exhibits-server'
 import { isSignwellEnabled } from '../../../lib/signwell'
 import { buildSignwellPacket } from '../../../lib/signwell-packet'
@@ -88,6 +89,7 @@ export async function POST(request) {
     document_html = new TextDecoder().decode(await file.arrayBuffer())
     if (!document_html) return Response.json({ error: 'The staged document is empty.' }, { status: 400 })
   }
+  document_html = sanitizeContractHtml(document_html) // prompt 107: no scripts / handlers from an edited contract
 
   // Prompt 97: exhibits { proposal, billing } (the job page sends what the user kept after the
   // missing-exhibit warning). Exhibit A (bid proposal) and B (job billing schedule) are merged

@@ -21,7 +21,11 @@
 //       PostgREST's db-max-rows (1,000 on Supabase); .range() still applies first (prompt 90)
 //   mockState.storageCalls = [{ bucket, op, path }] → signing / info / download calls (kept apart
 //       from mockState.calls so older assertions on calls are unchanged)
-const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, pauseWrite: null, triggers: {}, calls: [], files: {}, failUpload: {}, failWrite: {}, strictUpload: false, defaults: {}, unique: {}, fileMeta: {}, failInfo: {}, storageCalls: [], maxRows: {} }
+//   mockState.failCopy = { bucket: 'message' } → storage .copy() from that bucket errors (prompt 105)
+//       copy(from, to, { destinationBucket }) copies mockState.files; "already exists" when the
+//       destination is there; list(folder, opts) → [{ name, created_at }] directly under folder.
+//   .or('<col>.is.null,<col>.eq.') filters (blank column); every other .or() is still a no-op.
+const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, pauseWrite: null, triggers: {}, calls: [], files: {}, failUpload: {}, failWrite: {}, strictUpload: false, defaults: {}, unique: {}, fileMeta: {}, failInfo: {}, storageCalls: [], maxRows: {}, failCopy: {}, fileCreatedAt: {} }
 
 // 'col->>key' reads a jsonb key as text (PostgREST JSON filter); anything else is a dotted path.
 const get = (r, path) => {
@@ -170,7 +174,12 @@ function query(table) {
       else if (op === 'eq') filters.push(r => get(r, c) !== v)
       return q
     },
-    or: () => q,
+    // Only the "blank column" form is understood (prompt 105); anything else stays a no-op.
+    or: expr => {
+      const m = /^(\w+)\.is\.null,\1\.eq\.$/.exec(String(expr || ''))
+      if (m) filters.push(r => { const x = get(r, m[1]); return x == null || x === '' })
+      return q
+    },
     order: () => q,
     limit: n => { lim = n; return q },
     range: (a, b) => { rng = [a, b]; return q },
@@ -223,6 +232,23 @@ const client = {
       const buf = mockState.files[key]
       if (!buf) return { data: null, error: { message: 'Object not found' } }
       return { data: { name: p, size: buf.length, contentType: null }, error: null }
+    },
+    copy: async (from, to, opts = {}) => {
+      const dest = opts.destinationBucket || bucket
+      mockState.storageCalls?.push({ bucket, op: 'copy', path: from, to, destinationBucket: dest })
+      if (mockState.failCopy?.[bucket]) return { data: null, error: { message: mockState.failCopy[bucket] } }
+      const src = mockState.files[`${bucket}/${from}`]
+      if (!src) return { data: null, error: { message: 'Object not found' } }
+      if (mockState.files[`${dest}/${to}`]) return { data: null, error: { message: 'The resource already exists' } }
+      mockState.files[`${dest}/${to}`] = Buffer.from(src)
+      return { data: { path: to }, error: null }
+    },
+    list: async (folder = '', opts = {}) => {
+      mockState.storageCalls?.push({ bucket, op: 'list', path: folder, opts })
+      const prefix = `${bucket}/${folder ? folder.replace(/\/$/, '') + '/' : ''}`
+      const names = Object.keys(mockState.files).filter(k => k.startsWith(prefix) && !k.slice(prefix.length).includes('/')).map(k => k.slice(prefix.length))
+      const out = names.map(name => ({ name, created_at: mockState.fileCreatedAt?.[prefix + name] || null }))
+      return { data: opts.limit ? out.slice(0, opts.limit) : out, error: null }
     },
     remove: async paths => { for (const p of paths) delete mockState.files[`${bucket}/${p}`]; mockState.calls.push({ table: `storage:${bucket}`, op: 'remove', payload: paths }); return { data: paths, error: null } },
   }) },
@@ -280,5 +306,7 @@ module.exports = {
     mockState.failInfo = {}
     mockState.storageCalls = []
     mockState.maxRows = {}
+    mockState.failCopy = {}
+    mockState.fileCreatedAt = {}
   },
 }

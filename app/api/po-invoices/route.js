@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
+import { notify } from '../../../lib/notify'
+import { apRecipients, sendApEmail, poInvoiceReadyEmail, poInvoiceDueDate, fmtDateUS, READY_TO_PAY_LINK_PATH } from '../../../lib/ap-recipients'
 import { seesAllJobs, isPrincipal, denyUnlessOnJob } from '../../../lib/roles'
 import { logChange } from '../../../lib/change-log'
 import { todayCentral } from '../../../lib/central-date'
@@ -16,6 +19,7 @@ const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 export const dynamic = 'force-dynamic'
 
@@ -94,6 +98,38 @@ const log = (auth, po, inv, d) => logChange({
 })
 const money = n => '$' + r2(n).toFixed(2)
 const label = (po, inv) => `${po.po_number || 'PO'} · ${po.vendor_name || 'vendor'} · inv ${inv.invoice_number}`
+
+// After an approval actually landed (the guarded update returned the row): email the admin
+// team and drop a bell notice for each admin. Never throws and never undoes the approval;
+// returns the email error text, or null when the email went out.
+async function announceReadyToPay(auth, po, job, inv) {
+  let emailError = null
+  try {
+    let approverName = null
+    try {
+      const { data } = await adminSupabase.from('profiles').select('full_name').eq('id', auth.userId).maybeSingle()
+      approverName = data?.full_name || null
+    } catch { /* optional */ }
+    const rec = await apRecipients(adminSupabase)
+    emailError = rec.error || await sendApEmail(resend, { to: rec.emails, ...poInvoiceReadyEmail({ po, job, inv, approverName }) })
+    const due = fmtDateUS(poInvoiceDueDate(inv)) || '—'
+    await Promise.all(rec.userIds.map(recipient_id => notify({
+      recipient_id,
+      type: 'po_invoice_ready',
+      title: `PO invoice ready to pay — ${po.vendor_name || 'Vendor'} · ${money(inv.amount)}`,
+      body: `Job #${job?.job_number || ''} · PO ${po.po_number || '—'} · Inv ${inv.invoice_number || '—'} · due ${due}`,
+      link: READY_TO_PAY_LINK_PATH,
+      job_id: po.job_id,
+      entity_type: 'po_invoice',
+      entity_id: inv.id,
+      dedup_key: 'po_invoice_ready:' + inv.id,
+    })))
+  } catch (e) {
+    emailError = e?.message || 'Could not send the Ready to pay email.'
+  }
+  if (emailError) console.error('[po-invoices] ready-to-pay email', emailError)
+  return emailError
+}
 
 // The PO's invoice total over the PO amount needs an Owner override with a note.
 function overAmountRefusal(auth, po, others, amount, excludeId, overrideNote) {
@@ -296,7 +332,8 @@ export async function PATCH(request) {
     if (error) return bad(error.message, 500)
     if (!data?.length) return changed()
     await log(auth, po, inv, { field_name: 'payment_status', old_value: before, new_value: 'ready_to_pay', note: `Approved → Ready to pay: ${label(po, inv)} (${money(inv.amount)}, due ${inv.due_date || '—'}).${update.over_po_override_note ? ` Owner override: ${update.over_po_override_note}` : ''}` })
-    return json({ invoice: { ...data[0], status: invoiceStatus(data[0], payer) } })
+    const email_error = await announceReadyToPay(auth, po, j.job, data[0])
+    return json({ invoice: { ...data[0], status: invoiceStatus(data[0], payer) }, email_error })
   }
 
   if (action === 'send_back') {

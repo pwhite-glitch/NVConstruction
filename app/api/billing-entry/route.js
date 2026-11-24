@@ -9,7 +9,7 @@ import { drawTargetError, DRAWABLE } from '../../../lib/draw-guards'
 import { sendLienWaiver, VOIDED_WAIVER_PATCH } from '../../../lib/lien-waiver'
 import { planBillingPayment, netBelowPaidError } from '../../../lib/billing-payment'
 import { escapeHtml, emailWrap } from '../../../lib/email'
-import { siteUrl } from '../../../lib/site-url'
+import { apRecipients, sendApEmail, adminReadyToPayUrl } from '../../../lib/ap-recipients'
 import { findDuplicateInvoice as findDuplicateInvoiceIn, normalizeInvoiceNumber } from '../../../lib/billing-duplicates'
 import { without062, mentions062, isMissingColumnError, waiverTermChanges, voidReason } from '../../../lib/lien-waiver-terms'
 import { rejectMultipart, inlineFileContentError, verifyAttachment, attachmentErrorResponse } from '../../../lib/file-upload-server'
@@ -534,38 +534,47 @@ export async function PATCH(request) {
       }
     }
 
-    // Send ready-to-pay email notification (PM only)
-    if (isPM(auth.role) && fields.ready_to_pay === true) {
+    // Ready-to-pay email to the admin team (PM only), on the false → true transition only.
+    // Recipients: AP_EMAILS, else the admin profiles (lib/ap-recipients.js). A failure is
+    // reported as readyToPayEmailError; the saved change stands.
+    const readyToPayEmailAttempted = isPM(auth.role) && fields.ready_to_pay === true && current.ready_to_pay !== true
+    let readyToPayEmailError = null
+    if (readyToPayEmailAttempted) {
       try {
-        const { data: sub } = await adminSupabase
+        const { data: sub, error: subErr } = await adminSupabase
           .from('billing_submissions')
           .select('company_name, amount_billed, retainage_held, jobs(job_number, project_name)')
           .eq('id', id)
           .single()
-        if (sub) {
+        if (subErr || !sub) {
+          readyToPayEmailError = 'Could not read the billing for the Ready to pay email' + (subErr?.message ? `: ${subErr.message}` : '.')
+        } else {
           const gross = parseFloat(sub.amount_billed || 0)
           const ret = parseFloat(sub.retainage_held || 0)
           const net = gross - ret
           const fmt = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-          const adminEmail = process.env.PM_EMAIL || 'management@nvim.co'
-          const adminUrl = siteUrl('/dashboard')
-          await resend.emails.send({
-            from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
-            to: adminEmail,
-            subject: `Check ready to pay — ${sub.company_name} · #${sub.jobs?.job_number}`,
+          const rec = await apRecipients(adminSupabase)
+          const company = escapeHtml(sub.company_name || '')
+          const jobNo = escapeHtml(sub.jobs?.job_number || '')
+          readyToPayEmailError = rec.error || await sendApEmail(resend, {
+            to: rec.emails,
+            subject: `Check ready to pay — ${sub.company_name || ''} · #${sub.jobs?.job_number || ''}`,
             html: `<div style="font-family:sans-serif;background:#0a0a0a;color:#f1f1f1;padding:32px;max-width:520px;margin:0 auto;border-radius:12px;">
               <p style="color:#4ade80;font-size:16px;font-weight:700;margin:0 0 12px">✓ Check ready to pay</p>
-              <p style="color:#aaa;margin:0 0 4px"><strong style="color:#f1f1f1">${sub.company_name}</strong> — Job <strong style="color:#f1f1f1">#${sub.jobs?.job_number} ${sub.jobs?.project_name || ''}</strong></p>
+              <p style="color:#aaa;margin:0 0 4px"><strong style="color:#f1f1f1">${company}</strong> — Job <strong style="color:#f1f1f1">#${jobNo} ${escapeHtml(sub.jobs?.project_name || '')}</strong></p>
               <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
                 <tr><td style="color:#888;padding:4px 0">Gross billed</td><td style="text-align:right;color:#f1f1f1;font-family:monospace">${fmt(gross)}</td></tr>
                 ${ret > 0 ? `<tr><td style="color:#888;padding:4px 0">Retainage held</td><td style="text-align:right;color:#e8590c;font-family:monospace">− ${fmt(ret)}</td></tr>` : ''}
                 <tr style="border-top:1px solid #2a2a2a"><td style="color:#f1f1f1;font-weight:700;padding:6px 0">Net check amount</td><td style="text-align:right;color:#4ade80;font-weight:800;font-size:18px;font-family:monospace">${fmt(net)}</td></tr>
               </table>
-              <a href="${adminUrl}" style="display:inline-block;background:#e8590c;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Open Portal →</a>
+              <a href="${escapeHtml(adminReadyToPayUrl())}" style="display:inline-block;background:#e8590c;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Open Portal →</a>
             </div>`,
-          }).catch(() => {})
+          })
         }
-      } catch {}
+      } catch (e) {
+        readyToPayEmailError = e?.message || 'Could not send the Ready to pay email.'
+      }
+      if (readyToPayEmailError) console.error('[billing-entry] ready-to-pay email', readyToPayEmailError)
     }
 
     // Approval (pending → approved), from ANY screen: email the sub and send the conditional
@@ -603,6 +612,7 @@ export async function PATCH(request) {
 
     return Response.json({
       ok: true, emailError,
+      ...(readyToPayEmailAttempted ? { readyToPayEmailError } : {}),
       ...((decided && fields.status === 'approved') || resendVoided ? { waiverSent, waiverError } : {}),
       ...('draw_request_id' in update && update.draw_request_id === null && current.draw_request_id ? { untagged: true } : {}),
       ...(paymentPlan?.summary ? { payment: paymentPlan.summary } : {}),

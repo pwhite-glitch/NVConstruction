@@ -6131,6 +6131,7 @@ ${attachmentHtml}
     setTogglingReadyToPay(billingId)
     const r = await fetchJson(authFetch, '/api/billing-entry', jsonInit('PATCH', { id: billingId, ready_to_pay: !current }))
     if (!r.ok) alert('Could not change ready to pay: ' + r.error)
+    else if (r.data?.readyToPayEmailError) alert(`Marked ready to pay. The office email did not send: ${r.data.readyToPayEmailError}`)
     setTogglingReadyToPay(null)
     await loadBillingForJob()
   }

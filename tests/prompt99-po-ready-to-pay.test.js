@@ -16,6 +16,8 @@ const path = require('path')
 const { mockState, resetMockState } = require('./helpers/mock-db')
 
 jest.mock('@supabase/supabase-js', () => require('./helpers/mock-db').supabaseModule)
+// Approve now emails the admin team (prompt 104): never a real send.
+jest.mock('resend', () => ({ Resend: function () { this.emails = { send: async () => ({ data: { id: 'e1' }, error: null }) } } }))
 jest.mock('../lib/server-auth', () => {
   const { mockState } = require('./helpers/mock-db')
   const PM = new Set(['principal', 'pm', 'apm', 'super', 'admin'])

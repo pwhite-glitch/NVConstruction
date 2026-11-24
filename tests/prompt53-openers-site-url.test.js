@@ -74,12 +74,18 @@ describe('item 12 — canonical site URL helper', () => {
     'app/api/reset-password/route.js', 'app/api/lookaheads/send/route.js', 'app/api/doc-request/route.js',
     'app/api/notify-sub/route.js', 'app/api/billing-reminders/route.js', 'app/api/coi-reminder/route.js',
     'lib/lien-waiver.js', 'app/api/punch-list/route.js', 'app/api/messages/route.js',
-    'app/api/billing-entry/route.js', 'app/api/customer-portal/route.js', 'app/api/sub-initiate-sign/route.js',
+    'lib/ap-recipients.js', // billing-entry's ready-to-pay link comes from here since prompt 104
+    'app/api/customer-portal/route.js', 'app/api/sub-initiate-sign/route.js',
     'app/api/signing-requests/route.js', 'app/api/signing-requests/[token]/route.js', 'app/api/mileage-reminder/route.js',
     'app/api/sub-portal/billing/route.js',
   ]
   it.each(ROUTES)('%s imports the shared helper', f => {
     expect(fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).toMatch(/from '[./]+(lib\/)?site-url'/)
+  })
+  it('app/api/billing-entry/route.js builds its emailed link via lib/ap-recipients (shared helper)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app/api/billing-entry/route.js'), 'utf8')
+    expect(src).toMatch(/from '[./]+lib\/ap-recipients'/)
+    expect(src).toMatch(/adminReadyToPayUrl\(\)/)
   })
 
   function walk(dir, out = []) {

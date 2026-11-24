@@ -117,7 +117,9 @@ export default function POInvoicesPanel({ s, po, job, invoices = [], can = {}, i
         ? await sendWithOverride(o => fetchJson(authFetch, '/api/po-invoices', jsonInit('PATCH', { id: inv.id, action, ...extra, ...o })))
         : await fetchJson(authFetch, '/api/po-invoices', jsonInit('PATCH', { id: inv.id, action, ...extra }))
       if (!r.ok) { setMsg(r.error); return }
-      await done('')
+      // The approval stands even when the office email failed; say so (kept after the refresh).
+      const emailError = action === 'approve' ? r.data?.email_error : null
+      await done(emailError ? `Approved. The office email did not send: ${emailError}` : '')
     } finally { setBusy(false) }
   }
 

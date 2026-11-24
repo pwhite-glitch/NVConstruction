@@ -10,6 +10,8 @@ import { isPartner } from '../../lib/partners'
 import { jobHrefById } from '../../lib/job-links'
 import BotAccessPanel from './BotAccessPanel'
 import MobileTopBar from '../components/MobileTopBar'
+import NotificationBell from '../components/NotificationBell'
+import { adminTarget } from '../../lib/notification-labels'
 import { isBotAccount } from '../../lib/bot-rules'
 import { prepareDirectorySave } from '../../lib/company-identity'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
@@ -19,6 +21,11 @@ import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentM
 import { signedWaiverTerms, waiverTermChanges } from '../../lib/lien-waiver-terms'
 import { normalizeDcAmount, isNegativeDcInput, dcReturnHint, dcAmountInputState, dcCreditInputState, signedDcAmount } from '../../lib/dc-amount'
 import { STATUS_LABELS as PO_PAY_LABELS, STATUS_COLORS as PO_PAY_COLORS, MIGRATION_082_SHORT, invoiceRemaining } from '../../lib/po-invoices'
+
+// Tab keys a ?tab= / bell link may open (same keys as navItems below; 'bots' only for
+// partners) and the Purchase Orders chip keys a ?view= may pick (prompt 104).
+const ADMIN_TAB_KEYS = ['calendar', 'costs', 'billing', 'payments', 'orders', 'coi', 'liens', 'permissions']
+const PO_VIEW_KEYS = ['ready_to_pay', 'needs_approval', 'paid', 'owner', 'all_pos']
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -302,6 +309,18 @@ export default function AdminPortal() {
     }
     load()
   }, [router])
+
+  // Open the tab / PO view named in a link: the page's own ?tab=&view= on load, or a bell
+  // notice's '/admin?tab=orders&view=ready_to_pay'. Unknown values are ignored.
+  function openAdminTarget(linkOrSearch) {
+    const t = adminTarget(linkOrSearch, [...ADMIN_TAB_KEYS, ...(isPartner(profile?.id) ? ['bots'] : [])], PO_VIEW_KEYS)
+    if (t.view) setPoView(t.view)
+    if (t.tab === 'orders' && activeTab === 'orders') { loadPurchaseOrders(); loadPOInvoices() }
+    if (t.tab) setActiveTab(t.tab)
+  }
+  useEffect(() => {
+    if (profile?.id && typeof window !== 'undefined') openAdminTarget(window.location.search)
+  }, [profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTab === 'costs') loadCosts()
@@ -919,9 +938,22 @@ export default function AdminPortal() {
       <MobileTopBar title="Office Admin" open={mobileNavOpen} onToggle={() => setMobileNavOpen(o => !o)} onClose={() => setMobileNavOpen(false)} />
       {/* ── Sidebar ── (off-canvas drawer under 640px; closes when a nav button is tapped) */}
       <nav style={s.sidebar} className={'rx-app-sidebar' + (mobileNavOpen ? ' rx-open' : '')}
-        onClick={e => { if (e.target.closest('button')) setMobileNavOpen(false) }}>
+        onClick={e => { if (e.target.closest('button') && !e.target.closest('[data-drawer-keep]')) setMobileNavOpen(false) }}>
         <div style={s.sidebarTop}>
-          <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
+          {/* Desktop: the sidebar clips overflow, so pin the bell's panel just right of it.
+              Phones (drawer): globals.css already pins .rx-notif-panel to the viewport. */}
+          <style>{`@media (min-width: 641px) { .rx-admin-bell .rx-notif-panel { position: fixed !important; top: 16px !important; left: 232px !important; right: auto !important; bottom: auto !important; } }`}</style>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+            <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
+            <div className="rx-admin-bell" data-drawer-keep>
+              <NotificationBell dark onOpen={n => {
+                setMobileNavOpen(false)
+                const link = n?.link || ''
+                if (link.startsWith('/admin')) openAdminTarget(link)
+                else if (link.startsWith('/') && !link.startsWith('//')) router.push(link)
+              }} />
+            </div>
+          </div>
           <p style={s.sidebarBrand}>NV Construction</p>
           <p style={s.sidebarRole}>Office Admin</p>
           <p style={s.sidebarUser}>{profile?.full_name}</p>

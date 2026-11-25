@@ -58,6 +58,8 @@ import { confirmExhibits, withExhibitAppendix, fileBaseName, BILLING_SCHEDULE_CA
 import { docCategoryLabel } from '../../lib/job-docs'
 import { canUploadSignedContract, signedUploadPath, signedMethodLabel, SIGNED_UPLOAD_ACCEPT } from '../../lib/signed-upload'
 import { isSignwellOpen, signwellStatusLabel } from '../../lib/signwell-status'
+import { contractDisplayStatus, contractCardActions, contractActionLabel, ACTION_GROUP_LABELS, DANGER_ACTIONS } from '../../lib/contract-card-actions'
+import ActionsMenu from '../components/ActionsMenu'
 import { readJsonResponse, fetchJson, jsonInit, rawResponseError } from '../../lib/fetch-json'
 import { prepareEditedContract, hasEmptySignatureSlot, editedAt, chooseContractForSend, stripEditorChrome, sanitizeContractHtml, formatCentralDateTime, formatCentralTime, MAX_EDITED_CONTRACT_LENGTH } from '../../lib/edited-contract'
 import { uploadThenSend, putToSignedUrl } from '../../lib/file-upload-client'
@@ -121,6 +123,8 @@ const s = {
   btnSmallOrange: { padding: '5px 12px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   btnSmallGreen: { padding: '5px 12px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   btnSmallRed: { padding: '5px 12px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  // Prompt 109: the one brand (solid) button on a subcontract card, same size as btnSmall.
+  btnSmallPrimary: { padding: '5px 12px', background: '#e8590c', color: '#fff', border: '1px solid #e8590c', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
 
   // ── Job title ──
   jobTitle: { fontSize: '24px', fontWeight: '700', color: '#111827', margin: '0 0 4px' },
@@ -142,6 +146,13 @@ const s = {
     background: status === 'signed' ? '#dcfce7' : status === 'active' ? '#eff6ff' : '#f9fafb',
     color: status === 'signed' ? '#15803d' : status === 'active' ? '#1d4ed8' : '#6b7280',
     border: `1px solid ${status === 'signed' ? '#bbf7d0' : status === 'active' ? '#bfdbfe' : '#e5e7eb'}`
+  }),
+  // Prompt 109: the single status pill on a subcontract card (same shape as contractBadge).
+  contractPill: (tone) => ({
+    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap',
+    background: tone === 'amber' ? '#fef3c7' : tone === 'green' ? '#dcfce7' : tone === 'blue' ? '#eff6ff' : tone === 'red' ? '#fff' : '#f9fafb',
+    color: tone === 'amber' ? '#92400e' : tone === 'green' ? '#15803d' : tone === 'blue' ? '#1d4ed8' : tone === 'red' ? '#b91c1c' : '#6b7280',
+    border: `1px solid ${tone === 'amber' ? '#fcd34d' : tone === 'green' ? '#bbf7d0' : tone === 'blue' ? '#bfdbfe' : tone === 'red' ? '#fca5a5' : '#e5e7eb'}`
   }),
   coBadge: (status) => ({
     padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase',
@@ -729,6 +740,9 @@ function JobDetailInner() {
   // Prompt 98: SignWell e-sign (office). { enabled, test_mode } booleans from the server; never the key.
   const [signwellConfig, setSignwellConfig] = useState({ enabled: false, test_mode: false })
   const [signwellBusy, setSignwellBusy] = useState(null)
+  // Prompt 109: which subcontract card's Actions menu is open (one at a time) + one hidden signed-upload input per card.
+  const [openContractMenu, setOpenContractMenu] = useState(null)
+  const signedUploadInputs = useRef({})
   const [billingScheduleDoc, setBillingScheduleDoc] = useState(null) // newest job_documents row, category billing_schedule
   const [exhibitBNotes, setExhibitBNotes] = useState('')
   const [exhibitBPreview, setExhibitBPreview] = useState(null) // { url, bytes }
@@ -9384,7 +9398,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <button style={s.btnGray} onClick={saveContractGenDetails} title="Remember these details on this subcontract">Save details</button>
                   {contractGenForm.contract_id && <button style={s.btnGray} onClick={() => openSubcontractExhibits(contractGenForm.contract_id, 'latest')} title="The newest merged exhibits PDF for this subcontract">Open exhibits</button>}
                   <button style={{ ...s.btn, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => { if (showSignPanel) { setShowSignPanel(false); setSignMsg('') } else openSignPanel() }}>
-                    {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
+                    {showSignPanel ? 'Cancel' : 'Send for e-Signature'}
                   </button>
                 </div>
                 {contractGenForm.contract_id && (() => {
@@ -9697,12 +9711,55 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const scopeExpanded = expandedScopeIds.has(c.id)
                 const contractApproved = billingAlloc.byContract[c.id]?.billedApproved || 0
                 const contractRemaining = Number(c.adjusted_contract_value) - contractApproved
+                // Prompt 109: one status pill, one primary button, SOV, and an "Actions" menu (lib/contract-card-actions.js).
+                // Newest request first (API orders by created_at desc)
+                const req = signingRequests.find(r => r.subcontract_id === c.id)
+                const signwellOpen = isSignwellOpen(c.signwell_status)
+                const cardStatus = contractDisplayStatus(c, { req, isSigned, subName, signwellOpen, signwellLabel: signwellStatusLabel(c.signwell_status), signedLabel: c.signed_contract_url ? signedMethodLabel(c.signed_method) : null })
+                const cardActions = contractCardActions(c, {
+                  req, isSigned, isEditing, canUpload: canUploadSignedContract(userRole),
+                  signwellEnabled: signwellConfig.enabled, signwellTestMode: signwellConfig.test_mode, signwellOpen,
+                  signwellBusy: signwellBusy === c.id, uploading: uploadingSignedFor === c.id, canMoveToDraft,
+                })
+                const toggleEditContract = () => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10), bid_proposal_url: c.bid_proposal_url || '' }); setEditContractBidFile(null) }
+                // Every action calls the same function as before prompt 109; confirms stay inside those functions.
+                const runContractAction = {
+                  activate: () => activateContract(c),
+                  moveToDraft: () => moveContractToDraft(c),
+                  genContract: () => openContractGenerator(c),
+                  lastGenerated: () => openLastGeneratedContract(c),
+                  bid: () => openBidProposalUrl(c.bid_proposal_url),
+                  signedContract: () => openSignedContractUrl(c),
+                  remind: () => signwellAction(c, 'remind'),
+                  void: () => signwellAction(c, 'void'),
+                  signedExhibits: () => openSubcontractExhibits(c.id, 'signed'),
+                  // The hidden file input is outside the menu (always mounted); click it inside the same tap.
+                  uploadSigned: () => { const el = signedUploadInputs.current[c.id]; if (el && !el.disabled) el.click() },
+                  edit: toggleEditContract,
+                  delete: () => deleteContract(c.id),
+                }
+                const contractActionTitles = {
+                  activate: "Makes it visible in the sub's portal and assigns them with billing off. No email is sent.",
+                  moveToDraft: "Hides it from the sub's portal again. Not available once signed. No email is sent.",
+                  lastGenerated: c.generated_at ? `Generated ${new Date(c.generated_at).toLocaleString('en-US')}` : undefined,
+                  signedExhibits: 'Exhibit A / B as attached to the e-signed contract',
+                  uploadSigned: c.signed_contract_url ? 'Replace the signed contract on file (asks first)' : 'Signed on paper instead of e-sign? Upload the signed PDF or a photo.',
+                }
+                const actionLabelCtx = { req, isEditing, uploading: uploadingSignedFor === c.id }
+                const contractMenuGroups = cardActions.groups.map(g => ({
+                  key: g.key, label: ACTION_GROUP_LABELS[g.key],
+                  items: g.items.map(aid => ({ id: aid, label: contractActionLabel(aid, c, actionLabelCtx), title: contractActionTitles[aid], danger: DANGER_ACTIONS.has(aid), disabled: !!cardActions.disabled[aid], onSelect: runContractAction[aid] })),
+                }))
 
                 return (
                   <div key={c.id} style={{ ...s.contractRow, ...(isDraft ? { borderStyle: 'dashed', borderColor: '#f59e0b' } : {}) }}>
                     <div style={{ ...s.contractRowHeader, ...(isDraft ? { background: '#fffbeb' } : {}) }} className="rx-stack-sm">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 260px', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
+                      <div className="rx-card-main" style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 260px', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827', minWidth: 0, overflowWrap: 'anywhere' }}>{subName}</span>
+                        <span title={cardStatus.title} style={s.contractPill(cardStatus.tone)}>{cardStatus.label}</span>
+                        {cardActions.testMode && (
+                          <span title="SignWell is in test mode: documents are free and not legally binding" style={{ fontSize: '10px', fontWeight: '700', color: '#92400e', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>TEST MODE</span>
+                        )}
                         {renderCoiBadge(c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name)}
                         {allocations.length > 0
                           ? allocations.map((a, i) => {
@@ -9722,16 +9779,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </span>
                           )
                         }
-                        {isDraft
-                          ? <span title="Only NV staff can see this. Activate to show it in the sub's portal." style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', whiteSpace: 'nowrap' }}>Draft · not visible to sub</span>
-                          : <span style={s.contractBadge(c.status)}>{c.status}</span>}
-                        {attachments.length > 0 && (
-                          <span title={`Attachments on file: ${attachments.join(', ')}`} aria-label={`${attachments.length} attachment${attachments.length > 1 ? 's' : ''}: ${attachments.join(', ')}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', color: '#4b5563', whiteSpace: 'nowrap' }}>
-                            📎{attachments.length > 1 ? <span style={{ fontWeight: '700' }}>{attachments.length}</span> : null}
-                          </span>
+                        {(cardStatus.detail || attachments.length > 0) && (
+                          <div style={{ flexBasis: '100%', minWidth: 0, fontSize: '12px', color: '#6b7280', lineHeight: '1.4', overflowWrap: 'anywhere' }}>
+                            {cardStatus.detail}
+                            {cardStatus.detail && attachments.length > 0 ? ' · ' : null}
+                            {attachments.length > 0 && (
+                              <span title={`Attachments on file: ${attachments.join(', ')}`} aria-label={`${attachments.length} attachment${attachments.length > 1 ? 's' : ''}: ${attachments.join(', ')}`}>
+                                {attachments.length} attachment{attachments.length > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px 20px', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0, maxWidth: '100%' }} className="rx-wrap-sm">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px 20px', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0, maxWidth: '100%' }} className="rx-wrap-sm rx-card-figures">
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Contract</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>${Number(c.contract_value).toLocaleString()}</div>
@@ -9754,67 +9814,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Retainage</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.retainage_pct) > 0 ? '#a16207' : '#6b7280' }}>{Number(c.retainage_pct || 0)}%</div>
                         </div>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
-                          {isDraft && <button style={{ ...s.btnSmall, background: '#16a34a', color: '#fff', border: '1px solid #16a34a' }} onClick={() => activateContract(c)} title="Makes it visible in the sub's portal and assigns them with billing off. No email is sent.">Activate</button>}
-                          {canMoveToDraft && <button style={s.btnSmall} onClick={() => moveContractToDraft(c)} title="Hides it from the sub's portal again. Not available once signed. No email is sent.">Move to draft</button>}
-                          <button style={s.btnSmallOrange} onClick={() => {
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', minWidth: 0, maxWidth: '100%' }} className="rx-card-actions">
+                          <button className="rx-card-primary" style={cardActions.primaryTone === 'brand' ? s.btnSmallPrimary : s.btnSmall} title={contractActionTitles[cardActions.primary]} onClick={runContractAction[cardActions.primary]}>
+                            {contractActionLabel(cardActions.primary, c, actionLabelCtx)}
+                          </button>
+                          <button style={s.btnSmall} aria-expanded={expandedSov === c.id} onClick={() => {
                             if (expandedSov === c.id) { setExpandedSov(null) }
                             else { setExpandedSov(c.id); loadContractSov(c.id); setShowAddSovLine(null); setEditingSovLine(null) }
                           }}>
                             {expandedSov === c.id ? 'Hide SOV' : 'SOV'}
                           </button>
-                          {(() => {
-                            // Newest request first (API orders by created_at desc)
-                            const req = signingRequests.find(r => r.subcontract_id === c.id)
-                            const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                            return (
-                              <>
-                                <button style={{ ...s.btnSmall, background: '#dcfce7', color: '#16a34a', border: '1px solid #dcfce7' }} onClick={() => openContractGenerator(c)}>{!req ? 'Gen Contract' : req.status === 'signed' ? 'View contract' : 'View / Resend contract'}</button>
-                                {req && (
-                                  <span title={req.signer_email} style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere', fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px',background: req.status === 'signed' ? '#dcfce7' : '#fff7ed', color: req.status === 'signed' ? '#16a34a' : '#d97706', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#fed7aa'}` }}>
-                                    {req.status === 'signed'
-                                      ? `✓ Signed ${req.signed_at ? fmtDate(req.signed_at) : ''}`
-                                      : `⏳ Sent for signature ${fmtDate(req.created_at)} to ${req.signer_email}`}
-                                  </span>
-                                )}
-                              </>
-                            )
-                          })()}
-                          {c.generated_contract_path && <button style={s.btnSmall} onClick={() => openLastGeneratedContract(c)} title={c.generated_at ? `Generated ${new Date(c.generated_at).toLocaleString('en-US')}` : undefined}>Last generated contract</button>}
-                          {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#bfdbfe', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
-                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #dcfce7' }} onClick={() => openSignedContractUrl(c)}>Signed Contract ↗</button>}
-                          {c.signwell_document_id && c.signwell_status && c.signed_method !== 'signwell' && (
-                            <span title={`SignWell${c.signwell_sent_at ? ' · sent ' + new Date(c.signwell_sent_at).toLocaleDateString('en-US') : ''}`} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', whiteSpace: 'nowrap', ...(c.signwell_status === 'completed' ? { background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' } : isSignwellOpen(c.signwell_status) ? { background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' } : { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }) }}>
-                              SignWell: {signwellStatusLabel(c.signwell_status)}
-                            </span>
-                          )}
-                          {canUploadSignedContract(userRole) && signwellConfig.enabled && signwellConfig.test_mode && (c.signwell_document_id || !c.signed_contract_url) && (
-                            <span title="SignWell is in test mode: documents are free and not legally binding" style={{ fontSize: '10px', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>TEST MODE</span>
-                          )}
-                          {canUploadSignedContract(userRole) && signwellConfig.enabled && c.signwell_document_id && isSignwellOpen(c.signwell_status) && (
-                            <>
-                              <button style={s.btnSmall} disabled={signwellBusy === c.id} onClick={() => signwellAction(c, 'remind')}>Resend reminder</button>
-                              <button style={s.btnSmallRed} disabled={signwellBusy === c.id} onClick={() => signwellAction(c, 'void')}>Void</button>
-                            </>
-                          )}
-                          {c.signed_contract_url && signedMethodLabel(c.signed_method) && (
-                            <span title={c.signed_method === 'manual_upload' ? 'Signed copy uploaded by the office' : c.signed_method === 'signwell' ? 'Signed through SignWell (the PDF includes its audit page)' : 'Signed on the e-signature page'} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>
-                              {signedMethodLabel(c.signed_method)}
-                            </span>
-                          )}
-                          {c.signed_contract_url && c.signed_method === 'esign' && <button style={s.btnSmall} onClick={() => openSubcontractExhibits(c.id, 'signed')} title="Exhibit A / B as attached to the e-signed contract">Signed exhibits</button>}
+                          <ActionsMenu
+                            open={openContractMenu === c.id}
+                            onOpenChange={v => setOpenContractMenu(prev => (v ? c.id : prev === c.id ? null : prev))}
+                            groups={contractMenuGroups}
+                            menuLabel={`Actions for ${subName}`} />
+                          {/* Prompt 109: kept OUTSIDE the menu so the picker's onChange survives the menu closing (iOS / Chrome). */}
                           {canUploadSignedContract(userRole) && (
-                            <label style={{ ...s.btnSmall, display: 'inline-flex', alignItems: 'center', cursor: uploadingSignedFor === c.id ? 'not-allowed' : 'pointer', opacity: uploadingSignedFor === c.id ? 0.6 : 1 }}
-                              title={c.signed_contract_url ? 'Replace the signed contract on file (asks first)' : 'Signed on paper instead of e-sign? Upload the signed PDF or a photo.'}>
-                              {uploadingSignedFor === c.id ? 'Uploading…' : c.signed_contract_url ? 'Replace signed contract' : 'Upload signed contract'}
-                              <input type="file" accept={SIGNED_UPLOAD_ACCEPT} style={{ display: 'none' }} disabled={uploadingSignedFor === c.id}
-                                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadOfficeSignedContract(c, f) }} />
-                            </label>
+                            <input type="file" accept={SIGNED_UPLOAD_ACCEPT} style={{ display: 'none' }} disabled={uploadingSignedFor === c.id}
+                              ref={el => { if (el) signedUploadInputs.current[c.id] = el; else delete signedUploadInputs.current[c.id] }}
+                              aria-hidden="true" tabIndex={-1}
+                              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadOfficeSignedContract(c, f) }} />
                           )}
-                          <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10), bid_proposal_url: c.bid_proposal_url || '' }); setEditContractBidFile(null) }}>
-                            {isEditing ? 'Cancel' : 'Edit'}
-                          </button>
-                          <button style={s.btnSmallRed} onClick={() => deleteContract(c.id)}>Delete</button>
                         </div>
                       </div>
                     </div>

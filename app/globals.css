@@ -342,6 +342,12 @@ textarea:focus {
     gap: 10px 16px !important;
   }
   .rx-wrap-sm > * { text-align: left !important; }
+  /* Prompt 109: subcontract card actions get their own row; the primary button grows, SOV / Actions stay compact */
+  .rx-card-actions { width: 100%; }
+  .rx-card-actions > .rx-card-primary { flex: 1 1 auto; }
+  /* Prompt 109b: header is a column here, so the name block's 260px basis would become a 260px height */
+  .rx-card-main { flex: 0 1 auto !important; }
+  .rx-card-figures { justify-content: flex-start !important; }
 }
 
 /* Prevent iOS input zoom — any field under 16px makes Safari zoom on focus.

@@ -212,11 +212,12 @@ describe('buildExhibitsPdf with extras', () => {
     ])
     expect(out.included).toEqual(['proposal', 'billing', `extra:${D_PLANS}`, `extra:${D_GEO}`])
     expect(out.included_exhibits.map(e => e.letter)).toEqual(['A', 'B', 'C', 'D'])
-    expect(out.included_exhibits[2]).toEqual({ key: `extra:${D_PLANS}`, letter: 'C', title: 'Plans' })
+    // prompt 107b: page ranges in the merged PDF
+    expect(out.included_exhibits[2]).toEqual({ key: `extra:${D_PLANS}`, letter: 'C', title: 'Plans', first_page: 3, page_count: 2 })
     const pdf = await PDFDocument.load(out.bytes)
-    // A: cover + 1, B: cover + 1, C: cover + 2, D: cover + image page
-    expect(pdf.getPageCount()).toBe(2 + 2 + 3 + 2)
-    expect([Math.round(pdf.getPage(1).getWidth())]).toEqual([200])
+    // prompt 107b: no cover pages. A: 1, B: 1, C: 2, D: image page
+    expect(pdf.getPageCount()).toBe(1 + 1 + 2 + 1)
+    expect([Math.round(pdf.getPage(0).getWidth())]).toEqual([200])
   })
 })
 
@@ -239,21 +240,20 @@ describe('exhibitStatus / buildAndStoreExhibits', () => {
     expect(st.extras[4].typeError).toMatch(/PDF or a JPG\/PNG/)
   })
 
-  test('missing / wrong-type extras skipped and the rest re-lettered C, D; cover pages + list', async () => {
+  test('missing / wrong-type extras skipped and the rest re-lettered C, D; appendix note + list', async () => {
     seed({ gf: { exhibits: [ex(D_OTHERJOB, 'Gone'), ex(D_PLANS, 'Plans'), ex(D_DOCX, 'Word'), ex(D_GEO, 'Soil')] } })
     await putFiles()
     const out = await XS.buildAndStoreExhibits(admin(), sc1(), { subtitle: 'Acme' })
     expect(out.error).toBeNull()
     expect(out.included_exhibits.map(e => [e.letter, e.title])).toEqual([['A', 'Subcontractor Proposal'], ['B', 'Billing Schedule'], ['C', 'Plans'], ['D', 'Soil']])
     expect(out.unreadable).toEqual([])
-    expect(out.appendix).toContain('Exhibit C – Plans')
-    expect(out.appendix).toContain('Exhibit D – Soil')
+    expect(out.appendix).toContain('Exhibits A, B, C and D (attached) are part of this Subcontract.') // prompt 107b: no cover pages
     expect(out.appendix).not.toContain('Gone')
     expect(X.exhibitsPathFromHtml(out.appendix, SC1)).toBe(out.path)
     // the appendix shape still lets withExhibitAppendix replace it
     const twice = X.withExhibitAppendix(X.withExhibitAppendix('<html><body>C</body></html>', out.appendix), out.appendix)
     expect(twice.match(/class="nv-exhibits"/g)).toHaveLength(1)
-    expect((await PDFDocument.load(mockState.files[`documents/${out.path}`])).getPageCount()).toBe(3 + 2 + 4 + 2)
+    expect((await PDFDocument.load(mockState.files[`documents/${out.path}`])).getPageCount()).toBe(2 + 1 + 3 + 1) // prompt 107b: no cover pages
     // extras: false leaves them all out
     const ab = await XS.buildAndStoreExhibits(admin(), sc1(), { include: { proposal: true, billing: true, extras: false }, at: new Date('2026-11-24T00:00:00Z') })
     expect(ab.included).toEqual(['proposal', 'billing'])
@@ -381,7 +381,7 @@ describe('/api/signing-requests with extras', () => {
     expect(r.status).toBe(200)
     expect(r.body.exhibits_included).toEqual(['proposal', 'billing', `extra:${D_PLANS}`])
     expect(r.body.exhibits_included_letters).toEqual(['A', 'B', 'C'])
-    expect(mockState.db.signing_requests[0].document_html).toContain('Exhibit C – Plans')
+    expect(mockState.db.signing_requests[0].document_html).toContain('Exhibits A, B and C (attached) are part of this Subcontract.') // prompt 107b
   })
   test('extras-only send runs even with A and B off', async () => {
     seed({ gf: { exhibits: [ex(D_PLANS, 'Plans')] } })
@@ -463,7 +463,7 @@ describe('wiring', () => {
     expect(page).toContain('+ Add from job documents')
     expect(page).toContain('+ Upload exhibit (PDF or image)')
     expect(page).toContain('file no longer on the job')
-    expect(page).toContain("'Open exhibits PDF'") // prompt 107: banner button text
+    expect(page).not.toContain("'Open exhibits PDF'") // prompt 107b: the banner is gone (pages shown inline)
     expect(page).not.toContain('Open Exhibits PDF (A/B)')
     expect(page).not.toContain('accept=".pdf,.doc,.docx"')
     expect(page.match(/accept=\{EXHIBIT_FILE_ACCEPT\}/g).length).toBeGreaterThanOrEqual(3)

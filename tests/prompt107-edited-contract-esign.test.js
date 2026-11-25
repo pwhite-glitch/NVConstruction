@@ -46,21 +46,24 @@ const GEN = buildSubcontractHtml(F, 'https://portal.example')
 const APPENDIX = exhibitAppendixHtml({ proposal: { name: 'bid.pdf' }, billing: { name: 'billing.pdf' }, exhibitsPath: `subcontracts/${SC1}/exhibits-1.pdf` })
 
 // What the print window's clone looks like when the opener-side cleanup was skipped: toolbar
-// (with the exhibits banner nested inside), edit style, script, body margin-top, designMode
-// leftovers, contenteditable, and the exhibit cover appendix.
+// (prompt 107b: signer line + form, Save / Send), edit style, script, body margin-top, designMode
+// leftovers, contenteditable, the inline exhibit page images and the exhibit appendix.
 function browserCopy(html = GEN) {
   const toolbar = [
     '<style id="nv-edit-style">#nv-bar{position:fixed}@media print{#nv-bar{display:none!important}}</style>',
     '<div id="nv-bar" contenteditable="false">',
     '<span style="font-weight:700">✎ Editing Mode</span>',
     '<div style="flex:1"></div>',
-    '<span id="nv-exhibits-slot"></span><span id="nv-status">Saving…</span>',
-    '<button id="nv-print-btn">Print / Save PDF</button><button id="nv-save-btn">Save edits</button><button id="nv-send-btn">Send for e-Signature</button>',
-    '<div id="nv-exhibits-banner" style="flex-basis:100%"><span>Exhibits A and B are in a separate PDF — </span><button>Open exhibits PDF</button><div>Print or save this contract…</div></div>',
+    '<span id="nv-signer" contenteditable="false">To: <span id="nv-signer-text">Jane Doe &lt;jane@x.com&gt;</span> <a href="#" id="nv-signer-change">(change)</a></span>',
+    '<span id="nv-signer-form" contenteditable="false"><label for="nv-signer-name">Signer full legal name</label> <input id="nv-signer-name" type="text"> <label for="nv-signer-email">Email</label> <input id="nv-signer-email" type="email"></span>',
+    '<span id="nv-status">Saving…</span>',
+    '<button id="nv-print-btn">Print / Save PDF</button><button id="nv-save-btn">Save</button><button id="nv-send-btn">Send for e-Signature</button>',
     '</div>',
     '<script>document.designMode="on";document.body.style.marginTop="50px";</script>',
   ].join('\n')
+  const pages = '<div class="nv-exhibit-pages" contenteditable="false"><div class="nv-exhibit-page" style="page-break-before:always"><img src="data:image/jpeg;base64,AAAA" alt="Exhibit page 1"></div></div>\n'
   return withExhibitAppendix(html, APPENDIX)
+    .replace('</body>', pages + '</body>')
     .replace('<body>', '<body style="margin-top: 50px;">')
     .replace('<p>', '<p contenteditable="true">')
     .replace('</body>', toolbar + '\n</body>')
@@ -73,7 +76,7 @@ describe('stripEditorChrome', () => {
     expect(raw).toContain('class="nv-exhibits"')
     const out = E.stripEditorChrome(raw)
     expect(out.startsWith('<!DOCTYPE html>')).toBe(true)
-    for (const s of ['nv-bar', 'nv-edit-style', 'nv-exhibits-banner', 'nv-save-btn', 'Open exhibits PDF', '<script', 'designMode', 'contenteditable', 'margin-top: 50px', 'class="nv-exhibits"', 'class="nv-exhibit"', 'Attached: bid.pdf']) expect(out).not.toContain(s)
+    for (const s of ['nv-bar', 'nv-edit-style', 'nv-signer', 'nv-save-btn', '<script', 'designMode', 'contenteditable', 'margin-top: 50px', 'class="nv-exhibits"', 'nv-exhibit-pages', 'nv-exhibit-page', 'data:image/jpeg', 'Exhibits A and B (attached)']) expect(out).not.toContain(s)
     expect(out).toMatch(/<body>/)
     // the contract itself stays
     expect(out).toContain('<strong>SUBCONTRACTOR:</strong>')
@@ -261,11 +264,12 @@ describe('job page (source checks)', () => {
     expect(page).toMatch(/typeof data\.html !== 'string' \|\| data\.html\.length >= MAX_EDITED_CONTRACT_LENGTH/)
     expect(E.MAX_EDITED_CONTRACT_LENGTH).toBe(3 * 1024 * 1024)
   })
-  test('print window has Save edits / Send for e-Signature posting to the opener origin', () => {
+  test('print window has Save / Send for e-Signature posting to the opener origin', () => {
     expect(page).toContain('id="nv-save-btn"')
     expect(page).toContain('id="nv-send-btn"')
+    expect(page).toContain('>Save</button>') // prompt 107b: was "Save edits"
     expect(page).toContain('var NV_ORIGIN=${jsStr(window.location.origin)};')
-    expect(page).toContain('window.opener.postMessage({type:"nv-contract-edits",action:action,contract_id:NV_CONTRACT_ID,html:html},NV_ORIGIN)')
+    expect(page).toContain('window.opener.postMessage({type:"nv-contract-edits",action:action,contract_id:NV_CONTRACT_ID,html:html,signer_name:s.name,signer_email:s.email},NV_ORIGIN)')
     expect(page).toContain('The portal tab was closed; reopen Edit & Print.')
     expect(page).toMatch(/prepareEditedContract\(data\.html, iso\)/)
     expect(page).toMatch(/saveContractCopy\(contractId, appendix \? withExhibitAppendix\(edited, appendix\) : edited\)/)
@@ -275,17 +279,19 @@ describe('job page (source checks)', () => {
     const fn = page.slice(page.indexOf('async function sendForESign()'), page.indexOf('// ── Change Orders'))
     expect(fn).toContain('chooseContractForSend(')
     expect(fn).toContain('sanitizeContractHtml(stripEditorChrome(chosen.html))')
-    expect(fn).toContain('exhibits: check.include')
-    expect(fn).toContain("' (edited version)'")
+    expect(fn).toContain('include: check.include') // prompt 107b: posted as exhibits by sendContractForSignature
+    expect(fn).toContain('sendContractForSignature(')
+    expect(read('lib/contract-send.js')).toContain("' (edited version)'")
+    expect(read('lib/contract-send.js')).toContain('exhibits: include')
     expect(fn.indexOf('exhibitCheck(')).toBeLessThan(fn.indexOf('chooseContractForSend('))
     expect(page).toMatch(/fetchStoredContractHtml\(contractId, 'generated', \{ quiet: true \}\)/)
   })
-  test('exhibits banner in the print window', () => {
-    expect(page).toContain('in a separate PDF — ')
-    expect(page).toContain("'Open exhibits PDF'")
-    expect(page).toContain('(pop-up blocked — click Open exhibits PDF)')
-    expect(page).toContain('Print or save this contract, then print the exhibits PDF. Send for e-Signature attaches the exhibits automatically.')
+  test('prompt 107b: no exhibits banner in the print window (pages are shown inline)', () => {
+    expect(page).not.toContain('in a separate PDF — ')
+    expect(page).not.toContain("'Open exhibits PDF'")
+    expect(page).not.toContain('pop-up blocked')
+    expect(page).not.toContain('Print or save this contract, then print the exhibits PDF.')
     expect(page).toContain('lastExhibitsAppendixRef.current[contractId] = ex.data.appendix')
-    expect(page).toContain('@media print{#nv-bar,#nv-exhibits-banner{display:none!important}')
+    expect(page).toContain('@media print{#nv-bar{display:none!important}')
   })
 })

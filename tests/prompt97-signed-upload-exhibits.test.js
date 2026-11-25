@@ -248,7 +248,7 @@ describe('nextSubBillingDueDates (Central)', () => {
 
 // ── 4. exhibit merge ──────────────────────────────────────────────────────────
 describe('buildExhibitsPdf', () => {
-  test('order: Exhibit A cover + proposal pages, then Exhibit B cover + schedule (image → page)', async () => {
+  test('order: proposal pages, then the schedule (image → page); no cover pages (prompt 107b)', async () => {
     const proposal = await pdfOfPages(2, [300, 400])
     const out = await X.buildExhibitsPdf([
       { exhibit: X.EXHIBIT_B, file: { name: 'schedule.png', bytes: PNG_1PX } }, // given out of order on purpose
@@ -258,16 +258,16 @@ describe('buildExhibitsPdf', () => {
     expect(out.notes).toEqual([])
     const doc = await PDFDocument.load(out.bytes)
     const sizes = doc.getPages().map(p => [Math.round(p.getWidth()), Math.round(p.getHeight())])
-    expect(sizes).toEqual([[612, 792], [300, 400], [300, 400], [612, 792], [612, 792]])
+    expect(sizes).toEqual([[300, 400], [300, 400], [612, 792]])
   })
   test('a missing exhibit is skipped: no empty cover page', async () => {
     const out = await X.buildExhibitsPdf([{ exhibit: X.EXHIBIT_A, file: null }, { exhibit: X.EXHIBIT_B, file: { name: 's.pdf', bytes: await pdfOfPages(1) } }])
     expect(out.included).toEqual(['billing'])
-    expect((await PDFDocument.load(out.bytes)).getPageCount()).toBe(2)
+    expect((await PDFDocument.load(out.bytes)).getPageCount()).toBe(1) // prompt 107b: no cover page
     const none = await X.buildExhibitsPdf([{ exhibit: X.EXHIBIT_A, file: null }])
     expect(none).toEqual({ bytes: null, included: [], notes: [] })
   })
-  test('HEIC / other / unreadable PDF: cover page with an "attached separately" note naming the file', async () => {
+  test('HEIC / other / unreadable PDF: one notice page with an "attached separately" note naming the file', async () => {
     const heic = Buffer.from('\x00\x00\x00\x18ftypheic....', 'binary')
     const out = await X.buildExhibitsPdf([
       { exhibit: X.EXHIBIT_A, file: { name: 'proposal.heic', bytes: heic } },
@@ -293,10 +293,11 @@ describe('contract appendix + exhibits path', () => {
     expect(X.isExhibitsPathFor(p1, SC2)).toBe(false)
     expect(X.isExhibitsPathFor(`subcontracts/${SC1}/generated-x.html`, SC1)).toBe(false)
   })
-  test('appendix: A then B cover pages, only those included, marker read back only for this subcontract', () => {
+  test('appendix: one note naming A then B, only those included, marker read back only for this subcontract', () => {
     const html = X.withExhibitAppendix('<html><body>C</body></html>', X.exhibitAppendixHtml({ proposal: { name: 'p<1>.pdf' }, billing: { name: 's.pdf' }, exhibitsPath: p1 }))
-    expect(html.indexOf('Exhibit A – Subcontractor Proposal')).toBeLessThan(html.indexOf('Exhibit B – Billing Schedule'))
-    expect(html).toContain('p&lt;1&gt;.pdf')
+    // prompt 107b: no cover pages / file names, just "Exhibits A and B (attached) …"
+    expect(html).toContain('Exhibits A and B (attached) are part of this Subcontract.')
+    expect(html).not.toContain('p&lt;1&gt;.pdf')
     expect(html.endsWith('</body></html>')).toBe(true)
     expect(X.exhibitsPathFromHtml(html, SC1)).toBe(p1)
     expect(X.exhibitsPathFromHtml(html, SC2)).toBeNull()
@@ -347,14 +348,14 @@ describe('/api/subcontract-exhibits', () => {
     const r = await json(await exhibitsRoute.GET(req(`/api/subcontract-exhibits?subcontract_id=${SC1}&kind=status`, 'GET')))
     expect(r.body).toMatchObject({ proposal: { name: '1700.pdf' }, billing: { name: 'sched.pdf' } })
   })
-  test('POST merges A + B into documents/subcontracts/<id>/exhibits-….pdf (1+3 + 1+1 pages)', async () => {
+  test('POST merges A + B into documents/subcontracts/<id>/exhibits-….pdf (3 + 1 pages, no cover pages)', async () => {
     as('principal')
     const r = await json(await exhibitsRoute.POST(req('/api/subcontract-exhibits', 'POST', { subcontract_id: SC1, include: { proposal: true, billing: true } })))
     expect(r.status).toBe(200)
     expect(X.isExhibitsPathFor(r.body.path, SC1)).toBe(true)
     expect(r.body.included).toEqual(['proposal', 'billing'])
     expect(X.exhibitsPathFromHtml(r.body.appendix, SC1)).toBe(r.body.path)
-    expect((await PDFDocument.load(mockState.files[`documents/${r.body.path}`])).getPageCount()).toBe(6)
+    expect((await PDFDocument.load(mockState.files[`documents/${r.body.path}`])).getPageCount()).toBe(4)
   })
   test('include false leaves an exhibit out; nothing included → no file', async () => {
     as('principal')
